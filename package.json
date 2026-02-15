@@ -1,0 +1,27 @@
+{
+  "name": "gladly",
+  "version": "1.0.0",
+  "description": "GPU-powered multi-axis plotting library with regl + d3",
+  "type": "module",
+
+  "exports": {
+    ".": "./src/index.js"
+  },
+
+  "files": ["src"],
+
+  "scripts": {
+    "dev": "parcel serve example/index.html --open",
+    "build:example": "parcel build example/index.html --dist-dir dist-example --public-url ./",
+    "preview": "npm run build:example && npx serve dist-example"
+  },
+
+  "dependencies": {
+    "d3": "^7.8.5",
+    "regl": "^2.1.0"
+  },
+
+  "devDependencies": {
+    "parcel": "^2.9.0"
+  }
+}

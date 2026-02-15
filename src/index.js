@@ -1,0 +1,5 @@
+export { LayerType } from "./LayerType.js"
+export { Layer } from "./Layer.js"
+export { AxisRegistry, AXES, AXIS_UNITS } from "./AxisRegistry.js"
+export { Plot } from "./Plot.js"
+export { scatterLayerType } from "./ScatterLayer.js"
