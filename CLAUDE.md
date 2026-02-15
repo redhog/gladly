@@ -76,3 +76,17 @@ npm start
 - Axes use D3 scales with lazy initialization
 - Rendering uses dual surfaces: WebGL canvas + SVG overlay
 - Unit validation prevents incompatible data on same axis
+
+## Workflow Instructions for Claude Code
+
+**CRITICAL REQUIREMENTS:**
+
+1. **Never start or restart the dev server** - Do not run `npm start` or any commands that start/restart development servers
+2. **Never make changes directly** - Do not edit, write, or modify any files without explicit approval
+3. **Always present a plan first** - Before making any code changes:
+   - Analyze the request and existing code
+   - Present a clear plan of what changes are needed
+   - Ask for clarification if requirements are unclear
+   - Wait for explicit go-ahead before proceeding with modifications
+
+This ensures all changes are deliberate and aligned with project goals.

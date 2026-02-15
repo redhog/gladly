@@ -36,6 +36,7 @@ export class Plot {
 
   setAxisRegistry(axisRegistry) {
     this.axisRegistry = axisRegistry
+    this.originalDomains = {} // Store original domains for zoom
     this.setupAxisZoom()
   }
 
@@ -192,9 +193,14 @@ export class Plot {
         const scale = this.axisRegistry.getScale(axis)
         console.log(`Axis ${axis}:`, scale ? scale.domain() : "no scale")
         if (scale) {
+          // Store original domain on first zoom event
+          if (!this.originalDomains[axis]) {
+            this.originalDomains[axis] = scale.domain()
+          }
           const isY = axis.includes("y")
           const range = isY ? [this.plotHeight,0] : [0,this.plotWidth]
-          const tempScale = scaleLinear().domain(scale.domain()).range(range)
+          // Rescale from ORIGINAL domain, not current domain
+          const tempScale = scaleLinear().domain(this.originalDomains[axis]).range(range)
           const newDomain = isY ? t.rescaleY(tempScale).domain() : t.rescaleX(tempScale).domain()
           console.log(`  New domain: [${newDomain}]`)
           scale.domain(newDomain)
@@ -216,10 +222,15 @@ export class Plot {
       const axisScale = this.axisRegistry.getScale(axisName)
       if (!axisScale) return
       const zoomAxis = zoom().scaleExtent([0.5,50]).on("zoom", (event) => {
+        // Store original domain on first zoom event
+        if (!this.originalDomains[axisName]) {
+          this.originalDomains[axisName] = axisScale.domain()
+        }
         const t = event.transform
         const isY = axisName.includes("y")
         const range = isY ? [this.plotHeight,0] : [0,this.plotWidth]
-        const tempScale = scaleLinear().domain(axisScale.domain()).range(range)
+        // Rescale from ORIGINAL domain, not current domain
+        const tempScale = scaleLinear().domain(this.originalDomains[axisName]).range(range)
         const newDomain = isY ? t.rescaleY(tempScale).domain() : t.rescaleX(tempScale).domain()
         axisScale.domain(newDomain)
         this.render()
