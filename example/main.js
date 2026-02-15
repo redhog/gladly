@@ -170,11 +170,18 @@ for (let i = 0; i < N; i++) {
 // Data object (shared across all plots)
 const data = { x1, y1, v1, x2, y2, v2 }
 
-// Initial layer configuration
-const initialLayers = [
-  { "scatter-mv": { xData: "x1", yData: "y1", vData: "v1", xAxis: "xaxis_bottom", yAxis: "yaxis_left" } },
-  { "scatter-sa": { xData: "x2", yData: "y2", vData: "v2", xAxis: "xaxis_top", yAxis: "yaxis_right" } }
-]
+// Initial plot configuration
+const initialPlotConfig = {
+  layers: [
+    { "scatter-mv": { xData: "x1", yData: "y1", vData: "v1", xAxis: "xaxis_bottom", yAxis: "yaxis_left" } },
+    { "scatter-sa": { xData: "x2", yData: "y2", vData: "v2", xAxis: "xaxis_top", yAxis: "yaxis_right" } }
+  ],
+  axes: {
+    xaxis_bottom: [0, 10],
+    yaxis_left: [0, 5]
+    // xaxis_top and yaxis_right will be auto-calculated from data
+  }
+}
 
 const container = document.querySelector('.plot-panel')
 
@@ -182,28 +189,23 @@ const container = document.querySelector('.plot-panel')
 let currentPlot = null
 
 // Function to create/recreate the plot
-function createPlot(layersConfig) {
-  const plotConfig = {
+function createPlot(plotConfig) {
+  const config = {
     width: 800,
     height: 600,
     data,
-    layers: layersConfig,
-    axes: {
-      xaxis_bottom: [0, 10],
-      yaxis_left: [0, 5]
-      // xaxis_top and yaxis_right will be auto-calculated from data
-    }
+    plot: plotConfig
   }
 
   try {
     if (currentPlot) {
       // Update existing plot
-      currentPlot.update(plotConfig)
+      currentPlot.update(config)
     } else {
       // Create new plot
       currentPlot = new Plot({
         container,
-        ...plotConfig
+        ...config
       })
     }
 
@@ -222,7 +224,7 @@ function createPlot(layersConfig) {
 }
 
 // Create initial plot
-createPlot(initialLayers)
+createPlot(initialPlotConfig)
 
 // Get the schema from Plot
 const plotSchema = Plot.schema()
@@ -230,7 +232,7 @@ const plotSchema = Plot.schema()
 // Initialize JSON editor with the schema
 const editor = new JSONEditor(document.getElementById('editor-container'), {
   schema: plotSchema,
-  startval: initialLayers,
+  startval: initialPlotConfig,
   theme: 'html',
   iconlib: 'fontawesome4',
   disable_collapse: false,
@@ -248,8 +250,8 @@ editor.on('change', () => {
 
   if (errors.length === 0) {
     // Valid configuration - update the plot
-    const layersConfig = editor.getValue()
-    createPlot(layersConfig)
+    const plotConfig = editor.getValue()
+    createPlot(plotConfig)
   } else {
     // Show validation errors
     const errorMessages = errors.map(err => `${err.path}: ${err.message}`).join('<br>')
@@ -262,4 +264,4 @@ editor.on('change', () => {
 })
 
 // Log the schema for demonstration
-console.log("Layer schema:", JSON.stringify(plotSchema, null, 2))
+console.log("Plot schema:", JSON.stringify(plotSchema, null, 2))

@@ -266,14 +266,15 @@ this.axisRegistry  // AxisRegistry instance (created internally)
 **Constructor Parameters:**
 ```javascript
 {
-  canvas,          // HTMLCanvasElement
-  svg,             // SVGElement
+  container,       // HTMLElement - parent container
   width,           // number
   height,          // number
   margin,          // { top, right, bottom, left } - optional
-  data,            // object - arbitrary structure
-  layers,          // array - layer specifications
-  axes             // object - domain overrides (optional)
+  data,            // object - arbitrary structure (Float32Arrays)
+  plot: {          // plot configuration
+    layers,        // array - layer specifications
+    axes           // object - domain overrides (optional)
+  }
 }
 ```
 
@@ -314,7 +315,7 @@ this.axisRegistry  // AxisRegistry instance (created internally)
 1. Get all registered layer types
 2. For each type, get its schema via `layerType.schema()`
 3. Combine into composite schema using `oneOf`
-4. Return JSON Schema for layers array
+4. Return JSON Schema for plot configuration object (layers and axes)
 
 ---
 
@@ -330,14 +331,14 @@ this.axisRegistry  // AxisRegistry instance (created internally)
    └─> const data = { x, y, v, ... }
 
 3. User creates Plot with declarative config
-   new Plot({ container, width, height, data, layers, axes })
+   new Plot({ container, width, height, data, plot: { layers, axes } })
    │
    ├─> Plot creates canvas element and appends to container
    ├─> Plot creates SVG element and appends to container
    ├─> Plot initializes regl context
    ├─> Plot creates AxisRegistry internally
    │
-   ├─> Plot._processLayers(layers, data)
+   ├─> Plot._processLayers(plot.layers, data)
    │   │
    │   └─> For each { layerTypeName: parameters }:
    │       ├─> getLayerType(layerTypeName)
@@ -351,10 +352,10 @@ this.axisRegistry  // AxisRegistry instance (created internally)
    │       │   └─> Compile shaders, create GPU draw function
    │       └─> Store layer and draw command
    │
-   ├─> Plot._setDomains(axes)
+   ├─> Plot._setDomains(plot.axes)
    │   ├─> For each axis, collect all data points
    │   ├─> Calculate min/max from data
-   │   └─> Apply calculated domain or override from `axes` param
+   │   └─> Apply calculated domain or override from `plot.axes` param
    │
    ├─> Plot.initZoom()
    │   └─> Set up zoom/pan interactions
@@ -803,9 +804,11 @@ const plot = new Plot({
   width: 800,
   height: 600,
   data: { myX, myY },
-  layers: [
-    { mytype: { xData: "myX", yData: "myY" } }
-  ]
+  plot: {
+    layers: [
+      { mytype: { xData: "myX", yData: "myY" } }
+    ]
+  }
 })
 ```
 

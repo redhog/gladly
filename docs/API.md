@@ -27,12 +27,14 @@ const plot = new Plot({
   width: 800,
   height: 600,
   data: { x, y, v },
-  layers: [
-    { scatter: { xData: "x", yData: "y", vData: "v", xAxis: "xaxis_bottom", yAxis: "yaxis_left" } }
-  ],
-  axes: {
-    xaxis_bottom: [0, 60],
-    yaxis_left: [0, 50]
+  plot: {
+    layers: [
+      { scatter: { xData: "x", yData: "y", vData: "v", xAxis: "xaxis_bottom", yAxis: "yaxis_left" } }
+    ],
+    axes: {
+      xaxis_bottom: [0, 60],
+      yaxis_left: [0, 50]
+    }
   }
 })
 ```
@@ -109,12 +111,14 @@ const plot = new Plot({
   width: 800,
   height: 600,
   data: { x, y, v },  // Data object with arbitrary structure
-  layers: [
-    { scatter: { xData: "x", yData: "y", vData: "v" } }  // References data properties
-  ],
-  axes: {
-    xaxis_bottom: [0, 60],  // Optional: specify domain
-    yaxis_left: [0, 50]
+  plot: {
+    layers: [
+      { scatter: { xData: "x", yData: "y", vData: "v" } }  // References data properties
+    ],
+    axes: {
+      xaxis_bottom: [0, 60],  // Optional: specify domain
+      yaxis_left: [0, 50]
+    }
   }
 })
 ```
@@ -129,10 +133,12 @@ const plot = new Plot({
   width: 800,
   height: 600,
   data: { x, y, v },
-  layers: [
-    { scatter: { xData: "x", yData: "y", vData: "v" } }
-  ]
-  // No axes parameter - domains auto-calculated from data
+  plot: {
+    layers: [
+      { scatter: { xData: "x", yData: "y", vData: "v" } }
+    ]
+    // No axes parameter - domains auto-calculated from data
+  }
 })
 ```
 
@@ -144,14 +150,16 @@ const plot = new Plot({
   width: 800,
   height: 600,
   data: { x1, y1, v1, x2, y2, v2 },
-  layers: [
-    { scatter: { xData: "x1", yData: "y1", vData: "v1", xAxis: "xaxis_bottom", yAxis: "yaxis_left" } },
-    { scatter: { xData: "x2", yData: "y2", vData: "v2", xAxis: "xaxis_top", yAxis: "yaxis_right" } }
-  ],
-  axes: {
-    xaxis_bottom: [0, 10],
-    yaxis_left: [0, 5]
-    // xaxis_top and yaxis_right auto-calculated
+  plot: {
+    layers: [
+      { scatter: { xData: "x1", yData: "y1", vData: "v1", xAxis: "xaxis_bottom", yAxis: "yaxis_left" } },
+      { scatter: { xData: "x2", yData: "y2", vData: "v2", xAxis: "xaxis_top", yAxis: "yaxis_right" } }
+    ],
+    axes: {
+      xaxis_bottom: [0, 10],
+      yaxis_left: [0, 5]
+      // xaxis_top and yaxis_right auto-calculated
+    }
   }
 })
 ```
@@ -272,7 +280,7 @@ The main plotting container that manages WebGL rendering and SVG axes.
 
 **Constructor:**
 ```javascript
-new Plot({ container, width, height, margin, data, layers, axes })
+new Plot({ container, width, height, margin, data, plot: { layers, axes } })
 ```
 
 | Parameter | Type | Default | Description |
@@ -281,28 +289,33 @@ new Plot({ container, width, height, margin, data, layers, axes })
 | `width` | number | required | Plot width in pixels |
 | `height` | number | required | Plot height in pixels |
 | `margin` | object | `{top:60, right:60, bottom:60, left:60}` | Margins for axes |
-| `data` | object | `{}` | Data object with arbitrary structure |
-| `layers` | array | `[]` | Array of layer specifications |
-| `axes` | object | `{}` | Optional domain overrides for axes |
+| `data` | object | `{}` | Data object with arbitrary structure (Float32Arrays) |
+| `plot` | object | `{layers:[], axes:{}}` | Plot configuration containing layers and axes |
+| `plot.layers` | array | `[]` | Array of layer specifications |
+| `plot.axes` | object | `{}` | Optional domain overrides for axes |
 
 **Layer Specification Format:**
 
 Each layer is an object with a single key (the layer type name) mapping to parameters:
 
 ```javascript
-layers: [
-  { layerTypeName: { param1: value1, param2: value2, ... } }
-]
+plot: {
+  layers: [
+    { layerTypeName: { param1: value1, param2: value2, ... } }
+  ]
+}
 ```
 
 **Axes Parameter Format:**
 
 ```javascript
-axes: {
-  xaxis_bottom: [min, max],
-  xaxis_top: [min, max],
-  yaxis_left: [min, max],
-  yaxis_right: [min, max]
+plot: {
+  axes: {
+    xaxis_bottom: [min, max],
+    xaxis_top: [min, max],
+    yaxis_left: [min, max],
+    yaxis_right: [min, max]
+  }
 }
 ```
 
@@ -312,13 +325,13 @@ Omitted axes will have domains auto-calculated from data.
 
 | Method | Description |
 |--------|-------------|
-| `Plot.schema()` | Returns JSON Schema for the layers array based on registered layer types |
+| `Plot.schema()` | Returns JSON Schema for the plot configuration object (layers and axes) based on registered layer types |
 
 **Instance Methods:**
 
 | Method | Description |
 |--------|-------------|
-| `update({ width, height, margin, data, layers, axes })` | Updates the plot with new configuration. Clears and reinitializes the plot without recreating DOM elements. |
+| `update({ width, height, margin, data, plot: { layers, axes } })` | Updates the plot with new configuration. Clears and reinitializes the plot without recreating DOM elements. |
 | `render()` | Renders all layers and axes |
 | `renderAxes()` | Renders D3 axes on the SVG overlay |
 
@@ -472,9 +485,11 @@ const plot = new Plot({
   width: 800,
   height: 600,
   data: { x, y, v },
-  layers: [
-    { scatter: { xData: "x", yData: "y", vData: "v" } }
-  ]
+  plot: {
+    layers: [
+      { scatter: { xData: "x", yData: "y", vData: "v" } }
+    ]
+  }
 })
 ```
 
@@ -549,14 +564,16 @@ const plot = new Plot({
   width: 800,
   height: 600,
   data: { time, temp, pressure },
-  layers: [
-    { temperature: { xData: "time", yData: "temp", vData: "temp", xAxis: "xaxis_bottom", yAxis: "yaxis_left" } },
-    { pressure: { xData: "time", yData: "pressure", vData: "pressure", xAxis: "xaxis_bottom", yAxis: "yaxis_right" } }
-  ],
-  axes: {
-    xaxis_bottom: [0, 100],
-    yaxis_left: [0, 100],
-    yaxis_right: [0.1, 1000]  // Log scale
+  plot: {
+    layers: [
+      { temperature: { xData: "time", yData: "temp", vData: "temp", xAxis: "xaxis_bottom", yAxis: "yaxis_left" } },
+      { pressure: { xData: "time", yData: "pressure", vData: "pressure", xAxis: "xaxis_bottom", yAxis: "yaxis_right" } }
+    ],
+    axes: {
+      xaxis_bottom: [0, 100],
+      yaxis_left: [0, 100],
+      yaxis_right: [0.1, 1000]  // Log scale
+    }
   }
 })
 ```
@@ -583,10 +600,12 @@ const plot = new Plot({
   width: 800,
   height: 600,
   data: { x, y, v },
-  layers: [
-    { scatter: { xData: "x", yData: "y", vData: "v" } }
-  ]
-  // Domains auto-calculated
+  plot: {
+    layers: [
+      { scatter: { xData: "x", yData: "y", vData: "v" } }
+    ]
+    // Domains auto-calculated
+  }
 })
 
 // GPU handles rendering 100k points efficiently
@@ -637,12 +656,14 @@ const plot = new Plot({
       width: 800,
       height: 600,
       data: { x, y, v },
-      layers: [
-        { scatter: { xData: "x", yData: "y", vData: "v" } }
-      ],
-      axes: {
-        xaxis_bottom: [0, 100],
-        yaxis_left: [0, 50]
+      plot: {
+        layers: [
+          { scatter: { xData: "x", yData: "y", vData: "v" } }
+        ],
+        axes: {
+          xaxis_bottom: [0, 100],
+          yaxis_left: [0, 50]
+        }
       }
     })
   </script>

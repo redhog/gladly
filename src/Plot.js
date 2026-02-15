@@ -7,7 +7,7 @@ import { AXES, AXIS_UNITS, AxisRegistry } from "./AxisRegistry.js"
 import { getLayerType, getRegisteredLayerTypes } from "./LayerTypeRegistry.js"
 
 export class Plot {
-  constructor({ container, width, height, margin = { top: 60, right: 60, bottom: 60, left: 60 }, data = {}, layers = [], axes = {} }) {
+  constructor({ container, width, height, margin = { top: 60, right: 60, bottom: 60, left: 60 }, data = {}, plot: { layers = [], axes = {} } = {} }) {
     // Create canvas element
     this.canvas = document.createElement('canvas')
     this.canvas.width = width
@@ -61,7 +61,7 @@ export class Plot {
     this.render()
   }
 
-  update({ width, height, margin = { top: 60, right: 60, bottom: 60, left: 60 }, data = {}, layers = [], axes = {} }) {
+  update({ width, height, margin = { top: 60, right: 60, bottom: 60, left: 60 }, data = {}, plot: { layers = [], axes = {} } = {} }) {
     // Clean up existing regl context
     if (this.regl) {
       this.regl.destroy()
@@ -157,20 +157,55 @@ export class Plot {
 
     return {
       $schema: "https://json-schema.org/draft/2020-12/schema",
-      type: "array",
-      items: {
-        type: "object",
-        oneOf: layerTypes.map(typeName => {
-          const layerType = getLayerType(typeName)
-          return {
-            title: typeName,
-            properties: {
-              [typeName]: layerType.schema()
-            },
-            required: [typeName],
-            additionalProperties: false
+      type: "object",
+      properties: {
+        layers: {
+          type: "array",
+          items: {
+            type: "object",
+            oneOf: layerTypes.map(typeName => {
+              const layerType = getLayerType(typeName)
+              return {
+                title: typeName,
+                properties: {
+                  [typeName]: layerType.schema()
+                },
+                required: [typeName],
+                additionalProperties: false
+              }
+            })
           }
-        })
+        },
+        axes: {
+          type: "object",
+          properties: {
+            xaxis_bottom: {
+              type: "array",
+              items: { type: "number" },
+              minItems: 2,
+              maxItems: 2
+            },
+            xaxis_top: {
+              type: "array",
+              items: { type: "number" },
+              minItems: 2,
+              maxItems: 2
+            },
+            yaxis_left: {
+              type: "array",
+              items: { type: "number" },
+              minItems: 2,
+              maxItems: 2
+            },
+            yaxis_right: {
+              type: "array",
+              items: { type: "number" },
+              minItems: 2,
+              maxItems: 2
+            }
+          },
+          additionalProperties: false
+        }
       }
     }
   }
