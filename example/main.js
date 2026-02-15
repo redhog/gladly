@@ -41,8 +41,8 @@ const scatterLayer2 = new Layer({
 const canvas = document.getElementById("canvas")
 const svg = document.getElementById("svg")
 
-const plot = new Plot({ canvas, svg, width:800, height:600 })
-const axisRegistry = new AxisRegistry(800,600)
+const plot = new Plot({ canvas, svg, width: 800, height: 600 })
+const axisRegistry = new AxisRegistry(plot.plotWidth, plot.plotHeight)
 plot.setAxisRegistry(axisRegistry)
 
 plot.addLayer(scatterLayer1)

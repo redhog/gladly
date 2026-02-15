@@ -4,9 +4,15 @@
     <meta charset="utf-8">
     <title>GPU MultiAxis Plot Example</title>
     <style>
-      body { margin:0; }
-      canvas { border:1px solid black; display:block; }
-      svg { position:absolute; top:0; left:0; width:800px; height:600px; pointer-events:none; }
+      body { margin:0; position: relative; }
+      canvas { border:1px solid black; display:block; position: absolute; top: 0; left: 0; z-index: 1; }
+      svg { position:absolute; top:0; left:0; width:800px; height:600px; z-index: 2; }
+
+      /* Axis styling */
+      svg .domain { stroke: black; stroke-width: 2; fill: none; }
+      svg .tick line { stroke: black; stroke-width: 1; }
+      svg .tick text { fill: black; font-size: 12px; font-family: sans-serif; }
+      svg g { pointer-events: all; }
     </style>
   </head>
   <body>

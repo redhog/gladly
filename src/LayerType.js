@@ -17,6 +17,7 @@ export class LayerType {
         xDomain: regl.prop("xDomain"),
         yDomain: regl.prop("yDomain")
       },
+      viewport: regl.prop("viewport"),
       primitive: "points",
       count: regl.prop("count")
     })
