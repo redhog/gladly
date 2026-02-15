@@ -23,8 +23,7 @@ const v = new Float32Array([0.2, 0.4, 0.6, 0.8, 1.0])
 
 // 3. Create plot declaratively
 const plot = new Plot({
-  canvas: document.getElementById("canvas"),
-  svg: document.getElementById("svg"),
+  container: document.getElementById("plot-container"),
   width: 800,
   height: 600,
   data: { x, y, v },
@@ -40,9 +39,10 @@ const plot = new Plot({
 
 **HTML Setup:**
 ```html
-<canvas id="canvas" width="800" height="600"></canvas>
-<svg id="svg" width="800" height="600" style="position: absolute; pointer-events: none;"></svg>
+<div id="plot-container" style="position: relative; width: 800px; height: 600px;"></div>
 ```
+
+The Plot will automatically create and manage the canvas and SVG elements inside the container.
 
 ---
 
@@ -105,8 +105,7 @@ const v = new Float32Array([0.2, 0.4, 0.6, 0.8, 1.0])
 
 // Create plot
 const plot = new Plot({
-  canvas: document.getElementById("canvas"),
-  svg: document.getElementById("svg"),
+  container: document.getElementById("plot-container"),
   width: 800,
   height: 600,
   data: { x, y, v },  // Data object with arbitrary structure
@@ -126,8 +125,7 @@ If you omit the `axes` parameter (or omit specific axes), domains are automatica
 
 ```javascript
 const plot = new Plot({
-  canvas,
-  svg,
+  container: document.getElementById("plot-container"),
   width: 800,
   height: 600,
   data: { x, y, v },
@@ -142,8 +140,7 @@ const plot = new Plot({
 
 ```javascript
 const plot = new Plot({
-  canvas,
-  svg,
+  container: document.getElementById("plot-container"),
   width: 800,
   height: 600,
   data: { x1, y1, v1, x2, y2, v2 },
@@ -275,13 +272,12 @@ The main plotting container that manages WebGL rendering and SVG axes.
 
 **Constructor:**
 ```javascript
-new Plot({ canvas, svg, width, height, margin, data, layers, axes })
+new Plot({ container, width, height, margin, data, layers, axes })
 ```
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `canvas` | HTMLCanvasElement | required | Canvas element for GPU rendering |
-| `svg` | SVGElement | required | SVG element for rendering axes |
+| `container` | HTMLElement | required | Container element (e.g., div) where canvas and SVG will be created |
 | `width` | number | required | Plot width in pixels |
 | `height` | number | required | Plot height in pixels |
 | `margin` | object | `{top:60, right:60, bottom:60, left:60}` | Margins for axes |
@@ -322,6 +318,7 @@ Omitted axes will have domains auto-calculated from data.
 
 | Method | Description |
 |--------|-------------|
+| `update({ width, height, margin, data, layers, axes })` | Updates the plot with new configuration. Clears and reinitializes the plot without recreating DOM elements. |
 | `render()` | Renders all layers and axes |
 | `renderAxes()` | Renders D3 axes on the SVG overlay |
 
@@ -471,7 +468,9 @@ import { registerLayerType, scatterLayerType } from './src/index.js'
 registerLayerType("scatter", scatterLayerType)
 
 const plot = new Plot({
-  canvas, svg, width: 800, height: 600,
+  container: document.getElementById("plot-container"),
+  width: 800,
+  height: 600,
   data: { x, y, v },
   layers: [
     { scatter: { xData: "x", yData: "y", vData: "v" } }
@@ -546,7 +545,9 @@ registerLayerType("temperature", tempType)
 registerLayerType("pressure", pressureType)
 
 const plot = new Plot({
-  canvas, svg, width: 800, height: 600,
+  container: document.getElementById("plot-container"),
+  width: 800,
+  height: 600,
   data: { time, temp, pressure },
   layers: [
     { temperature: { xData: "time", yData: "temp", vData: "temp", xAxis: "xaxis_bottom", yAxis: "yaxis_left" } },
@@ -578,7 +579,9 @@ for (let i = 0; i < N; i++) {
 registerLayerType("scatter", scatterLayerType)
 
 const plot = new Plot({
-  canvas, svg, width: 800, height: 600,
+  container: document.getElementById("plot-container"),
+  width: 800,
+  height: 600,
   data: { x, y, v },
   layers: [
     { scatter: { xData: "x", yData: "y", vData: "v" } }
@@ -630,8 +633,7 @@ const plot = new Plot({
 
     // Create plot with declarative API
     const plot = new Plot({
-      canvas: document.getElementById("canvas"),
-      svg: document.getElementById("svg"),
+      container: document.getElementById("plot-container"),
       width: 800,
       height: 600,
       data: { x, y, v },

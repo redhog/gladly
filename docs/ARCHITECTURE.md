@@ -330,10 +330,11 @@ this.axisRegistry  // AxisRegistry instance (created internally)
    └─> const data = { x, y, v, ... }
 
 3. User creates Plot with declarative config
-   new Plot({ canvas, svg, width, height, data, layers, axes })
+   new Plot({ container, width, height, data, layers, axes })
    │
+   ├─> Plot creates canvas element and appends to container
+   ├─> Plot creates SVG element and appends to container
    ├─> Plot initializes regl context
-   ├─> Plot creates D3 SVG selection
    ├─> Plot creates AxisRegistry internally
    │
    ├─> Plot._processLayers(layers, data)
@@ -798,7 +799,9 @@ registerLayerType("mytype", myLayerType)
 
 ```javascript
 const plot = new Plot({
-  canvas, svg, width: 800, height: 600,
+  container: document.getElementById("plot-container"),
+  width: 800,
+  height: 600,
   data: { myX, myY },
   layers: [
     { mytype: { xData: "myX", yData: "myY" } }

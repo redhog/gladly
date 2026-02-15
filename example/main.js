@@ -176,39 +176,36 @@ const initialLayers = [
   { "scatter-sa": { xData: "x2", yData: "y2", vData: "v2", xAxis: "xaxis_top", yAxis: "yaxis_right" } }
 ]
 
-const canvas = document.getElementById("canvas")
-const svg = document.getElementById("svg")
+const container = document.querySelector('.plot-panel')
 
 // Current plot instance
 let currentPlot = null
 
 // Function to create/recreate the plot
 function createPlot(layersConfig) {
-  // Clear previous plot if exists
-  if (currentPlot) {
-    // Clear canvas
-    const ctx = canvas.getContext('2d')
-    ctx.clearRect(0, 0, canvas.width, canvas.height)
-
-    // Clear SVG
-    svg.innerHTML = ''
+  const plotConfig = {
+    width: 800,
+    height: 600,
+    data,
+    layers: layersConfig,
+    axes: {
+      xaxis_bottom: [0, 10],
+      yaxis_left: [0, 5]
+      // xaxis_top and yaxis_right will be auto-calculated from data
+    }
   }
 
   try {
-    // Create new plot
-    currentPlot = new Plot({
-      canvas,
-      svg,
-      width: 800,
-      height: 600,
-      data,
-      layers: layersConfig,
-      axes: {
-        xaxis_bottom: [0, 10],
-        yaxis_left: [0, 5]
-        // xaxis_top and yaxis_right will be auto-calculated from data
-      }
-    })
+    if (currentPlot) {
+      // Update existing plot
+      currentPlot.update(plotConfig)
+    } else {
+      // Create new plot
+      currentPlot = new Plot({
+        container,
+        ...plotConfig
+      })
+    }
 
     // Clear any validation errors
     document.getElementById('validation-errors').innerHTML = ''

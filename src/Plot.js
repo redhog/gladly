@@ -7,14 +7,42 @@ import { AXES, AXIS_UNITS, AxisRegistry } from "./AxisRegistry.js"
 import { getLayerType, getRegisteredLayerTypes } from "./LayerTypeRegistry.js"
 
 export class Plot {
-  constructor({ canvas, svg, width, height, margin = { top: 60, right: 60, bottom: 60, left: 60 }, data = {}, layers = [], axes = {} }) {
-    this.regl = reglInit({ canvas })
-    this.svg = d3.select(svg)
+  constructor({ container, width, height, margin = { top: 60, right: 60, bottom: 60, left: 60 }, data = {}, layers = [], axes = {} }) {
+    // Create canvas element
+    this.canvas = document.createElement('canvas')
+    this.canvas.width = width
+    this.canvas.height = height
+    this.canvas.style.display = 'block'
+    this.canvas.style.position = 'absolute'
+    this.canvas.style.top = '0'
+    this.canvas.style.left = '0'
+    this.canvas.style.zIndex = '1'
+    container.appendChild(this.canvas)
+
+    // Create SVG element
+    this.svg = d3.select(container)
+      .append('svg')
+      .attr('width', width)
+      .attr('height', height)
+      .style('position', 'absolute')
+      .style('top', '0')
+      .style('left', '0')
+      .style('z-index', '2')
+      .style('user-select', 'none')
+
     this.width = width
     this.height = height
     this.margin = margin
     this.plotWidth = width - margin.left - margin.right
     this.plotHeight = height - margin.top - margin.bottom
+
+    this._initialize(data, layers, axes)
+  }
+
+  _initialize(data, layers, axes) {
+    // Initialize regl
+    this.regl = reglInit({ canvas: this.canvas })
+
     this.layers = []
 
     // SVG groups for axes
@@ -31,6 +59,32 @@ export class Plot {
 
     this.initZoom()
     this.render()
+  }
+
+  update({ width, height, margin = { top: 60, right: 60, bottom: 60, left: 60 }, data = {}, layers = [], axes = {} }) {
+    // Clean up existing regl context
+    if (this.regl) {
+      this.regl.destroy()
+    }
+
+    // Clear SVG content
+    this.svg.selectAll('*').remove()
+
+    // Update dimensions if changed
+    if (width !== this.width || height !== this.height) {
+      this.width = width
+      this.height = height
+      this.canvas.width = width
+      this.canvas.height = height
+      this.svg.attr('width', width).attr('height', height)
+    }
+
+    this.margin = margin
+    this.plotWidth = width - margin.left - margin.right
+    this.plotHeight = height - margin.top - margin.bottom
+
+    // Reinitialize everything
+    this._initialize(data, layers, axes)
   }
 
   _processLayers(layersConfig, data) {
