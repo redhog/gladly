@@ -5,6 +5,8 @@ export const AXES = ["xaxis_bottom","xaxis_top","yaxis_left","yaxis_right"]
 export const AXIS_UNITS = {
   meters: { label: "Meters", scale: "linear" },
   volts: { label: "Volts", scale: "linear" },
+  "m/s": { label: "m/s", scale: "linear" },
+  ampere: { label: "Ampere", scale: "linear" },
   log10: { label: "Log10", scale: "log" }
 }
 
