@@ -1,4 +1,4 @@
-import { Plot, Layer, AxisRegistry, LayerType } from "../src/index.js"
+import { Plot, LayerType, Layer, registerLayerType } from "../src/index.js"
 
 // Helper to create property accessor (repl regl.prop which may not be available)
 const prop = (path) => (context, props) => {
@@ -8,7 +8,7 @@ const prop = (path) => (context, props) => {
   return value
 }
 
-// LayerType 1: meters (x) vs volts (y) - blue to red colormap
+// Define LayerType 1: meters (x) vs volts (y) - blue to red colormap
 const layerType1 = new LayerType({
   name: "scatter-mv",
   xUnit: "meters",
@@ -37,12 +37,33 @@ const layerType1 = new LayerType({
   frag: `
     precision mediump float;
     varying float value;
-    vec3 colormap(float t){ return vec3(t, 0.0, 1.0-t); }  // Blue to red
+    vec3 colormap(float t){ return vec3(t, 0.0, 1.0-t); }
     void main(){ gl_FragColor=vec4(colormap(value), 1.0); }
-  `
+  `,
+  schema: () => ({
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    type: "object",
+    properties: {
+      xData: { type: "string" },
+      yData: { type: "string" },
+      vData: { type: "string" },
+      xAxis: { type: "string", default: "xaxis_bottom" },
+      yAxis: { type: "string", default: "yaxis_left" }
+    },
+    required: ["xData", "yData", "vData"]
+  }),
+  createLayer: function(parameters, data) {
+    const { xData, yData, vData, xAxis = "xaxis_bottom", yAxis = "yaxis_left" } = parameters
+    return new Layer({
+      type: this,
+      data: { x: data[xData], y: data[yData], v: data[vData] },
+      xAxis,
+      yAxis
+    })
+  }
 })
 
-// LayerType 2: m/s (x) vs ampere (y) - green to yellow colormap
+// Define LayerType 2: m/s (x) vs ampere (y) - green to yellow colormap
 const layerType2 = new LayerType({
   name: "scatter-sa",
   xUnit: "m/s",
@@ -71,65 +92,80 @@ const layerType2 = new LayerType({
   frag: `
     precision mediump float;
     varying float value;
-    vec3 colormap(float t){ return vec3(0.0, 0.5+t*0.5, 1.0-t); }  // Green to yellow
+    vec3 colormap(float t){ return vec3(0.0, 0.5+t*0.5, 1.0-t); }
     void main(){ gl_FragColor=vec4(colormap(value), 1.0); }
-  `
+  `,
+  schema: () => ({
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    type: "object",
+    properties: {
+      xData: { type: "string" },
+      yData: { type: "string" },
+      vData: { type: "string" },
+      xAxis: { type: "string", default: "xaxis_bottom" },
+      yAxis: { type: "string", default: "yaxis_left" }
+    },
+    required: ["xData", "yData", "vData"]
+  }),
+  createLayer: function(parameters, data) {
+    const { xData, yData, vData, xAxis = "xaxis_bottom", yAxis = "yaxis_left" } = parameters
+    return new Layer({
+      type: this,
+      data: { x: data[xData], y: data[yData], v: data[vData] },
+      xAxis,
+      yAxis
+    })
+  }
 })
+
+// Register layer types
+registerLayerType("scatter-mv", layerType1)
+registerLayerType("scatter-sa", layerType2)
 
 const N = 500
 
 // First sine curve: meters (0-10) vs volts (0-5)
-// y = 2.5 + 2*sin(x) + random error
 const x1 = new Float32Array(N)
 const y1 = new Float32Array(N)
 const v1 = new Float32Array(N)
 for (let i = 0; i < N; i++) {
-  const xVal = (i / N) * 10  // 0 to 10 meters
+  const xVal = (i / N) * 10
   x1[i] = xVal
-  y1[i] = 2.5 + 2 * Math.sin(xVal * 0.8) + (Math.random() - 0.5) * 0.5  // 0-5 volts range
-  v1[i] = (Math.sin(xVal * 2) + 1) / 2  // Color: sin with 2x frequency, mapped to [0,1]
+  y1[i] = 2.5 + 2 * Math.sin(xVal * 0.8) + (Math.random() - 0.5) * 0.5
+  v1[i] = (Math.sin(xVal * 2) + 1) / 2
 }
 
 // Second sine curve: m/s (0-100) vs ampere (10-50)
-// y = 30 + 15*sin(x) + random error
 const x2 = new Float32Array(N)
 const y2 = new Float32Array(N)
 const v2 = new Float32Array(N)
 for (let i = 0; i < N; i++) {
-  const xVal = (i / N) * 100  // 0 to 100 m/s
+  const xVal = (i / N) * 100
   x2[i] = xVal
-  y2[i] = 30 + 15 * Math.sin(xVal * 0.1) + (Math.random() - 0.5) * 2  // 10-50 ampere range
-  v2[i] = (Math.cos(xVal * 0.15) + 1) / 2  // Color: cos, mapped to [0,1]
+  y2[i] = 30 + 15 * Math.sin(xVal * 0.1) + (Math.random() - 0.5) * 2
+  v2[i] = (Math.cos(xVal * 0.15) + 1) / 2
 }
-
-const layer1 = new Layer({
-  type: layerType1,
-  data: {x: x1, y: y1, v: v1},
-  xAxis: "xaxis_bottom",  // Bottom axis
-  yAxis: "yaxis_left"     // Left axis
-})
-
-const layer2 = new Layer({
-  type: layerType2,
-  data: {x: x2, y: y2, v: v2},
-  xAxis: "xaxis_top",     // Top axis
-  yAxis: "yaxis_right"    // Right axis
-})
 
 const canvas = document.getElementById("canvas")
 const svg = document.getElementById("svg")
 
-const plot = new Plot({ canvas, svg, width: 800, height: 600 })
-const axisRegistry = new AxisRegistry(plot.plotWidth, plot.plotHeight)
-plot.setAxisRegistry(axisRegistry)
+// Create plot with declarative API
+const plot = new Plot({
+  canvas,
+  svg,
+  width: 800,
+  height: 600,
+  data: { x1, y1, v1, x2, y2, v2 },
+  layers: [
+    { "scatter-mv": { xData: "x1", yData: "y1", vData: "v1", xAxis: "xaxis_bottom", yAxis: "yaxis_left" } },
+    { "scatter-sa": { xData: "x2", yData: "y2", vData: "v2", xAxis: "xaxis_top", yAxis: "yaxis_right" } }
+  ],
+  axes: {
+    xaxis_bottom: [0, 10],
+    yaxis_left: [0, 5]
+    // xaxis_top and yaxis_right will be auto-calculated from data
+  }
+})
 
-plot.addLayer(layer1)
-plot.addLayer(layer2)
-
-// Set initial domains for all four axes
-axisRegistry.getScale("xaxis_bottom").domain([0, 10])      // meters
-axisRegistry.getScale("yaxis_left").domain([0, 5])         // volts
-axisRegistry.getScale("xaxis_top").domain([0, 100])        // m/s
-axisRegistry.getScale("yaxis_right").domain([10, 50])      // ampere
-
-plot.render()
+// Log the schema for demonstration
+console.log("Layer schema:", JSON.stringify(Plot.schema(), null, 2))

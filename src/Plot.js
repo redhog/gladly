@@ -3,10 +3,11 @@ import * as d3 from "d3-selection"
 import { scaleLinear } from "d3-scale"
 import { axisBottom, axisTop, axisLeft, axisRight } from "d3-axis"
 import { zoom, zoomIdentity } from "d3-zoom"
-import { AXES, AXIS_UNITS } from "./AxisRegistry.js"
+import { AXES, AXIS_UNITS, AxisRegistry } from "./AxisRegistry.js"
+import { getLayerType, getRegisteredLayerTypes } from "./LayerTypeRegistry.js"
 
 export class Plot {
-  constructor({ canvas, svg, width, height, margin = { top: 60, right: 60, bottom: 60, left: 60 } }) {
+  constructor({ canvas, svg, width, height, margin = { top: 60, right: 60, bottom: 60, left: 60 }, data = {}, layers = [], axes = {} }) {
     this.regl = reglInit({ canvas })
     this.svg = d3.select(svg)
     this.width = width
@@ -19,19 +20,104 @@ export class Plot {
     // SVG groups for axes
     AXES.forEach(a => this.svg.append("g").attr("class", a))
 
-    this.axisRegistry = null
+    // Create AxisRegistry internally
+    this.axisRegistry = new AxisRegistry(this.plotWidth, this.plotHeight)
+
+    // Process layers from declarative configuration
+    this._processLayers(layers, data)
+
+    // Auto-calculate domains and apply overrides
+    this._setDomains(axes)
+
     this.initZoom()
+    this.render()
   }
 
-  setAxisRegistry(axisRegistry) {
-    this.axisRegistry = axisRegistry
+  _processLayers(layersConfig, data) {
+    for (const layerSpec of layersConfig) {
+      // Each layerSpec is an object with a single key-value pair: {layerTypeName: parameters}
+      const entries = Object.entries(layerSpec)
+      if (entries.length !== 1) {
+        throw new Error("Each layer specification must have exactly one layer type key")
+      }
+
+      const [layerTypeName, parameters] = entries[0]
+      const layerType = getLayerType(layerTypeName)
+
+      // Create the layer using the layer type's factory method
+      const layer = layerType.createLayer(parameters, data)
+
+      // Register axes with the AxisRegistry
+      this.axisRegistry.ensureAxis(layer.xAxis, layer.type.xUnit)
+      this.axisRegistry.ensureAxis(layer.yAxis, layer.type.yUnit)
+
+      // Create the draw command
+      layer.draw = layer.type.createDrawCommand(this.regl)
+
+      this.layers.push(layer)
+    }
   }
 
-  addLayer(layer) {
-    const xScale = this.axisRegistry.ensureAxis(layer.xAxis, layer.type.xUnit)
-    const yScale = this.axisRegistry.ensureAxis(layer.yAxis, layer.type.yUnit)
-    layer.draw = layer.type.createDrawCommand(this.regl)
-    this.layers.push(layer)
+  _setDomains(axesOverrides) {
+    // Auto-calculate domain for each axis from layer data
+    const autoDomains = {}
+
+    for (const axis of AXES) {
+      const layersUsingAxis = this.layers.filter(l =>
+        l.xAxis === axis || l.yAxis === axis
+      )
+
+      if (layersUsingAxis.length === 0) continue
+
+      let min = Infinity
+      let max = -Infinity
+
+      for (const layer of layersUsingAxis) {
+        const isXAxis = layer.xAxis === axis
+        const dataArray = isXAxis ? layer.data.x : layer.data.y
+
+        for (let i = 0; i < dataArray.length; i++) {
+          const val = dataArray[i]
+          if (val < min) min = val
+          if (val > max) max = val
+        }
+      }
+
+      autoDomains[axis] = [min, max]
+    }
+
+    // Apply domains (use override if provided, otherwise use auto-calculated)
+    for (const axis of AXES) {
+      const scale = this.axisRegistry.getScale(axis)
+      if (scale) {
+        const domain = axesOverrides[axis] || autoDomains[axis]
+        if (domain) {
+          scale.domain(domain)
+        }
+      }
+    }
+  }
+
+  static schema() {
+    const layerTypes = getRegisteredLayerTypes()
+
+    return {
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      type: "array",
+      items: {
+        type: "object",
+        oneOf: layerTypes.map(typeName => {
+          const layerType = getLayerType(typeName)
+          return {
+            properties: {
+              [typeName]: layerType.schema()
+            },
+            required: [typeName],
+            additionalProperties: false
+          }
+        })
+      }
+    }
   }
 
   renderAxes() {

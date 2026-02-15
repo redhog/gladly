@@ -4,6 +4,46 @@
 
 Gladly is a GPU-accelerated multi-axis plotting library that uses WebGL (via [regl](https://github.com/regl-project/regl)) for high-performance data rendering and [D3.js](https://d3js.org/) for interactive axes and zoom controls.
 
+The library features a **declarative API** where you register layer types once and then create plots by specifying data and layer configurations.
+
+---
+
+## Quick Start
+
+```javascript
+import { Plot, registerLayerType, scatterLayerType } from './src/index.js'
+
+// 1. Register layer types (once at startup)
+registerLayerType("scatter", scatterLayerType)
+
+// 2. Prepare data as Float32Arrays
+const x = new Float32Array([10, 20, 30, 40, 50])
+const y = new Float32Array([15, 25, 35, 25, 45])
+const v = new Float32Array([0.2, 0.4, 0.6, 0.8, 1.0])
+
+// 3. Create plot declaratively
+const plot = new Plot({
+  canvas: document.getElementById("canvas"),
+  svg: document.getElementById("svg"),
+  width: 800,
+  height: 600,
+  data: { x, y, v },
+  layers: [
+    { scatter: { xData: "x", yData: "y", vData: "v", xAxis: "xaxis_bottom", yAxis: "yaxis_left" } }
+  ],
+  axes: {
+    xaxis_bottom: [0, 60],
+    yaxis_left: [0, 50]
+  }
+})
+```
+
+**HTML Setup:**
+```html
+<canvas id="canvas" width="800" height="600"></canvas>
+<svg id="svg" width="800" height="600" style="position: absolute; pointer-events: none;"></svg>
+```
+
 ---
 
 ## Data Model
@@ -15,11 +55,14 @@ A **LayerType** defines how data is visualized. Each LayerType specifies:
 - **X-axis and Y-axis units** - Each axis has a unit (e.g., "meters", "volts", "log10")
 - **GLSL shaders** - Vertex and fragment shaders that define how data is rendered on the GPU
 - **Data attributes** - Which fields from your data are passed to the shaders
+- **Schema** - JSON Schema definition for layer parameters
+- **Factory method** - How to create a layer from parameters and data
 
 ### Layer
 
-A **Layer** is an instance of a LayerType with specific data. Each layer has:
+A **Layer** is an instance of a LayerType with specific data. Layers are created automatically by the Plot constructor from your declarative configuration.
 
+Each layer has:
 - **A LayerType** - Which defines how to render the data
 - **Data** - Type-specific data in typed arrays (always `Float32Array`)
 - **Axis assignment** - Which axes to use (e.g., "xaxis_bottom", "yaxis_left")
@@ -43,66 +86,88 @@ const badData = {
 }
 ```
 
-### Implementation in GLSL
-
-LayerTypes are implemented as GLSL shaders that run on the GPU. The library automatically provides:
-- **Uniforms**: `xDomain` (vec2), `yDomain` (vec2), `count` (int)
-- **Attributes**: Your data arrays (x, y, v, etc.)
-
 ---
 
 ## Making a Plot
 
-Here's a minimal example of creating a scatter plot:
+### Basic Usage
 
 ```javascript
-import { Plot, Layer, AxisRegistry, scatterLayerType } from './src/index.js'
+import { Plot, registerLayerType, scatterLayerType } from './src/index.js'
 
-// 1. Prepare data as Float32Arrays
+// Register the scatter layer type
+registerLayerType("scatter", scatterLayerType)
+
+// Prepare data
 const x = new Float32Array([10, 20, 30, 40, 50])
 const y = new Float32Array([15, 25, 35, 25, 45])
 const v = new Float32Array([0.2, 0.4, 0.6, 0.8, 1.0])
 
-// 2. Create a layer with a LayerType (scatterLayerType)
-const layer = new Layer({
-  type: scatterLayerType,
-  data: { x, y, v },
-  xAxis: "xaxis_bottom",
-  yAxis: "yaxis_left"
+// Create plot
+const plot = new Plot({
+  canvas: document.getElementById("canvas"),
+  svg: document.getElementById("svg"),
+  width: 800,
+  height: 600,
+  data: { x, y, v },  // Data object with arbitrary structure
+  layers: [
+    { scatter: { xData: "x", yData: "y", vData: "v" } }  // References data properties
+  ],
+  axes: {
+    xaxis_bottom: [0, 60],  // Optional: specify domain
+    yaxis_left: [0, 50]
+  }
 })
-
-// 3. Set up the plot container
-const canvas = document.getElementById("canvas")
-const svg = document.getElementById("svg")
-const plot = new Plot({ canvas, svg, width: 800, height: 600 })
-
-// 4. Create axis registry and attach to plot
-const axisRegistry = new AxisRegistry(800, 600)
-plot.setAxisRegistry(axisRegistry)
-
-// 5. Add layer and set axis domains
-plot.addLayer(layer)
-axisRegistry.getScale("xaxis_bottom").domain([0, 60])
-axisRegistry.getScale("yaxis_left").domain([0, 50])
-
-// 6. Render
-plot.render()
 ```
 
-**HTML Setup:**
-```html
-<canvas id="canvas" width="800" height="600"></canvas>
-<svg id="svg" width="800" height="600" style="position: absolute; pointer-events: none;"></svg>
+### Auto Domain Calculation
+
+If you omit the `axes` parameter (or omit specific axes), domains are automatically calculated from the data:
+
+```javascript
+const plot = new Plot({
+  canvas,
+  svg,
+  width: 800,
+  height: 600,
+  data: { x, y, v },
+  layers: [
+    { scatter: { xData: "x", yData: "y", vData: "v" } }
+  ]
+  // No axes parameter - domains auto-calculated from data
+})
+```
+
+### Multi-Layer Plot
+
+```javascript
+const plot = new Plot({
+  canvas,
+  svg,
+  width: 800,
+  height: 600,
+  data: { x1, y1, v1, x2, y2, v2 },
+  layers: [
+    { scatter: { xData: "x1", yData: "y1", vData: "v1", xAxis: "xaxis_bottom", yAxis: "yaxis_left" } },
+    { scatter: { xData: "x2", yData: "y2", vData: "v2", xAxis: "xaxis_top", yAxis: "yaxis_right" } }
+  ],
+  axes: {
+    xaxis_bottom: [0, 10],
+    yaxis_left: [0, 5]
+    // xaxis_top and yaxis_right auto-calculated
+  }
+})
 ```
 
 ---
 
 ## Making a LayerType
 
-To create a custom LayerType, define it with custom GLSL shaders:
+To create a custom LayerType, define it with custom GLSL shaders, a schema, and a factory method:
 
 ```javascript
-import { LayerType } from './src/index.js'
+import { LayerType, Layer } from './src/index.js'
+import { AXES } from './src/index.js'
 
 const redDotsType = new LayerType({
   name: "red_dots",
@@ -116,11 +181,9 @@ const redDotsType = new LayerType({
     uniform vec2 xDomain, yDomain;
 
     void main() {
-      // Normalize to [-1, 1] for GPU
-      float xNorm = (x - xDomain[0]) / (xDomain[1] - xDomain[0]) * 2.0 - 1.0;
-      float yNorm = (y - yDomain[0]) / (yDomain[1] - yDomain[0]) * 2.0 - 1.0;
-
-      gl_Position = vec4(xNorm, yNorm, 0, 1);
+      float nx = (x - xDomain.x)/(xDomain.y-xDomain.x);
+      float ny = (y - yDomain.x)/(yDomain.y-yDomain.x);
+      gl_Position = vec4(nx*2.0-1.0, ny*2.0-1.0, 0, 1);
       gl_PointSize = 6.0;
     }
   `,
@@ -128,7 +191,6 @@ const redDotsType = new LayerType({
   // Fragment shader: define color
   frag: `
     precision mediump float;
-
     void main() {
       gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);  // Red
     }
@@ -136,23 +198,58 @@ const redDotsType = new LayerType({
 
   // Map data fields to shader attributes
   attributes: {
-    x: (context, props) => props.data.x,
-    y: (context, props) => props.data.y
+    x: { buffer: (context, props) => props.data.x },
+    y: { buffer: (context, props) => props.data.y }
+  },
+
+  // JSON Schema for layer parameters
+  schema: () => ({
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    type: "object",
+    properties: {
+      xData: { type: "string", description: "Property name for x coordinates" },
+      yData: { type: "string", description: "Property name for y coordinates" },
+      xAxis: {
+        type: "string",
+        enum: AXES.filter(a => a.includes("x")),
+        default: "xaxis_bottom"
+      },
+      yAxis: {
+        type: "string",
+        enum: AXES.filter(a => a.includes("y")),
+        default: "yaxis_left"
+      }
+    },
+    required: ["xData", "yData"]
+  }),
+
+  // Factory method to create layers from parameters and data
+  createLayer: function(parameters, data) {
+    const { xData, yData, xAxis = "xaxis_bottom", yAxis = "yaxis_left" } = parameters
+
+    return new Layer({
+      type: this,
+      data: {
+        x: data[xData],
+        y: data[yData]
+      },
+      xAxis,
+      yAxis
+    })
   }
 })
 
-// Use the custom LayerType
-const layer = new Layer({
-  type: redDotsType,
-  data: { x, y }
-})
+// Register the layer type
+import { registerLayerType } from './src/index.js'
+registerLayerType("red_dots", redDotsType)
 ```
 
 **Key Points:**
-- **Units**: `xUnit` and `yUnit` must match one of: "meters", "volts", "log10"
+- **Units**: `xUnit` and `yUnit` must match one of: "meters", "volts", "m/s", "ampere", "log10"
 - **Uniforms**: `xDomain` and `yDomain` are automatically provided by the library
 - **Attributes**: Map to your data fields using accessor functions
-- **Coordinate normalization**: Transform from data coordinates to GPU clip space [-1, 1]
+- **Schema**: Returns a JSON Schema (Draft 2020-12) defining expected parameters
+- **createLayer**: Extracts data from the data object and creates a Layer instance
 
 ---
 
@@ -165,7 +262,7 @@ npm install regl d3
 Then import Gladly components:
 
 ```javascript
-import { Plot, Layer, LayerType, AxisRegistry, scatterLayerType } from './src/index.js'
+import { Plot, LayerType, registerLayerType, scatterLayerType } from './src/index.js'
 ```
 
 ---
@@ -178,32 +275,113 @@ The main plotting container that manages WebGL rendering and SVG axes.
 
 **Constructor:**
 ```javascript
-new Plot({ canvas, svg, width, height })
+new Plot({ canvas, svg, width, height, margin, data, layers, axes })
+```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `canvas` | HTMLCanvasElement | required | Canvas element for GPU rendering |
+| `svg` | SVGElement | required | SVG element for rendering axes |
+| `width` | number | required | Plot width in pixels |
+| `height` | number | required | Plot height in pixels |
+| `margin` | object | `{top:60, right:60, bottom:60, left:60}` | Margins for axes |
+| `data` | object | `{}` | Data object with arbitrary structure |
+| `layers` | array | `[]` | Array of layer specifications |
+| `axes` | object | `{}` | Optional domain overrides for axes |
+
+**Layer Specification Format:**
+
+Each layer is an object with a single key (the layer type name) mapping to parameters:
+
+```javascript
+layers: [
+  { layerTypeName: { param1: value1, param2: value2, ... } }
+]
+```
+
+**Axes Parameter Format:**
+
+```javascript
+axes: {
+  xaxis_bottom: [min, max],
+  xaxis_top: [min, max],
+  yaxis_left: [min, max],
+  yaxis_right: [min, max]
+}
+```
+
+Omitted axes will have domains auto-calculated from data.
+
+**Static Methods:**
+
+| Method | Description |
+|--------|-------------|
+| `Plot.schema()` | Returns JSON Schema for the layers array based on registered layer types |
+
+**Instance Methods:**
+
+| Method | Description |
+|--------|-------------|
+| `render()` | Renders all layers and axes |
+| `renderAxes()` | Renders D3 axes on the SVG overlay |
+
+---
+
+### registerLayerType
+
+Registers a layer type with a name for use in declarative plots.
+
+**Syntax:**
+```javascript
+registerLayerType(name, layerType)
 ```
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `canvas` | HTMLCanvasElement | Canvas element for GPU rendering |
-| `svg` | SVGElement | SVG element for rendering axes |
-| `width` | number | Plot width in pixels |
-| `height` | number | Plot height in pixels |
+| `name` | string | Unique name for the layer type |
+| `layerType` | LayerType | LayerType instance to register |
 
-**Methods:**
+**Example:**
+```javascript
+import { registerLayerType, scatterLayerType } from './src/index.js'
+registerLayerType("scatter", scatterLayerType)
+```
 
-| Method | Description |
-|--------|-------------|
-| `setAxisRegistry(axisRegistry)` | Associates an AxisRegistry with the plot |
-| `addLayer(layer)` | Adds a data layer to the plot |
-| `render()` | Renders all layers and axes |
-| `renderAxes()` | Renders D3 axes on the SVG overlay |
-| `initZoom()` | Sets up zoom interaction (all axes proportionally) |
-| `setupAxisZoom(axisName)` | Sets up zoom for a specific axis |
+---
+
+### getLayerType
+
+Retrieves a registered layer type by name.
+
+**Syntax:**
+```javascript
+getLayerType(name)
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | string | Name of the layer type |
+
+**Returns:** LayerType instance
+
+---
+
+### getRegisteredLayerTypes
+
+Returns an array of all registered layer type names.
+
+**Syntax:**
+```javascript
+getRegisteredLayerTypes()
+```
+
+**Returns:** Array of strings
 
 ---
 
 ### Layer
 
-Represents a data layer to be visualized.
+Represents a data layer to be visualized. Layers are typically created automatically by the Plot constructor, but can also be created manually.
 
 **Constructor:**
 ```javascript
@@ -223,20 +401,6 @@ new Layer({ type, data, xAxis, yAxis })
 - All arrays must be same length
 - All arrays must be Float32Array (validation enforced)
 
-**Example:**
-```javascript
-const layer = new Layer({
-  type: scatterLayerType,
-  data: {
-    x: new Float32Array([1, 2, 3]),
-    y: new Float32Array([4, 5, 6]),
-    v: new Float32Array([0.1, 0.5, 0.9])
-  },
-  xAxis: "xaxis_bottom",
-  yAxis: "yaxis_left"
-})
-```
-
 ---
 
 ### LayerType
@@ -245,17 +409,19 @@ Defines how a layer is rendered using custom GLSL shaders.
 
 **Constructor:**
 ```javascript
-new LayerType({ name, xUnit, yUnit, vert, frag, attributes })
+new LayerType({ name, xUnit, yUnit, vert, frag, attributes, schema, createLayer })
 ```
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `name` | string | Type name (e.g., "scatter") |
-| `xUnit` | string | Unit for x-axis: "meters", "volts", or "log10" |
-| `yUnit` | string | Unit for y-axis: "meters", "volts", or "log10" |
+| `xUnit` | string | Unit for x-axis |
+| `yUnit` | string | Unit for y-axis |
 | `vert` | string | GLSL vertex shader code |
 | `frag` | string | GLSL fragment shader code |
 | `attributes` | object | Map of attribute names to data accessors |
+| `schema` | function | Function returning JSON Schema for parameters |
+| `createLayer` | function | Function to create Layer from parameters and data |
 
 **Shader Uniforms (automatically provided):**
 - `xDomain` (vec2): [min, max] of x-axis domain
@@ -265,9 +431,9 @@ new LayerType({ name, xUnit, yUnit, vert, frag, attributes })
 **Attribute Accessor Format:**
 ```javascript
 attributes: {
-  x: (context, props) => props.data.x,
-  y: (context, props) => props.data.y,
-  v: (context, props) => props.data.v
+  x: { buffer: (context, props) => props.data.x },
+  y: { buffer: (context, props) => props.data.y },
+  v: { buffer: (context, props) => props.data.v }
 }
 ```
 
@@ -276,47 +442,8 @@ attributes: {
 | Method | Description |
 |--------|-------------|
 | `createDrawCommand(regl)` | Compiles shaders into a regl draw command |
-
----
-
-### AxisRegistry
-
-Manages D3 scales for multiple axes and enforces unit consistency.
-
-**Constructor:**
-```javascript
-new AxisRegistry(width, height)
-```
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `width` | number | Canvas width in pixels |
-| `height` | number | Canvas height in pixels |
-
-**Methods:**
-
-| Method | Description |
-|--------|-------------|
-| `ensureAxis(axisName, unit)` | Gets or creates a scale with unit validation |
-| `getScale(axisName)` | Returns the D3 scale for an axis |
-
-**Available Axes:**
-- `"xaxis_bottom"` - Bottom x-axis
-- `"xaxis_top"` - Top x-axis
-- `"yaxis_left"` - Left y-axis
-- `"yaxis_right"` - Right y-axis
-
-**Available Units:**
-- `"meters"` - Linear scale, label: "Meters"
-- `"volts"` - Linear scale, label: "Volts"
-- `"log10"` - Logarithmic scale, label: "Log10"
-
-**Example:**
-```javascript
-const registry = new AxisRegistry(800, 600)
-const xScale = registry.ensureAxis("xaxis_bottom", "meters")
-xScale.domain([0, 100])
-```
+| `schema()` | Returns JSON Schema (Draft 2020-12) for layer parameters |
+| `createLayer(parameters, data)` | Creates a Layer instance from parameters and data object |
 
 ---
 
@@ -329,108 +456,111 @@ A pre-configured LayerType for scatter plots.
 - **Units:** "meters" (both x and y)
 - **Attributes:** x, y, v (value for coloring)
 - **Point Size:** 4.0 pixels
-- **Color Map:** Red (v=0) → Blue (v=1) via `rgb(v, 0, 1-v)`
+- **Color Map:** Blue (v=0) → Red (v=1) via `rgb(v, 0, 1-v)`
+
+**Parameters Schema:**
+- `xData` (required): Property name in data object for x coordinates
+- `yData` (required): Property name in data object for y coordinates
+- `vData` (required): Property name in data object for color values
+- `xAxis` (optional): Which x-axis to use (default: "xaxis_bottom")
+- `yAxis` (optional): Which y-axis to use (default: "yaxis_left")
 
 **Usage:**
 ```javascript
-import { scatterLayerType } from './src/index.js'
+import { registerLayerType, scatterLayerType } from './src/index.js'
+registerLayerType("scatter", scatterLayerType)
 
-const layer = new Layer({
-  type: scatterLayerType,
-  data: { x, y, v }
+const plot = new Plot({
+  canvas, svg, width: 800, height: 600,
+  data: { x, y, v },
+  layers: [
+    { scatter: { xData: "x", yData: "y", vData: "v" } }
+  ]
 })
 ```
+
+---
+
+### AxisRegistry
+
+Manages D3 scales for multiple axes and enforces unit consistency. **Note:** AxisRegistry is created automatically by Plot; you typically don't need to interact with it directly.
+
+**Available Axes:**
+- `"xaxis_bottom"` - Bottom x-axis
+- `"xaxis_top"` - Top x-axis
+- `"yaxis_left"` - Left y-axis
+- `"yaxis_right"` - Right y-axis
+
+**Available Units:**
+- `"meters"` - Linear scale, label: "Meters"
+- `"volts"` - Linear scale, label: "Volts"
+- `"m/s"` - Linear scale, label: "m/s"
+- `"ampere"` - Linear scale, label: "Ampere"
+- `"log10"` - Logarithmic scale, label: "Log10"
 
 ---
 
 ## Interaction
 
-### Canvas Zoom
+### Zoom and Pan
 
-Zoom all axes proportionally using mouse wheel:
-- **Trigger:** Mouse wheel/trackpad on canvas
-- **Effect:** Scales all axis domains proportionally
-- **Range:** 0.5x to 50x
+Gladly supports advanced zoom and pan interactions:
 
-### Axis-Specific Zoom
+- **Plot area zoom/pan:** Mouse wheel and drag in the plot area zooms/pans all axes
+- **Axis-specific zoom/pan:** Mouse wheel and drag over an axis zooms/pans only that axis
+- **Zoom extent:** 0.5x to 50x
+- **Wheel behavior:** Pure zoom (no pan)
+- **Drag behavior:** Pan with simultaneous zoom support
 
-Zoom individual axes:
-- **Trigger:** Mouse wheel/trackpad over SVG axis
-- **Effect:** Scales only that axis domain
-- **Range:** 0.5x to 50x
+The zoom behavior keeps the data point under the mouse cursor fixed during zoom operations.
 
 ---
 
 ## Advanced Examples
 
-### Custom Color Gradient
+### Multi-Axis Plot with Different Units
 
 ```javascript
-const gradientType = new LayerType({
-  name: "gradient",
+import { Plot, LayerType, Layer, registerLayerType } from './src/index.js'
+
+// Define layer types with different units
+const tempType = new LayerType({
+  name: "temperature",
   xUnit: "meters",
-  yUnit: "meters",
-  vert: `
-    precision mediump float;
-    attribute float x, y, v;
-    varying float vValue;
-    uniform vec2 xDomain, yDomain;
+  yUnit: "volts",
+  // ... shaders and attributes
+  schema: () => ({ /* ... */ }),
+  createLayer: function(params, data) { /* ... */ }
+})
 
-    void main() {
-      float xNorm = (x - xDomain[0]) / (xDomain[1] - xDomain[0]) * 2.0 - 1.0;
-      float yNorm = (y - yDomain[0]) / (yDomain[1] - yDomain[0]) * 2.0 - 1.0;
-      gl_Position = vec4(xNorm, yNorm, 0, 1);
-      gl_PointSize = 8.0;
-      vValue = v;  // Pass to fragment shader
-    }
-  `,
-  frag: `
-    precision mediump float;
-    varying float vValue;
+const pressureType = new LayerType({
+  name: "pressure",
+  xUnit: "meters",
+  yUnit: "log10",
+  // ... shaders and attributes
+  schema: () => ({ /* ... */ }),
+  createLayer: function(params, data) { /* ... */ }
+})
 
-    void main() {
-      // Viridis-inspired gradient
-      float r = vValue;
-      float g = sqrt(vValue);
-      float b = 1.0 - vValue;
-      gl_FragColor = vec4(r, g, b, 1.0);
-    }
-  `,
-  attributes: {
-    x: (context, props) => props.data.x,
-    y: (context, props) => props.data.y,
-    v: (context, props) => props.data.v
+registerLayerType("temperature", tempType)
+registerLayerType("pressure", pressureType)
+
+const plot = new Plot({
+  canvas, svg, width: 800, height: 600,
+  data: { time, temp, pressure },
+  layers: [
+    { temperature: { xData: "time", yData: "temp", vData: "temp", xAxis: "xaxis_bottom", yAxis: "yaxis_left" } },
+    { pressure: { xData: "time", yData: "pressure", vData: "pressure", xAxis: "xaxis_bottom", yAxis: "yaxis_right" } }
+  ],
+  axes: {
+    xaxis_bottom: [0, 100],
+    yaxis_left: [0, 100],
+    yaxis_right: [0.1, 1000]  // Log scale
   }
 })
 ```
 
-### Multi-Axis Plot
-
-```javascript
-// Create two layers with different units on different axes
-const tempLayer = new Layer({
-  type: temperatureType,  // Uses "volts" unit
-  data: { x: timeData, y: tempData },
-  xAxis: "xaxis_bottom",
-  yAxis: "yaxis_left"
-})
-
-const pressureLayer = new Layer({
-  type: pressureType,  // Uses "log10" unit
-  data: { x: timeData, y: pressureData },
-  xAxis: "xaxis_bottom",
-  yAxis: "yaxis_right"  // Different y-axis
-})
-
-plot.addLayer(tempLayer)
-plot.addLayer(pressureLayer)
-
-// Configure both y-axes
-axisRegistry.getScale("yaxis_left").domain([0, 100])
-axisRegistry.getScale("yaxis_right").domain([0.1, 1000])  // Log scale
-```
-
-### Large Dataset
+### Large Dataset (100k points)
 
 ```javascript
 // Generate 100,000 points
@@ -445,14 +575,18 @@ for (let i = 0; i < N; i++) {
   v[i] = Math.random()
 }
 
-const layer = new Layer({
-  type: scatterLayerType,
-  data: { x, y, v }
+registerLayerType("scatter", scatterLayerType)
+
+const plot = new Plot({
+  canvas, svg, width: 800, height: 600,
+  data: { x, y, v },
+  layers: [
+    { scatter: { xData: "x", yData: "y", vData: "v" } }
+  ]
+  // Domains auto-calculated
 })
 
-// GPU handles rendering efficiently
-plot.addLayer(layer)
-plot.render()
+// GPU handles rendering 100k points efficiently
 ```
 
 ---
@@ -477,7 +611,10 @@ plot.render()
   <svg id="svg" width="800" height="600"></svg>
 
   <script type="module">
-    import { Plot, Layer, AxisRegistry, scatterLayerType } from './src/index.js'
+    import { Plot, registerLayerType, scatterLayerType } from './src/index.js'
+
+    // Register layer type
+    registerLayerType("scatter", scatterLayerType)
 
     // Generate data
     const N = 5000
@@ -491,30 +628,21 @@ plot.render()
       v[i] = Math.random()
     }
 
-    // Create layer
-    const layer = new Layer({
-      type: scatterLayerType,
+    // Create plot with declarative API
+    const plot = new Plot({
+      canvas: document.getElementById("canvas"),
+      svg: document.getElementById("svg"),
+      width: 800,
+      height: 600,
       data: { x, y, v },
-      xAxis: "xaxis_bottom",
-      yAxis: "yaxis_left"
+      layers: [
+        { scatter: { xData: "x", yData: "y", vData: "v" } }
+      ],
+      axes: {
+        xaxis_bottom: [0, 100],
+        yaxis_left: [0, 50]
+      }
     })
-
-    // Set up plot
-    const canvas = document.getElementById("canvas")
-    const svg = document.getElementById("svg")
-    const plot = new Plot({ canvas, svg, width: 800, height: 600 })
-
-    // Configure axes
-    const axisRegistry = new AxisRegistry(800, 600)
-    plot.setAxisRegistry(axisRegistry)
-    plot.addLayer(layer)
-
-    // Set domains
-    axisRegistry.getScale("xaxis_bottom").domain([0, 100])
-    axisRegistry.getScale("yaxis_left").domain([0, 50])
-
-    // Render
-    plot.render()
   </script>
 </body>
 </html>
@@ -538,6 +666,8 @@ Unit definitions with labels and scale types:
 {
   meters: { label: "Meters", scale: "linear" },
   volts: { label: "Volts", scale: "linear" },
+  "m/s": { label: "m/s", scale: "linear" },
+  ampere: { label: "Ampere", scale: "linear" },
   log10: { label: "Log10", scale: "log" }
 }
 ```

@@ -2,12 +2,14 @@
 
 ## Overview
 
-Gladly is a GPU-accelerated multi-axis plotting library built on WebGL (via regl) and D3.js. The architecture is designed around a clean separation between GPU-based data rendering and DOM-based axis/interaction management. With only ~214 lines of source code across 6 modules, it provides high-performance visualization through efficient use of WebGL shaders and typed arrays.
+Gladly is a GPU-accelerated multi-axis plotting library built on WebGL (via regl) and D3.js. The architecture is designed around a **declarative API** with clean separation between GPU-based data rendering and DOM-based axis/interaction management. With ~250 lines of source code across 7 modules, it provides high-performance visualization through efficient use of WebGL shaders and typed arrays.
 
 **Key Architectural Principles:**
+- Declarative plot configuration with data and layer specifications
 - GPU rendering for data points using WebGL
 - SVG overlay for axes and labels
-- Lazy initialization of scales
+- Layer type registry for extensibility
+- Auto-domain calculation from data
 - Unit-aware multi-axis system
 - Strategy pattern for extensible layer types
 
@@ -18,12 +20,13 @@ Gladly is a GPU-accelerated multi-axis plotting library built on WebGL (via regl
 ```
 gladly/
 ├── src/
-│   ├── index.js              # 5 LOC  - Public API exports
-│   ├── Plot.js               # 92 LOC - Main rendering orchestrator
+│   ├── index.js              # 6 LOC  - Public API exports
+│   ├── Plot.js               # 150 LOC - Main rendering orchestrator
 │   ├── Layer.js              # 12 LOC - Data container
-│   ├── LayerType.js          # 24 LOC - Shader + metadata
-│   ├── ScatterLayer.js       # 42 LOC - Scatter plot implementation
-│   └── AxisRegistry.js       # 39 LOC - Scale management
+│   ├── LayerType.js          # 38 LOC - Shader + metadata + schema
+│   ├── ScatterLayer.js       # 60 LOC - Scatter plot implementation
+│   ├── AxisRegistry.js       # 42 LOC - Scale management
+│   └── LayerTypeRegistry.js  # 17 LOC - Layer type registration
 ├── example/
 │   ├── main.js               # Example usage
 │   └── index.html            # Demo page
@@ -33,7 +36,7 @@ gladly/
     └── ARCHITECTURE.md       # This file
 ```
 
-**Total Source:** ~214 lines (excluding examples and build config)
+**Total Source:** ~250 lines (excluding examples and build config)
 
 ---
 
@@ -45,24 +48,29 @@ gladly/
 Plot (main orchestrator)
   ├── regl (WebGL context)
   ├── D3 (selection, scales, axes, zoom)
-  ├── Layer[] (data layers)
-  │   └── LayerType (rendering strategy)
-  │       └── ScatterLayer (concrete implementation)
-  └── AxisRegistry (scale manager)
-      └── D3 scales (linear/log)
+  ├── AxisRegistry (created internally)
+  │   └── D3 scales (linear/log)
+  ├── LayerTypeRegistry (global)
+  │   └── LayerType instances (by name)
+  └── Layer[] (data layers, created automatically)
+      └── LayerType (rendering strategy)
+          └── ScatterLayer (concrete implementation)
 ```
 
 ### Module Responsibilities
 
-#### **1. index.js** (5 LOC)
+#### **1. index.js** (6 LOC)
 **Purpose:** Public API surface
 
 **Exports:**
 - `LayerType` - Class for defining custom layer types
-- `Layer` - Class for data layers
-- `AxisRegistry` - Class for axis/scale management
+- `Layer` - Class for data layers (internal use)
+- `AxisRegistry` - Class for axis/scale management (internal use)
 - `Plot` - Main plotting class
 - `scatterLayerType` - Pre-built scatter LayerType
+- `registerLayerType` - Function to register layer types
+- `getLayerType` - Function to retrieve layer types
+- `getRegisteredLayerTypes` - Function to list registered types
 - `AXES` - Array of available axis names
 - `AXIS_UNITS` - Object of unit definitions
 
@@ -70,7 +78,34 @@ Plot (main orchestrator)
 
 ---
 
-#### **2. AxisRegistry.js** (39 LOC)
+#### **2. LayerTypeRegistry.js** (17 LOC)
+**Purpose:** Global registry for layer types
+
+**Pattern:** Registry pattern
+
+**Responsibilities:**
+- Store LayerType instances by name
+- Prevent duplicate registrations
+- Provide retrieval and listing functions
+- Enable declarative layer specification
+
+**Key Data Structure:**
+```javascript
+const registry = new Map()  // name -> LayerType
+```
+
+**API:**
+- `registerLayerType(name, layerType)` - Register a layer type
+- `getLayerType(name)` - Retrieve a layer type by name
+- `getRegisteredLayerTypes()` - List all registered names
+
+**Error Handling:**
+- Throws if attempting to register duplicate name
+- Throws if retrieving unregistered name (with helpful message listing available types)
+
+---
+
+#### **3. AxisRegistry.js** (42 LOC)
 **Purpose:** Centralized scale management with unit validation
 
 **Pattern:** Registry pattern with lazy initialization
@@ -95,21 +130,25 @@ this.units = {}   // { axisName: unitString }
 **Supported Units:**
 - `meters` - Linear scale, label: "Meters"
 - `volts` - Linear scale, label: "Volts"
+- `m/s` - Linear scale, label: "m/s"
+- `ampere` - Linear scale, label: "Ampere"
 - `log10` - Logarithmic scale, label: "Log10"
 
 **Validation:** Throws error if attempting to use an axis with different unit than previously registered
 
 ---
 
-#### **3. LayerType.js** (24 LOC)
-**Purpose:** Encapsulate rendering strategy (shaders + metadata)
+#### **4. LayerType.js** (38 LOC)
+**Purpose:** Encapsulate rendering strategy with schema and factory
 
-**Pattern:** Strategy pattern
+**Pattern:** Strategy pattern + Factory pattern
 
 **Responsibilities:**
 - Store shader code (GLSL vertex and fragment)
 - Define attribute mappings (data → GPU)
 - Specify axis units for type checking
+- Provide JSON Schema for layer parameters
+- Create Layer instances from parameters and data
 - Generate regl draw commands
 
 **Key Properties:**
@@ -120,21 +159,34 @@ this.units = {}   // { axisName: unitString }
   yUnit: string,          // Required y-axis unit
   vert: string,           // GLSL vertex shader
   frag: string,           // GLSL fragment shader
-  attributes: object      // Attribute accessors
+  attributes: object,     // Attribute accessors
+  schema: function,       // Returns JSON Schema
+  createLayer: function   // Factory for Layer instances
 }
 ```
 
-**Method: createDrawCommand(regl)**
+**Methods:**
+
+**createDrawCommand(regl):**
 - Compiles shaders into regl draw command
 - Adds uniforms: `xDomain`, `yDomain`, `count`
 - Returns function that can be called to render
 
+**schema():**
+- Returns JSON Schema (Draft 2020-12) defining expected parameters
+- Used by Plot.schema() to generate composite schema
+- Documents required and optional parameters
+
+**createLayer(parameters, data):**
+- Extracts data from the data object using parameter keys
+- Validates extracted data
+- Creates and returns a Layer instance
+- Called automatically by Plot constructor
+
 ---
 
-#### **4. ScatterLayer.js** (42 LOC)
+#### **5. ScatterLayer.js** (60 LOC)
 **Purpose:** Concrete LayerType implementation for scatter plots
-
-**Extends:** LayerType
 
 **Configuration:**
 - **Name:** "scatter"
@@ -151,9 +203,15 @@ gl_PointSize = 4.0
 
 **Fragment Shader:**
 ```glsl
-// Maps value (0-1) to color gradient: red → white → blue
+// Maps value (0-1) to color gradient: blue → red
 gl_FragColor = vec4(v, 0.0, 1.0 - v, 1.0)
 ```
+
+**Schema:**
+Defines parameters: `xData` (required), `yData` (required), `vData` (required), `xAxis` (optional), `yAxis` (optional)
+
+**Factory Method:**
+Extracts data properties from data object and creates Layer instance
 
 **Helper Function: prop()**
 - Extracts nested properties from regl context
@@ -161,7 +219,7 @@ gl_FragColor = vec4(v, 0.0, 1.0 - v, 1.0)
 
 ---
 
-#### **5. Layer.js** (12 LOC)
+#### **6. Layer.js** (12 LOC)
 **Purpose:** Lightweight data container
 
 **Pattern:** Data Transfer Object (DTO)
@@ -184,14 +242,17 @@ gl_FragColor = vec4(v, 0.0, 1.0 - v, 1.0)
 
 ---
 
-#### **6. Plot.js** (92 LOC)
-**Purpose:** Main rendering orchestrator
+#### **7. Plot.js** (150 LOC)
+**Purpose:** Main rendering orchestrator with declarative API
 
 **Responsibilities:**
 - Initialize WebGL context (via regl)
+- Create AxisRegistry internally
+- Process declarative layer specifications
+- Auto-calculate domain bounds from data
 - Manage D3 SVG selections
 - Store and execute layer draw commands
-- Handle zoom interactions
+- Handle zoom and pan interactions
 - Coordinate rendering pipeline
 
 **Key Properties:**
@@ -199,17 +260,37 @@ gl_FragColor = vec4(v, 0.0, 1.0 - v, 1.0)
 this.regl          // WebGL context
 this.svg           // D3 selection of SVG overlay
 this.layers = []   // Array of Layer instances
-this.draws = []    // Array of regl draw commands
-this.axisRegistry  // Reference to AxisRegistry
+this.axisRegistry  // AxisRegistry instance (created internally)
+```
+
+**Constructor Parameters:**
+```javascript
+{
+  canvas,          // HTMLCanvasElement
+  svg,             // SVGElement
+  width,           // number
+  height,          // number
+  margin,          // { top, right, bottom, left } - optional
+  data,            // object - arbitrary structure
+  layers,          // array - layer specifications
+  axes             // object - domain overrides (optional)
+}
 ```
 
 **Key Methods:**
 
-**addLayer(layer):**
-1. Ensure axes exist with correct units
-2. Create draw command from LayerType
-3. Store layer and draw command
-4. Set initial domains based on data ranges
+**_processLayers(layersConfig, data):** (internal)
+1. For each layer spec `{ layerTypeName: parameters }`:
+2. Lookup LayerType from registry
+3. Call `layerType.createLayer(parameters, data)`
+4. Register axes with AxisRegistry
+5. Create draw command
+6. Store layer
+
+**_setDomains(axesOverrides):** (internal)
+1. For each axis, collect data from all layers using that axis
+2. Calculate min/max from Float32Array data
+3. Apply calculated domain or use override from `axes` parameter
 
 **render():**
 1. Clear canvas to white
@@ -219,53 +300,73 @@ this.axisRegistry  // Reference to AxisRegistry
 **renderAxes():**
 1. For each axis in registry:
 2. Create D3 axis generator (axisBottom/axisTop/axisLeft/axisRight)
-3. Render to SVG `<g>` element
+3. Render to SVG `<g>` element with styling
+4. Add unit labels
 
 **initZoom():**
-1. Create D3 zoom behavior
-2. Attach to canvas
-3. On zoom: rescale all axis domains proportionally
-4. Call render() each frame
+1. Create full-coverage SVG overlay rectangle
+2. Create D3 zoom behavior with region detection
+3. Support plot area zoom (all axes) and axis-specific zoom
+4. Implement mouse-position-aware zoom (keep point under cursor fixed)
+5. Call render() on each zoom event
 
-**setupAxisZoom(axisName):**
-1. Create D3 zoom behavior for single axis
-2. Attach to axis SVG group
-3. On zoom: rescale only that axis domain
-4. Call render() each frame
+**static schema():**
+1. Get all registered layer types
+2. For each type, get its schema via `layerType.schema()`
+3. Combine into composite schema using `oneOf`
+4. Return JSON Schema for layers array
 
 ---
 
 ## Data Flow
 
-### Setup Phase (Initialization)
+### Declarative Setup Phase
 
 ```
-1. User creates Layer with data
-   └─> Layer validates Float32Array types
+1. User registers layer types (once at startup)
+   └─> registerLayerType("scatter", scatterLayerType)
 
-2. User creates Plot(canvas, svg)
-   └─> Plot initializes regl context
-   └─> Plot creates D3 SVG selection
+2. User prepares data as Float32Arrays
+   └─> const data = { x, y, v, ... }
 
-3. User creates AxisRegistry(width, height)
-   └─> Registry initialized with empty scales
-
-4. User calls plot.setAxisRegistry(registry)
-   └─> Plot stores registry reference
-
-5. User calls plot.addLayer(layer)
-   ├─> AxisRegistry.ensureAxis(xAxis, layer.type.xUnit)
-   │   └─> Creates D3 scale if doesn't exist
-   ├─> AxisRegistry.ensureAxis(yAxis, layer.type.yUnit)
-   ├─> LayerType.createDrawCommand(regl)
-   │   └─> Compiles shaders, creates GPU draw function
-   ├─> Calculate initial domain from data min/max
-   │   └─> scale.domain([min, max])
-   └─> Store layer and draw command
-
-6. User calls plot.render()
-   └─> (See Render Cycle below)
+3. User creates Plot with declarative config
+   new Plot({ canvas, svg, width, height, data, layers, axes })
+   │
+   ├─> Plot initializes regl context
+   ├─> Plot creates D3 SVG selection
+   ├─> Plot creates AxisRegistry internally
+   │
+   ├─> Plot._processLayers(layers, data)
+   │   │
+   │   └─> For each { layerTypeName: parameters }:
+   │       ├─> getLayerType(layerTypeName)
+   │       ├─> layerType.createLayer(parameters, data)
+   │       │   ├─> Extract data properties
+   │       │   └─> Create Layer instance
+   │       ├─> AxisRegistry.ensureAxis(layer.xAxis, layer.type.xUnit)
+   │       │   └─> Create D3 scale if doesn't exist
+   │       ├─> AxisRegistry.ensureAxis(layer.yAxis, layer.type.yUnit)
+   │       ├─> LayerType.createDrawCommand(regl)
+   │       │   └─> Compile shaders, create GPU draw function
+   │       └─> Store layer and draw command
+   │
+   ├─> Plot._setDomains(axes)
+   │   ├─> For each axis, collect all data points
+   │   ├─> Calculate min/max from data
+   │   └─> Apply calculated domain or override from `axes` param
+   │
+   ├─> Plot.initZoom()
+   │   └─> Set up zoom/pan interactions
+   │
+   └─> Plot.render()
+       └─> (See Render Cycle below)
 ```
+
+**No Manual Steps Required:**
+- No separate AxisRegistry creation
+- No manual layer addition
+- No manual domain setting (unless overriding)
+- Plot is ready to use immediately after construction
 
 ---
 
@@ -286,6 +387,7 @@ plot.render()
   │   │     data: layer.data,
   │   │     xDomain: [min, max],
   │   │     yDomain: [min, max],
+  │   │     viewport: { x, y, width, height },
   │   │     count: data.x.length
   │   │   })
   │   │   │
@@ -302,42 +404,56 @@ plot.render()
       └─> For each axis in registry:
           ├─> Create D3 axis generator
           ├─> Select or create SVG <g> element
-          └─> Call axis generator (draws ticks, labels)
+          ├─> Call axis generator (draws ticks, labels)
+          └─> Add unit labels
 ```
 
 ---
 
-## Interaction Cycle (Zoom)
+## Interaction Cycle (Zoom/Pan)
 
-### Canvas Zoom (All Axes)
+### Plot Area Zoom/Pan (All Axes)
 
 ```
-User scrolls on canvas
+User scrolls/drags in plot area
   │
   ├─> D3 zoom event triggered
   │
-  ├─> For each axis in registry:
+  ├─> Detect region (plot_area)
+  │
+  ├─> For each axis (all 4):
   │   ├─> Get current scale
-  │   ├─> Apply zoom transform
+  │   ├─> Calculate zoom/pan transform
+  │   │   └─> Keep point under cursor fixed
   │   └─> Update scale domain
   │
   └─> plot.render()
       └─> (See Render Cycle)
 ```
 
-### Axis-Specific Zoom
+### Axis-Specific Zoom/Pan
 
 ```
-User scrolls over axis SVG element
+User scrolls/drags over specific axis
   │
-  ├─> D3 zoom event on axis group
+  ├─> D3 zoom event triggered
+  │
+  ├─> Detect region (e.g., xaxis_bottom)
   │
   ├─> Get axis scale
-  ├─> Apply zoom transform to that scale only
+  ├─> Apply zoom/pan transform to that scale only
+  │   └─> Keep point under cursor fixed
   │
   └─> plot.render()
       └─> (See Render Cycle)
 ```
+
+**Advanced Zoom Behavior:**
+- Tracks mouse position at gesture start
+- Calculates data value at mouse position
+- Applies zoom while keeping that data point fixed at mouse pixel
+- Supports wheel (pure zoom) and drag (pan + zoom)
+- Works independently for each axis
 
 ---
 
@@ -379,7 +495,43 @@ User scrolls over axis SVG element
 
 ## Design Patterns
 
-### 1. Strategy Pattern (LayerType)
+### 1. Declarative Configuration
+
+**Intent:** Specify what to render, not how to render it.
+
+**Implementation:**
+- Users pass configuration objects to Plot constructor
+- Layer specifications reference registered layer types by name
+- Data object has arbitrary structure, interpreted by layer types
+- Domains auto-calculated unless explicitly overridden
+
+**Benefits:**
+- Concise, readable plot creation
+- No imperative setup steps
+- Easy to serialize/deserialize plot configurations
+- Self-documenting via JSON Schema
+
+---
+
+### 2. Registry Pattern (Layer Types)
+
+**Intent:** Maintain a global registry of layer types for declarative lookup.
+
+**Implementation:**
+- `LayerTypeRegistry` stores LayerType instances by name
+- Users register types once: `registerLayerType("scatter", scatterLayerType)`
+- Plot looks up types by name from layer specifications
+- Schema introspection via `Plot.schema()`
+
+**Benefits:**
+- Decouples layer type definition from plot creation
+- Enables declarative layer specification
+- Supports schema generation
+- Easy to extend with new types
+
+---
+
+### 3. Strategy Pattern (LayerType)
 
 **Intent:** Define a family of rendering algorithms, encapsulate each one, and make them interchangeable.
 
@@ -387,15 +539,35 @@ User scrolls over axis SVG element
 - `LayerType` is the strategy interface
 - `scatterLayerType` is a concrete strategy
 - Additional types (line, heatmap, etc.) can be added without modifying Plot
+- Each type provides schema and factory method
 
 **Benefits:**
 - Easy to add new visualization types
 - Shader code isolated in LayerType instances
 - Each type can specify different units
+- Type-specific parameter validation
 
 ---
 
-### 2. Registry Pattern (AxisRegistry)
+### 4. Factory Pattern (Layer Creation)
+
+**Intent:** Encapsulate layer creation logic in LayerType.
+
+**Implementation:**
+- Each LayerType provides `createLayer(parameters, data)` method
+- Plot calls factory method during initialization
+- Factory extracts relevant data from arbitrary data object
+- Factory validates and creates Layer instance
+
+**Benefits:**
+- Layer types control their own instantiation
+- Data extraction logic co-located with layer type
+- Validation happens at layer type level
+- Plot doesn't need to know layer-specific details
+
+---
+
+### 5. Registry Pattern (AxisRegistry)
 
 **Intent:** Maintain a central registry of scales, prevent duplicates, enforce constraints.
 
@@ -403,15 +575,17 @@ User scrolls over axis SVG element
 - `AxisRegistry` stores all scales by name
 - `ensureAxis()` creates or retrieves scales
 - Unit validation prevents incompatible layers on same axis
+- Created internally by Plot (not exposed to users)
 
 **Benefits:**
 - Single source of truth for scales
 - Prevents unit mismatch bugs
 - Lazy initialization (scales created on demand)
+- Automatic lifecycle management
 
 ---
 
-### 3. Separation of Concerns
+### 6. Separation of Concerns
 
 **GPU Rendering (WebGL/regl):**
 - Handles data visualization
@@ -423,16 +597,49 @@ User scrolls over axis SVG element
 - Manages zoom interactions
 - Overlays on canvas
 
+**Configuration (Declarative):**
+- Data and layer specifications
+- Domain overrides
+- Margin and sizing
+
 **Benefits:**
 - GPU optimized for large datasets
 - SVG provides crisp text rendering
 - Independent update cycles
+- Clear separation of responsibilities
 
 ---
 
 ## Key Architectural Decisions
 
-### 1. Typed Arrays for GPU Efficiency
+### 1. Declarative API with Registry
+
+**Decision:** Use layer type registry and declarative configuration
+
+**Rationale:**
+- More concise than imperative API
+- Easier to serialize/deserialize
+- Better schema introspection
+- Clearer separation of concerns
+
+**Trade-off:** Requires registration step, but only once per layer type
+
+---
+
+### 2. Auto Domain Calculation
+
+**Decision:** Calculate domains from data by default, allow overrides
+
+**Rationale:**
+- Eliminates manual domain calculation
+- Ensures data is visible by default
+- Still allows explicit control when needed
+
+**Trade-off:** Small performance cost on initialization, but negligible for typical datasets
+
+---
+
+### 3. Typed Arrays for GPU Efficiency
 
 **Decision:** Require Float32Array for all data
 
@@ -445,9 +652,9 @@ User scrolls over axis SVG element
 
 ---
 
-### 2. Embedded Shaders
+### 4. Embedded Shaders
 
-**Decision:** Store GLSL shaders as strings in LayerType classes
+**Decision:** Store GLSL shaders as strings in LayerType instances
 
 **Rationale:**
 - Self-contained layer definitions
@@ -458,20 +665,20 @@ User scrolls over axis SVG element
 
 ---
 
-### 3. Canvas + SVG Overlay
+### 5. Canvas + SVG Overlay
 
 **Decision:** Render data to canvas, axes to SVG
 
 **Rationale:**
 - WebGL excels at rendering large point clouds
 - SVG provides crisp text and perfect lines
-- SVG has `pointer-events: none` to allow canvas zoom
+- SVG has `pointer-events: none` for some elements to allow canvas zoom
 
 **Trade-off:** Two rendering contexts, but leverages strengths of each
 
 ---
 
-### 4. Domain-Based Rendering
+### 6. Domain-Based Rendering
 
 **Decision:** Normalize in GPU using domain uniforms, not CPU pre-processing
 
@@ -484,7 +691,7 @@ User scrolls over axis SVG element
 
 ---
 
-### 5. Multi-Axis Support
+### 7. Multi-Axis Support
 
 **Decision:** Support 4 axes (top/bottom x, left/right y) with independent scales
 
@@ -497,16 +704,17 @@ User scrolls over axis SVG element
 
 ---
 
-### 6. Lazy Scale Creation
+### 8. JSON Schema Support
 
-**Decision:** Create scales only when layers added, not at initialization
+**Decision:** Layer types provide JSON Schema for their parameters
 
 **Rationale:**
-- Minimal startup overhead
-- Only create what's needed
-- Unit enforcement at creation time
+- Enables validation and documentation
+- Supports tooling and code generation
+- Industry-standard schema format (Draft 2020-12)
+- Plot can aggregate schemas for all registered types
 
-**Trade-off:** Can't set domains before adding layers, but cleaner API
+**Trade-off:** Extra method to implement, but provides valuable introspection
 
 ---
 
@@ -517,6 +725,11 @@ User scrolls over axis SVG element
 - **Bottleneck:** Fragment shader fill rate for overlapping points
 - **Optimization:** Point size kept small (4.0 pixels)
 
+### Initialization
+- **Domain Calculation:** O(n) for n points per axis, CPU-side
+- **Optimization:** Single pass per axis, leveraging typed array efficiency
+- **Impact:** Negligible for typical datasets (<1M points)
+
 ### Zoom Handling
 - **Complexity:** O(4) - updates up to 4 axis scales
 - **Optimization:** Render called once per zoom event, not per axis
@@ -526,6 +739,7 @@ User scrolls over axis SVG element
 - **Data Storage:** Float32Array uses 4 bytes per value
 - **GPU Buffers:** regl creates GPU buffers from typed arrays
 - **No Copying:** Data stays in typed arrays, no duplication
+- **Configuration:** Minimal overhead for layer specs and registry
 
 ### No Virtual Scrolling
 - **Assumption:** Dataset fits in GPU memory
@@ -538,16 +752,57 @@ User scrolls over axis SVG element
 
 ### Adding New LayerTypes
 
-Create a new LayerType instance with custom shaders:
+1. Create a LayerType instance with shaders, schema, and factory:
 
 ```javascript
-export const lineLayerType = new LayerType({
-  name: "line",
+import { LayerType, Layer } from './src/index.js'
+
+const myLayerType = new LayerType({
+  name: "mytype",
   xUnit: "meters",
   yUnit: "volts",
   vert: `/* custom vertex shader */`,
   frag: `/* custom fragment shader */`,
-  attributes: { x: prop("data.x"), y: prop("data.y") }
+  attributes: {
+    x: { buffer: (ctx, props) => props.data.x },
+    y: { buffer: (ctx, props) => props.data.y }
+  },
+  schema: () => ({
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    type: "object",
+    properties: {
+      xData: { type: "string" },
+      yData: { type: "string" }
+    },
+    required: ["xData", "yData"]
+  }),
+  createLayer: function(params, data) {
+    return new Layer({
+      type: this,
+      data: { x: data[params.xData], y: data[params.yData] },
+      xAxis: params.xAxis || "xaxis_bottom",
+      yAxis: params.yAxis || "yaxis_left"
+    })
+  }
+})
+```
+
+2. Register it:
+
+```javascript
+import { registerLayerType } from './src/index.js'
+registerLayerType("mytype", myLayerType)
+```
+
+3. Use it declaratively:
+
+```javascript
+const plot = new Plot({
+  canvas, svg, width: 800, height: 600,
+  data: { myX, myY },
+  layers: [
+    { mytype: { xData: "myX", yData: "myY" } }
+  ]
 })
 ```
 
@@ -565,17 +820,21 @@ export const AXIS_UNITS = {
 }
 ```
 
-### Adding New Axes
+### Schema Introspection
 
-Modify `AXES` array in AxisRegistry.js and add mapping in `ensureAxis()`:
+Get the complete schema for all registered layer types:
 
 ```javascript
-export const AXES = [
-  "xaxis_bottom", "xaxis_top",
-  "yaxis_left", "yaxis_right",
-  "xaxis_center"  // New axis
-]
+import { Plot } from './src/index.js'
+const schema = Plot.schema()
+console.log(JSON.stringify(schema, null, 2))
 ```
+
+This enables:
+- Automatic validation of layer configurations
+- Code generation for layer builders
+- Documentation generation
+- IDE autocomplete support
 
 ---
 
@@ -588,5 +847,7 @@ Potential enhancements that maintain the current architecture:
 3. **Animation:** Add time-based attribute updates
 4. **Selection:** Add GPU-based point picking
 5. **Textures:** Add texture-based colormaps for more complex gradients
+6. **Validation:** Runtime validation using JSON Schema
+7. **Serialization:** Save/load plot configurations as JSON
 
 All can be added without breaking current API or architecture.
