@@ -177,8 +177,8 @@ const initialPlotConfig = {
     { "scatter-sa": { xData: "x2", yData: "y2", vData: "v2", xAxis: "xaxis_top", yAxis: "yaxis_right" } }
   ],
   axes: {
-    xaxis_bottom: [0, 10],
-    yaxis_left: [0, 5]
+    xaxis_bottom: { min: 0, max: 10 },
+    yaxis_left: { min: 0, max: 5 }
     // xaxis_top and yaxis_right will be auto-calculated from data
   }
 }

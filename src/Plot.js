@@ -144,7 +144,14 @@ export class Plot {
     for (const axis of AXES) {
       const scale = this.axisRegistry.getScale(axis)
       if (scale) {
-        const domain = axesOverrides[axis] || autoDomains[axis]
+        let domain
+        if (axesOverrides[axis]) {
+          // Convert { min, max } to [min, max] array
+          const override = axesOverrides[axis]
+          domain = [override.min, override.max]
+        } else {
+          domain = autoDomains[axis]
+        }
         if (domain) {
           scale.domain(domain)
         }
@@ -180,28 +187,40 @@ export class Plot {
           type: "object",
           properties: {
             xaxis_bottom: {
-              type: "array",
-              items: { type: "number" },
-              minItems: 2,
-              maxItems: 2
+              type: "object",
+              properties: {
+                min: { type: "number" },
+                max: { type: "number" }
+              },
+              required: ["min", "max"],
+              additionalProperties: false
             },
             xaxis_top: {
-              type: "array",
-              items: { type: "number" },
-              minItems: 2,
-              maxItems: 2
+              type: "object",
+              properties: {
+                min: { type: "number" },
+                max: { type: "number" }
+              },
+              required: ["min", "max"],
+              additionalProperties: false
             },
             yaxis_left: {
-              type: "array",
-              items: { type: "number" },
-              minItems: 2,
-              maxItems: 2
+              type: "object",
+              properties: {
+                min: { type: "number" },
+                max: { type: "number" }
+              },
+              required: ["min", "max"],
+              additionalProperties: false
             },
             yaxis_right: {
-              type: "array",
-              items: { type: "number" },
-              minItems: 2,
-              maxItems: 2
+              type: "object",
+              properties: {
+                min: { type: "number" },
+                max: { type: "number" }
+              },
+              required: ["min", "max"],
+              additionalProperties: false
             }
           },
           additionalProperties: false

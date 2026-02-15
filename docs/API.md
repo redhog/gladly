@@ -32,8 +32,8 @@ const plot = new Plot({
       { scatter: { xData: "x", yData: "y", vData: "v", xAxis: "xaxis_bottom", yAxis: "yaxis_left" } }
     ],
     axes: {
-      xaxis_bottom: [0, 60],
-      yaxis_left: [0, 50]
+      xaxis_bottom: { min: 0, max: 60 },
+      yaxis_left: { min: 0, max: 50 }
     }
   }
 })
@@ -116,8 +116,8 @@ const plot = new Plot({
       { scatter: { xData: "x", yData: "y", vData: "v" } }  // References data properties
     ],
     axes: {
-      xaxis_bottom: [0, 60],  // Optional: specify domain
-      yaxis_left: [0, 50]
+      xaxis_bottom: { min: 0, max: 60 },  // Optional: specify domain
+      yaxis_left: { min: 0, max: 50 }
     }
   }
 })
@@ -156,8 +156,8 @@ const plot = new Plot({
       { scatter: { xData: "x2", yData: "y2", vData: "v2", xAxis: "xaxis_top", yAxis: "yaxis_right" } }
     ],
     axes: {
-      xaxis_bottom: [0, 10],
-      yaxis_left: [0, 5]
+      xaxis_bottom: { min: 0, max: 10 },
+      yaxis_left: { min: 0, max: 5 }
       // xaxis_top and yaxis_right auto-calculated
     }
   }
@@ -311,10 +311,10 @@ plot: {
 ```javascript
 plot: {
   axes: {
-    xaxis_bottom: [min, max],
-    xaxis_top: [min, max],
-    yaxis_left: [min, max],
-    yaxis_right: [min, max]
+    xaxis_bottom: { min: 0, max: 100 },
+    xaxis_top: { min: 0, max: 100 },
+    yaxis_left: { min: 0, max: 50 },
+    yaxis_right: { min: 0, max: 50 }
   }
 }
 ```
@@ -570,9 +570,9 @@ const plot = new Plot({
       { pressure: { xData: "time", yData: "pressure", vData: "pressure", xAxis: "xaxis_bottom", yAxis: "yaxis_right" } }
     ],
     axes: {
-      xaxis_bottom: [0, 100],
-      yaxis_left: [0, 100],
-      yaxis_right: [0.1, 1000]  // Log scale
+      xaxis_bottom: { min: 0, max: 100 },
+      yaxis_left: { min: 0, max: 100 },
+      yaxis_right: { min: 0.1, max: 1000 }  // Log scale
     }
   }
 })
@@ -661,8 +661,8 @@ const plot = new Plot({
           { scatter: { xData: "x", yData: "y", vData: "v" } }
         ],
         axes: {
-          xaxis_bottom: [0, 100],
-          yaxis_left: [0, 50]
+          xaxis_bottom: { min: 0, max: 100 },
+          yaxis_left: { min: 0, max: 50 }
         }
       }
     })
