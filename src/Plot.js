@@ -1,5 +1,6 @@
 import reglInit from "regl"
 import * as d3 from "d3-selection"
+import { scaleLinear } from "d3-scale"
 import { axisBottom, axisTop, axisLeft, axisRight } from "d3-axis"
 import { zoom } from "d3-zoom"
 import { AXES, AXIS_UNITS } from "./AxisRegistry.js"
@@ -14,6 +15,17 @@ export class Plot {
     this.plotWidth = width - margin.left - margin.right
     this.plotHeight = height - margin.top - margin.bottom
     this.layers = []
+
+    // Create transparent overlay for zoom/pan events
+    this.plotArea = this.svg.append("rect")
+      .attr("class", "plot-area")
+      .attr("x", margin.left)
+      .attr("y", margin.top)
+      .attr("width", this.plotWidth)
+      .attr("height", this.plotHeight)
+      .attr("fill", "none")
+      .attr("pointer-events", "all")
+      .style("cursor", "move")
 
     // SVG groups for axes
     AXES.forEach(a => this.svg.append("g").attr("class", a))
@@ -167,20 +179,32 @@ export class Plot {
   }
 
   initZoom() {
-    // Zoom all axes together
+    console.log("initZoom called, plotArea:", this.plotArea)
+    // Zoom all axes together - attach to plot area overlay
     const zoomAll = zoom().scaleExtent([0.5,50]).on("zoom", (event) => {
-      if (!this.axisRegistry) return
+      console.log("Zoom event fired:", event.transform)
+      if (!this.axisRegistry) {
+        console.log("No axis registry yet")
+        return
+      }
       const t = event.transform
       AXES.forEach(axis => {
         const scale = this.axisRegistry.getScale(axis)
+        console.log(`Axis ${axis}:`, scale ? scale.domain() : "no scale")
         if (scale) {
-          const range = axis.includes("y") ? [this.plotHeight,0] : [0,this.plotWidth]
-          scale.domain(t.rescaleX(d3.scaleLinear().domain(scale.domain()).range(range)).domain())
+          const isY = axis.includes("y")
+          const range = isY ? [this.plotHeight,0] : [0,this.plotWidth]
+          const tempScale = scaleLinear().domain(scale.domain()).range(range)
+          const newDomain = isY ? t.rescaleY(tempScale).domain() : t.rescaleX(tempScale).domain()
+          console.log(`  New domain: [${newDomain}]`)
+          scale.domain(newDomain)
         }
       })
       this.render()
     })
-    d3.select(this.regl._gl.canvas).call(zoomAll)
+    console.log("Attaching zoom to plotArea")
+    this.plotArea.call(zoomAll)
+    console.log("Zoom attached")
 
     // Axis-specific zoom setup will happen when axis registry is set
   }
@@ -193,8 +217,11 @@ export class Plot {
       if (!axisScale) return
       const zoomAxis = zoom().scaleExtent([0.5,50]).on("zoom", (event) => {
         const t = event.transform
-        const range = axisName.includes("y") ? [this.plotHeight,0] : [0,this.plotWidth]
-        axisScale.domain(t.rescaleX(d3.scaleLinear().domain(axisScale.domain()).range(range)).domain())
+        const isY = axisName.includes("y")
+        const range = isY ? [this.plotHeight,0] : [0,this.plotWidth]
+        const tempScale = scaleLinear().domain(axisScale.domain()).range(range)
+        const newDomain = isY ? t.rescaleY(tempScale).domain() : t.rescaleX(tempScale).domain()
+        axisScale.domain(newDomain)
         this.render()
       })
       this.svg.select(`.${axisName}`).call(zoomAxis)
