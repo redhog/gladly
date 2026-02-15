@@ -1,4 +1,5 @@
 import { Plot, LayerType, Layer, registerLayerType } from "../src/index.js"
+import { JSONEditor } from '@json-editor/json-editor'
 
 // Helper to create property accessor (repl regl.prop which may not be available)
 const prop = (path) => (context, props) => {
@@ -41,14 +42,24 @@ const layerType1 = new LayerType({
     void main(){ gl_FragColor=vec4(colormap(value), 1.0); }
   `,
   schema: () => ({
-    $schema: "https://json-schema.org/draft/2020-12/schema",
     type: "object",
+    title: "Scatter (Meters/Volts)",
     properties: {
-      xData: { type: "string" },
-      yData: { type: "string" },
-      vData: { type: "string" },
-      xAxis: { type: "string", default: "xaxis_bottom" },
-      yAxis: { type: "string", default: "yaxis_left" }
+      xData: { type: "string", title: "X Data Property", description: "Property name for x coordinates" },
+      yData: { type: "string", title: "Y Data Property", description: "Property name for y coordinates" },
+      vData: { type: "string", title: "Color Data Property", description: "Property name for color values" },
+      xAxis: {
+        type: "string",
+        title: "X Axis",
+        enum: ["xaxis_bottom", "xaxis_top"],
+        default: "xaxis_bottom"
+      },
+      yAxis: {
+        type: "string",
+        title: "Y Axis",
+        enum: ["yaxis_left", "yaxis_right"],
+        default: "yaxis_left"
+      }
     },
     required: ["xData", "yData", "vData"]
   }),
@@ -96,14 +107,24 @@ const layerType2 = new LayerType({
     void main(){ gl_FragColor=vec4(colormap(value), 1.0); }
   `,
   schema: () => ({
-    $schema: "https://json-schema.org/draft/2020-12/schema",
     type: "object",
+    title: "Scatter (Speed/Ampere)",
     properties: {
-      xData: { type: "string" },
-      yData: { type: "string" },
-      vData: { type: "string" },
-      xAxis: { type: "string", default: "xaxis_bottom" },
-      yAxis: { type: "string", default: "yaxis_left" }
+      xData: { type: "string", title: "X Data Property", description: "Property name for x coordinates" },
+      yData: { type: "string", title: "Y Data Property", description: "Property name for y coordinates" },
+      vData: { type: "string", title: "Color Data Property", description: "Property name for color values" },
+      xAxis: {
+        type: "string",
+        title: "X Axis",
+        enum: ["xaxis_bottom", "xaxis_top"],
+        default: "xaxis_bottom"
+      },
+      yAxis: {
+        type: "string",
+        title: "Y Axis",
+        enum: ["yaxis_left", "yaxis_right"],
+        default: "yaxis_left"
+      }
     },
     required: ["xData", "yData", "vData"]
   }),
@@ -146,26 +167,102 @@ for (let i = 0; i < N; i++) {
   v2[i] = (Math.cos(xVal * 0.15) + 1) / 2
 }
 
+// Data object (shared across all plots)
+const data = { x1, y1, v1, x2, y2, v2 }
+
+// Initial layer configuration
+const initialLayers = [
+  { "scatter-mv": { xData: "x1", yData: "y1", vData: "v1", xAxis: "xaxis_bottom", yAxis: "yaxis_left" } },
+  { "scatter-sa": { xData: "x2", yData: "y2", vData: "v2", xAxis: "xaxis_top", yAxis: "yaxis_right" } }
+]
+
 const canvas = document.getElementById("canvas")
 const svg = document.getElementById("svg")
 
-// Create plot with declarative API
-const plot = new Plot({
-  canvas,
-  svg,
-  width: 800,
-  height: 600,
-  data: { x1, y1, v1, x2, y2, v2 },
-  layers: [
-    { "scatter-mv": { xData: "x1", yData: "y1", vData: "v1", xAxis: "xaxis_bottom", yAxis: "yaxis_left" } },
-    { "scatter-sa": { xData: "x2", yData: "y2", vData: "v2", xAxis: "xaxis_top", yAxis: "yaxis_right" } }
-  ],
-  axes: {
-    xaxis_bottom: [0, 10],
-    yaxis_left: [0, 5]
-    // xaxis_top and yaxis_right will be auto-calculated from data
+// Current plot instance
+let currentPlot = null
+
+// Function to create/recreate the plot
+function createPlot(layersConfig) {
+  // Clear previous plot if exists
+  if (currentPlot) {
+    // Clear canvas
+    const ctx = canvas.getContext('2d')
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+    // Clear SVG
+    svg.innerHTML = ''
+  }
+
+  try {
+    // Create new plot
+    currentPlot = new Plot({
+      canvas,
+      svg,
+      width: 800,
+      height: 600,
+      data,
+      layers: layersConfig,
+      axes: {
+        xaxis_bottom: [0, 10],
+        yaxis_left: [0, 5]
+        // xaxis_top and yaxis_right will be auto-calculated from data
+      }
+    })
+
+    // Clear any validation errors
+    document.getElementById('validation-errors').innerHTML = ''
+    return true
+  } catch (error) {
+    // Show error
+    document.getElementById('validation-errors').innerHTML = `
+      <div class="validation-error">
+        <strong>Error:</strong> ${error.message}
+      </div>
+    `
+    return false
+  }
+}
+
+// Create initial plot
+createPlot(initialLayers)
+
+// Get the schema from Plot
+const plotSchema = Plot.schema()
+
+// Initialize JSON editor with the schema
+const editor = new JSONEditor(document.getElementById('editor-container'), {
+  schema: plotSchema,
+  startval: initialLayers,
+  theme: 'html',
+  iconlib: 'fontawesome4',
+  disable_collapse: false,
+  disable_edit_json: false,
+  disable_properties: false,
+  no_additional_properties: false,
+  required_by_default: false,
+  show_errors: 'always',
+  compact: false
+})
+
+// Listen for changes
+editor.on('change', () => {
+  const errors = editor.validate()
+
+  if (errors.length === 0) {
+    // Valid configuration - update the plot
+    const layersConfig = editor.getValue()
+    createPlot(layersConfig)
+  } else {
+    // Show validation errors
+    const errorMessages = errors.map(err => `${err.path}: ${err.message}`).join('<br>')
+    document.getElementById('validation-errors').innerHTML = `
+      <div class="validation-error">
+        <strong>Validation Errors:</strong><br>${errorMessages}
+      </div>
+    `
   }
 })
 
 // Log the schema for demonstration
-console.log("Layer schema:", JSON.stringify(Plot.schema(), null, 2))
+console.log("Layer schema:", JSON.stringify(plotSchema, null, 2))

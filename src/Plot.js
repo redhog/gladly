@@ -109,6 +109,7 @@ export class Plot {
         oneOf: layerTypes.map(typeName => {
           const layerType = getLayerType(typeName)
           return {
+            title: typeName,
             properties: {
               [typeName]: layerType.schema()
             },

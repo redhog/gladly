@@ -4,21 +4,180 @@
     <meta charset="utf-8">
     <title>GPU MultiAxis Plot Example</title>
     <style>
-      body { margin:0; position: relative; }
-      canvas { border:1px solid black; display:block; position: absolute; top: 0; left: 0; z-index: 1; }
-      svg { position:absolute; top:0; left:0; width:800px; height:600px; z-index: 2; }
+      body {
+        margin: 0;
+        padding: 20px;
+        font-family: sans-serif;
+        background: #f5f5f5;
+      }
+
+      .container {
+        display: grid;
+        grid-template-columns: 800px 1fr;
+        gap: 20px;
+        max-width: 1600px;
+      }
+
+      .plot-panel {
+        position: relative;
+        width: 800px;
+        height: 600px;
+        background: white;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      }
+
+      canvas {
+        display: block;
+        position: absolute;
+        top: 0;
+        left: 0;
+        z-index: 1;
+      }
+
+      svg {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 800px;
+        height: 600px;
+        z-index: 2;
+        user-select: none;
+      }
 
       /* Axis styling */
       svg .domain { stroke: black; stroke-width: 2; fill: none; }
       svg .tick line { stroke: black; stroke-width: 1; }
       svg .tick text { fill: black; font-size: 12px; font-family: sans-serif; user-select: none; }
       svg g { pointer-events: all; }
-      svg { user-select: none; }
+
+      .editor-panel {
+        background: white;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        max-height: calc(100vh - 40px);
+        overflow-y: auto;
+      }
+
+      .editor-panel h3 {
+        margin: 0 0 15px 0;
+        color: #333;
+        font-size: 18px;
+      }
+
+      #editor-container {
+        flex: 1;
+      }
+
+      .validation-error {
+        margin-top: 10px;
+        padding: 10px;
+        background: #fee;
+        border: 1px solid #fcc;
+        border-radius: 4px;
+        color: #c00;
+        font-size: 14px;
+      }
+
+      .info {
+        margin-bottom: 15px;
+        padding: 10px;
+        background: #e3f2fd;
+        border: 1px solid #90caf9;
+        border-radius: 4px;
+        font-size: 14px;
+        color: #1976d2;
+      }
+
+      /* JSON Editor styling improvements */
+      .je-object__container,
+      .je-indented-panel {
+        margin-left: 0 !important;
+      }
+
+      .je-header {
+        background: #f8f9fa;
+        padding: 8px;
+        border-radius: 4px;
+        margin-bottom: 8px;
+      }
+
+      .je-form-input-label {
+        font-weight: 600;
+        color: #333;
+        margin-bottom: 4px;
+      }
+
+      input[type="text"],
+      select {
+        width: 100%;
+        padding: 8px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 14px;
+        font-family: inherit;
+      }
+
+      button {
+        padding: 6px 12px;
+        background: #2196f3;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+        margin: 4px;
+      }
+
+      button:hover {
+        background: #1976d2;
+      }
+
+      button.json-editor-btn-delete {
+        background: #f44336;
+      }
+
+      button.json-editor-btn-delete:hover {
+        background: #d32f2f;
+      }
+
+      button.json-editor-btn-add {
+        background: #4caf50;
+      }
+
+      button.json-editor-btn-add:hover {
+        background: #388e3c;
+      }
+
+      .je-object__container {
+        border: 1px solid #e0e0e0;
+        border-radius: 4px;
+        padding: 12px;
+        margin: 8px 0;
+        background: #fafafa;
+      }
     </style>
   </head>
   <body>
-    <canvas id="canvas" width="800" height="600"></canvas>
-    <svg id="svg" width="800" height="600"></svg>
+    <div class="container">
+      <div class="plot-panel">
+        <canvas id="canvas" width="800" height="600"></canvas>
+        <svg id="svg" width="800" height="600"></svg>
+      </div>
+      <div class="editor-panel">
+        <h3>Layer Configuration</h3>
+        <div class="info">
+          Use the form below to modify the plot layers. Changes are applied automatically.
+        </div>
+        <div id="editor-container"></div>
+        <div id="validation-errors"></div>
+      </div>
+    </div>
     <script type="module" src="./main.js"></script>
   </body>
 </html>
