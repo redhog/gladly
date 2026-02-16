@@ -404,8 +404,6 @@ export class Plot {
     }
     for (const layer of this.layers) {
       layer.draw({
-        attributes: layer.attributes,
-        uniforms: layer.uniforms,
         xDomain: this.axisRegistry.getScale(layer.xAxis).domain(),
         yDomain: this.axisRegistry.getScale(layer.yAxis).domain(),
         viewport: viewport,

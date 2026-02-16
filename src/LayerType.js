@@ -19,25 +19,24 @@ export class LayerType {
 
   createDrawCommand(regl, layer) {
     // Build attributes object dynamically from layer.attributes
-    const attributes = {}
-    for (const key of Object.keys(layer.attributes)) {
-      attributes[key] = { buffer: regl.prop(`attributes.${key}`) }
-    }
+    const attributes = Object.fromEntries(
+      Object.entries(layer.attributes).map(([key, buffer]) => [key, { buffer }])
+    )
 
     // Build uniforms object with standard uniforms plus any layer-specific ones
     const uniforms = {
       xDomain: regl.prop("xDomain"),
-      yDomain: regl.prop("yDomain")
-    }
-    for (const key of Object.keys(layer.uniforms)) {
-      uniforms[key] = regl.prop(`uniforms.${key}`)
+      yDomain: regl.prop("yDomain"),
+      ...Object.fromEntries(
+        Object.entries(layer.uniforms).map(([key, value]) => [key, value])
+      )
     }
 
     return regl({
       vert: this.vert,
       frag: this.frag,
-      attributes: attributes,
-      uniforms: uniforms,
+      attributes,
+      uniforms,
       viewport: regl.prop("viewport"),
       primitive: "points",
       count: regl.prop("count")
