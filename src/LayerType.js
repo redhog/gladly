@@ -1,19 +1,21 @@
 import { Layer } from "./Layer.js"
 
 export class LayerType {
-  constructor({ name, xAxisQuantityUnit, yAxisQuantityUnit, vert, frag, schema, createLayer }) {
+  constructor({ name, axisQuantityUnits, vert, frag, schema, createLayer, getAxisQuantityUnits }) {
     this.name = name
-    this.xAxisQuantityUnit = xAxisQuantityUnit
-    this.yAxisQuantityUnit = yAxisQuantityUnit
+    this.axisQuantityUnits = axisQuantityUnits
     this.vert = vert
     this.frag = frag
 
-    // Allow schema and createLayer to be provided as constructor parameters
+    // Allow schema, createLayer, and getAxisQuantityUnits to be provided as constructor parameters
     if (schema) {
       this._schema = schema
     }
     if (createLayer) {
       this._createLayer = createLayer
+    }
+    if (getAxisQuantityUnits) {
+      this._getAxisQuantityUnits = getAxisQuantityUnits
     }
   }
 
@@ -55,5 +57,36 @@ export class LayerType {
       return this._createLayer.call(this, parameters, data)
     }
     throw new Error(`LayerType '${this.name}' does not implement createLayer()`)
+  }
+
+  getAxisQuantityUnits(parameters, data) {
+    if (this._getAxisQuantityUnits) {
+      return this._getAxisQuantityUnits.call(this, parameters, data)
+    }
+    throw new Error(`LayerType '${this.name}' does not implement getAxisQuantityUnits()`)
+  }
+
+  resolveAxisQuantityUnits(parameters, data) {
+    // Start with static declaration
+    let resolved = { ...this.axisQuantityUnits }
+
+    // If any axis is null, resolve it dynamically
+    if (resolved.x === null || resolved.y === null) {
+      const dynamic = this.getAxisQuantityUnits(parameters, data)
+      if (resolved.x === null) {
+        if (dynamic.x === null || dynamic.x === undefined) {
+          throw new Error(`LayerType '${this.name}' failed to resolve x axis quantity unit`)
+        }
+        resolved.x = dynamic.x
+      }
+      if (resolved.y === null) {
+        if (dynamic.y === null || dynamic.y === undefined) {
+          throw new Error(`LayerType '${this.name}' failed to resolve y axis quantity unit`)
+        }
+        resolved.y = dynamic.y
+      }
+    }
+
+    return resolved
   }
 }

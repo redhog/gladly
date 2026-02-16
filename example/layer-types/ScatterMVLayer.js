@@ -6,8 +6,7 @@ import { LayerType, Layer, registerLayerType } from "../../src/index.js"
  */
 export const ScatterMVLayer = new LayerType({
   name: "scatter-mv",
-  xAxisQuantityUnit: "meters",
-  yAxisQuantityUnit: "volts",
+  axisQuantityUnits: {x: "meters", y: "volts"},
   vert: `
     precision mediump float;
     attribute float x;
@@ -54,12 +53,15 @@ export const ScatterMVLayer = new LayerType({
   }),
   createLayer: function(parameters, data) {
     const { xData, yData, vData, xAxis = "xaxis_bottom", yAxis = "yaxis_left" } = parameters
+    const resolved = this.resolveAxisQuantityUnits(parameters, data)
     return new Layer({
       type: this,
       attributes: { x: data[xData], y: data[yData], v: data[vData] },
       uniforms: {},
       xAxis,
-      yAxis
+      yAxis,
+      xAxisQuantityUnit: resolved.x,
+      yAxisQuantityUnit: resolved.y
     })
   }
 })

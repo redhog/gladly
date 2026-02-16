@@ -42,43 +42,56 @@ export class Plot {
   }
 
   update({ config, data } = {}) {
-    // Store config and data if provided
-    if (config !== undefined) {
-      this.currentConfig = config
+    // Store previous config and data for rollback on error
+    const previousConfig = this.currentConfig
+    const previousData = this.currentData
+
+    try {
+      // Store config and data if provided
+      if (config !== undefined) {
+        this.currentConfig = config
+      }
+      if (data !== undefined) {
+        this.currentData = data
+      }
+
+      // Only render if we have both config and data
+      if (!this.currentConfig || !this.currentData) {
+        return
+      }
+
+      // Get dimensions from container
+      const width = this.container.clientWidth
+      const height = this.container.clientHeight
+
+      // Update canvas and SVG dimensions
+      this.canvas.width = width
+      this.canvas.height = height
+      this.svg.attr('width', width).attr('height', height)
+
+      this.width = width
+      this.height = height
+      this.plotWidth = width - this.margin.left - this.margin.right
+      this.plotHeight = height - this.margin.top - this.margin.bottom
+
+      // Clean up existing regl context if it exists
+      if (this.regl) {
+        this.regl.destroy()
+      }
+
+      // Clear SVG content
+      this.svg.selectAll('*').remove()
+
+      // Initialize everything
+      this._initialize()
+    } catch (error) {
+      // Restore previous config and data on error
+      this.currentConfig = previousConfig
+      this.currentData = previousData
+
+      // Re-throw error for caller to handle
+      throw error
     }
-    if (data !== undefined) {
-      this.currentData = data
-    }
-
-    // Only render if we have both config and data
-    if (!this.currentConfig || !this.currentData) {
-      return
-    }
-
-    // Get dimensions from container
-    const width = this.container.clientWidth
-    const height = this.container.clientHeight
-
-    // Update canvas and SVG dimensions
-    this.canvas.width = width
-    this.canvas.height = height
-    this.svg.attr('width', width).attr('height', height)
-
-    this.width = width
-    this.height = height
-    this.plotWidth = width - this.margin.left - this.margin.right
-    this.plotHeight = height - this.margin.top - this.margin.bottom
-
-    // Clean up existing regl context if it exists
-    if (this.regl) {
-      this.regl.destroy()
-    }
-
-    // Clear SVG content
-    this.svg.selectAll('*').remove()
-
-    // Initialize everything
-    this._initialize()
   }
 
   forceUpdate() {
@@ -154,9 +167,9 @@ export class Plot {
       // Create the layer using the layer type's factory method
       const layer = layerType.createLayer(parameters, data)
 
-      // Register axes with the AxisRegistry
-      this.axisRegistry.ensureAxis(layer.xAxis, layer.type.xAxisQuantityUnit)
-      this.axisRegistry.ensureAxis(layer.yAxis, layer.type.yAxisQuantityUnit)
+      // Register axes with the AxisRegistry using resolved units
+      this.axisRegistry.ensureAxis(layer.xAxis, layer.xAxisQuantityUnit)
+      this.axisRegistry.ensureAxis(layer.yAxis, layer.yAxisQuantityUnit)
 
       // Create the draw command
       layer.draw = layer.type.createDrawCommand(this.regl, layer)

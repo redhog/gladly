@@ -155,13 +155,13 @@ this.units = {}   // { axisName: unitString }
 ```javascript
 {
   name: string,                    // Type identifier
-  xAxisQuantityUnit: string,       // Required x-axis quantity unit
-  yAxisQuantityUnit: string,       // Required y-axis quantity unit
+  axisQuantityUnits: {x, y},       // Axis units: {x: string|null, y: string|null}
   vert: string,                    // GLSL vertex shader
   frag: string,                    // GLSL fragment shader
   attributes: object,              // Attribute accessors
   schema: function,                // Returns JSON Schema
-  createLayer: function            // Factory for Layer instances
+  createLayer: function,           // Factory for Layer instances
+  getAxisQuantityUnits: function   // Optional: Dynamic unit resolution
 }
 ```
 
@@ -180,8 +180,20 @@ this.units = {}   // { axisName: unitString }
 **createLayer(parameters, data):**
 - Extracts data from the data object using parameter keys
 - Validates extracted data
-- Creates and returns a Layer instance
-- Called automatically by Plot constructor
+- Calls `this.resolveAxisQuantityUnits(parameters, data)` to resolve axis units
+- Creates and returns a Layer instance with resolved units
+- Called automatically by Plot during initialization
+
+**getAxisQuantityUnits(parameters, data):** (optional)
+- Returns `{x: string, y: string}` with dynamically calculated units
+- Only needed if `axisQuantityUnits` contains `null` values
+- Has access to both layer parameters and full data object
+- Called automatically by `resolveAxisQuantityUnits()`
+
+**resolveAxisQuantityUnits(parameters, data):**
+- Merges static `axisQuantityUnits` with dynamic resolution
+- Returns fully resolved `{x: string, y: string}` (no nulls)
+- Should be called in `createLayer()` before creating Layer instance
 
 ---
 
@@ -190,7 +202,7 @@ this.units = {}   // { axisName: unitString }
 
 **Configuration:**
 - **Name:** "scatter"
-- **Quantity Units:** "meters" (both x and y)
+- **Axis Quantity Units:** `{x: "meters", y: "meters"}`
 - **Attributes:** x, y, v
 
 **Vertex Shader:**
@@ -373,10 +385,11 @@ container        // HTMLElement - parent container
    │   │       ├─> getLayerType(layerTypeName)
    │   │       ├─> layerType.createLayer(parameters, data)
    │   │       │   ├─> Extract data properties
-   │   │       │   └─> Create Layer instance
-   │   │       ├─> AxisRegistry.ensureAxis(layer.xAxis, layer.type.xAxisQuantityUnit)
+   │   │       │   ├─> Resolve axis units (static + dynamic)
+   │   │       │   └─> Create Layer instance with resolved units
+   │   │       ├─> AxisRegistry.ensureAxis(layer.xAxis, layer.xAxisQuantityUnit)
    │   │       │   └─> Create D3 scale if doesn't exist
-   │   │       ├─> AxisRegistry.ensureAxis(layer.yAxis, layer.type.yAxisQuantityUnit)
+   │   │       ├─> AxisRegistry.ensureAxis(layer.yAxis, layer.yAxisQuantityUnit)
    │   │       ├─> LayerType.createDrawCommand(regl)
    │   │       │   └─> Compile shaders, create GPU draw function
    │   │       └─> Store layer and draw command
@@ -791,8 +804,7 @@ import { LayerType, Layer } from './src/index.js'
 
 const myLayerType = new LayerType({
   name: "mytype",
-  xAxisQuantityUnit: "meters",
-  yAxisQuantityUnit: "volts",
+  axisQuantityUnits: {x: "meters", y: "volts"},
   vert: `/* custom vertex shader */`,
   frag: `/* custom fragment shader */`,
   schema: () => ({
@@ -805,12 +817,15 @@ const myLayerType = new LayerType({
     required: ["xData", "yData"]
   }),
   createLayer: function(params, data) {
+    const resolved = this.resolveAxisQuantityUnits(params, data)
     return new Layer({
       type: this,
       attributes: { x: data[params.xData], y: data[params.yData] },
       uniforms: {},
       xAxis: params.xAxis || "xaxis_bottom",
-      yAxis: params.yAxis || "yaxis_left"
+      yAxis: params.yAxis || "yaxis_left",
+      xAxisQuantityUnit: resolved.x,
+      yAxisQuantityUnit: resolved.y
     })
   }
 })
@@ -866,6 +881,82 @@ This enables:
 - Code generation for layer builders
 - Documentation generation
 - IDE autocomplete support
+
+---
+
+### Dynamic Axis Unit Resolution
+
+Layer types can calculate axis units dynamically based on parameters or data:
+
+```javascript
+const dynamicLayerType = new LayerType({
+  name: "flexible_scatter",
+  axisQuantityUnits: {x: null, y: "meters"},  // x will be resolved dynamically
+
+  // Calculate x-axis unit from parameters
+  getAxisQuantityUnits: function(parameters, data) {
+    // Can inspect parameters
+    const xUnit = parameters.xUnit || "meters"
+
+    // Can also inspect data if needed
+    // const xUnit = data.unitMetadata ? data.unitMetadata : "meters"
+
+    return {x: xUnit, y: null}  // y is already static ("meters"), so return null
+  },
+
+  vert: `/* custom vertex shader */`,
+  frag: `/* custom fragment shader */`,
+
+  schema: () => ({
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    type: "object",
+    properties: {
+      xData: { type: "string" },
+      yData: { type: "string" },
+      xUnit: {
+        type: "string",
+        enum: ["meters", "volts", "m/s", "ampere"],
+        default: "meters",
+        description: "Unit for x-axis"
+      }
+    },
+    required: ["xData", "yData"]
+  }),
+
+  createLayer: function(params, data) {
+    // Resolve axis units (merges static + dynamic)
+    const resolved = this.resolveAxisQuantityUnits(params, data)
+
+    return new Layer({
+      type: this,
+      attributes: { x: data[params.xData], y: data[params.yData] },
+      uniforms: {},
+      xAxis: params.xAxis || "xaxis_bottom",
+      yAxis: params.yAxis || "yaxis_left",
+      xAxisQuantityUnit: resolved.x,
+      yAxisQuantityUnit: resolved.y
+    })
+  }
+})
+```
+
+**How It Works:**
+1. Set axis unit to `null` in `axisQuantityUnits` to mark it for dynamic resolution
+2. Provide `getAxisQuantityUnits(parameters, data)` method that returns resolved units
+3. Call `this.resolveAxisQuantityUnits(parameters, data)` in `createLayer()` to get final units
+4. Pass resolved units to Layer constructor
+
+**Validation:**
+- Unit resolution happens during `plot.update()`
+- If resolved units conflict with existing axis units, error is thrown
+- Plot preserves previous configuration on error
+- Validation is runtime, not JSON schema based (since it depends on data/parameters)
+
+**Use Cases:**
+- Layer type that adapts to user-selected units
+- Layer type that infers units from data metadata
+- Layer type that uses different units based on data range
+- Generic layer types that work with multiple unit types
 
 ---
 

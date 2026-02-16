@@ -4,8 +4,7 @@ import { AXES } from "./AxisRegistry.js"
 
 export const scatterLayerType = new LayerType({
   name: "scatter",
-  xAxisQuantityUnit: "meters",
-  yAxisQuantityUnit: "meters",
+  axisQuantityUnits: {x: "meters", y: "meters"},
   vert: `
     precision mediump float;
     attribute float x;
@@ -72,13 +71,18 @@ export const scatterLayerType = new LayerType({
     if (!y) throw new Error(`Data property '${yData}' not found in data object`)
     if (!v) throw new Error(`Data property '${vData}' not found in data object`)
 
+    // Resolve axis quantity units
+    const resolved = this.resolveAxisQuantityUnits(parameters, data)
+
     // Create and return the layer with GPU-ready attributes and uniforms
     return new Layer({
       type: this,
       attributes: { x, y, v },
       uniforms: {},
       xAxis,
-      yAxis
+      yAxis,
+      xAxisQuantityUnit: resolved.x,
+      yAxisQuantityUnit: resolved.y
     })
   }
 })
