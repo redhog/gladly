@@ -154,14 +154,14 @@ this.units = {}   // { axisName: unitString }
 **Key Properties:**
 ```javascript
 {
-  name: string,           // Type identifier
-  xUnit: string,          // Required x-axis unit
-  yUnit: string,          // Required y-axis unit
-  vert: string,           // GLSL vertex shader
-  frag: string,           // GLSL fragment shader
-  attributes: object,     // Attribute accessors
-  schema: function,       // Returns JSON Schema
-  createLayer: function   // Factory for Layer instances
+  name: string,                    // Type identifier
+  xAxisQuantityUnit: string,       // Required x-axis quantity unit
+  yAxisQuantityUnit: string,       // Required y-axis quantity unit
+  vert: string,                    // GLSL vertex shader
+  frag: string,                    // GLSL fragment shader
+  attributes: object,              // Attribute accessors
+  schema: function,                // Returns JSON Schema
+  createLayer: function            // Factory for Layer instances
 }
 ```
 
@@ -190,7 +190,7 @@ this.units = {}   // { axisName: unitString }
 
 **Configuration:**
 - **Name:** "scatter"
-- **Units:** "meters" (both x and y)
+- **Quantity Units:** "meters" (both x and y)
 - **Attributes:** x, y, v
 
 **Vertex Shader:**
@@ -265,20 +265,33 @@ this.axisRegistry  // AxisRegistry instance (created internally)
 
 **Constructor Parameters:**
 ```javascript
-{
-  container,       // HTMLElement - parent container
-  width,           // number
-  height,          // number
-  margin,          // { top, right, bottom, left } - optional
-  data,            // object - arbitrary structure (Float32Arrays)
-  plot: {          // plot configuration
-    layers,        // array - layer specifications
-    axes           // object - domain overrides (optional)
-  }
-}
+container        // HTMLElement - parent container
 ```
 
+**Note:** The constructor only takes the container element. Dimensions are auto-detected from `container.clientWidth` and `container.clientHeight`. Configuration and data are provided via the `update()` method.
+
 **Key Methods:**
+
+**update({ config, data }):**
+1. Store config and/or data if provided
+2. Only proceed if both config and data are present
+3. Get dimensions from container.clientWidth/clientHeight
+4. Update canvas and SVG dimensions
+5. Clean up existing regl context
+6. Call _initialize()
+
+**forceUpdate():**
+- Equivalent to calling `update({})` with no parameters
+- Re-renders with existing config and data
+
+**_initialize():** (internal)
+1. Extract layers and axes from currentConfig
+2. Initialize regl context
+3. Create AxisRegistry internally
+4. Process layers (see _processLayers below)
+5. Set domains
+6. Initialize zoom
+7. Render
 
 **_processLayers(layersConfig, data):** (internal)
 1. For each layer spec `{ layerTypeName: parameters }`:
@@ -293,18 +306,18 @@ this.axisRegistry  // AxisRegistry instance (created internally)
 2. Calculate min/max from Float32Array data
 3. Apply calculated domain or use override from `axes` parameter
 
-**render():**
+**render():** (internal)
 1. Clear canvas to white
 2. Execute all draw commands (GPU rendering)
 3. Call renderAxes()
 
-**renderAxes():**
+**renderAxes():** (internal)
 1. For each axis in registry:
 2. Create D3 axis generator (axisBottom/axisTop/axisLeft/axisRight)
 3. Render to SVG `<g>` element with styling
 4. Add unit labels
 
-**initZoom():**
+**initZoom():** (internal)
 1. Create full-coverage SVG overlay rectangle
 2. Create D3 zoom behavior with region detection
 3. Support plot area zoom (all axes) and axis-specific zoom
@@ -330,7 +343,7 @@ this.axisRegistry  // AxisRegistry instance (created internally)
 2. User prepares data as Float32Arrays
    └─> const data = { x, y, v, ... }
 
-3. User creates Plot (just container)
+3. User creates Plot with container element
    new Plot(container)
    │
    ├─> Plot creates canvas element and appends to container
@@ -341,45 +354,49 @@ this.axisRegistry  // AxisRegistry instance (created internally)
 4. User calls update with config and data
    plot.update({ config: { layers, axes }, data })
    │
+   ├─> Store config and data in Plot instance
    ├─> Detect width/height from container.clientWidth/clientHeight
    ├─> Update canvas and SVG dimensions
    ├─> Clean up existing regl context if present
    ├─> Clear SVG content
    │
-   ├─> Plot initializes regl context
-   ├─> Plot creates AxisRegistry internally
-   │
-   ├─> Plot._processLayers(config.layers, data)
+   ├─> Plot._initialize()
    │   │
-   │   └─> For each { layerTypeName: parameters }:
-   │       ├─> getLayerType(layerTypeName)
-   │       ├─> layerType.createLayer(parameters, data)
-   │       │   ├─> Extract data properties
-   │       │   └─> Create Layer instance
-   │       ├─> AxisRegistry.ensureAxis(layer.xAxis, layer.type.xUnit)
-   │       │   └─> Create D3 scale if doesn't exist
-   │       ├─> AxisRegistry.ensureAxis(layer.yAxis, layer.type.yUnit)
-   │       ├─> LayerType.createDrawCommand(regl)
-   │       │   └─> Compile shaders, create GPU draw function
-   │       └─> Store layer and draw command
-   │
-   ├─> Plot._setDomains(config.axes)
-   │   ├─> For each axis, collect all data points
-   │   ├─> Calculate min/max from data
-   │   └─> Apply calculated domain or override from `config.axes` param
-   │
-   ├─> Plot.initZoom()
-   │   └─> Set up zoom/pan interactions
-   │
-   └─> Plot.render()
-       └─> (See Render Cycle below)
+   │   ├─> Plot initializes regl context
+   │   ├─> Plot creates AxisRegistry internally
+   │   │
+   │   ├─> Plot._processLayers(config.layers, data)
+   │   │   │
+   │   │   └─> For each { layerTypeName: parameters }:
+   │   │       ├─> getLayerType(layerTypeName)
+   │   │       ├─> layerType.createLayer(parameters, data)
+   │   │       │   ├─> Extract data properties
+   │   │       │   └─> Create Layer instance
+   │   │       ├─> AxisRegistry.ensureAxis(layer.xAxis, layer.type.xAxisQuantityUnit)
+   │   │       │   └─> Create D3 scale if doesn't exist
+   │   │       ├─> AxisRegistry.ensureAxis(layer.yAxis, layer.type.yAxisQuantityUnit)
+   │   │       ├─> LayerType.createDrawCommand(regl)
+   │   │       │   └─> Compile shaders, create GPU draw function
+   │   │       └─> Store layer and draw command
+   │   │
+   │   ├─> Plot._setDomains(config.axes)
+   │   │   ├─> For each axis, collect all data points
+   │   │   ├─> Calculate min/max from data
+   │   │   └─> Apply calculated domain or override from `config.axes` param
+   │   │
+   │   ├─> Plot.initZoom()
+   │   │   └─> Set up zoom/pan interactions
+   │   │
+   │   └─> Plot.render()
+   │       └─> (See Render Cycle below)
 ```
 
 **No Manual Steps Required:**
 - No separate AxisRegistry creation
 - No manual layer addition
 - No manual domain setting (unless overriding)
-- Plot is ready to use immediately after construction
+- Dimensions auto-detected from container
+- ResizeObserver handles automatic resizing
 
 ---
 
@@ -772,8 +789,8 @@ import { LayerType, Layer } from './src/index.js'
 
 const myLayerType = new LayerType({
   name: "mytype",
-  xUnit: "meters",
-  yUnit: "volts",
+  xAxisQuantityUnit: "meters",
+  yAxisQuantityUnit: "volts",
   vert: `/* custom vertex shader */`,
   frag: `/* custom fragment shader */`,
   attributes: {

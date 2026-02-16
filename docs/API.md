@@ -21,7 +21,7 @@ const x = new Float32Array([10, 20, 30, 40, 50])
 const y = new Float32Array([15, 25, 35, 25, 45])
 const v = new Float32Array([0.2, 0.4, 0.6, 0.8, 1.0])
 
-// 3. Create plot (just the container)
+// 3. Create plot with container element
 const plot = new Plot(document.getElementById("plot-container"))
 
 // 4. Apply configuration and data
@@ -44,7 +44,7 @@ plot.update({
 <div id="plot-container" style="position: relative; width: 800px; height: 600px;"></div>
 ```
 
-The Plot will automatically create and manage the canvas and SVG elements inside the container. Width and height are read from the container's dimensions.
+The Plot will automatically create and manage the canvas and SVG elements inside the container. Width and height are automatically detected from the container's `clientWidth` and `clientHeight`. The plot automatically handles resizing via ResizeObserver.
 
 ---
 
@@ -54,7 +54,7 @@ The Plot will automatically create and manage the canvas and SVG elements inside
 
 A **LayerType** defines how data is visualized. Each LayerType specifies:
 
-- **X-axis and Y-axis units** - Each axis has a unit (e.g., "meters", "volts", "log10")
+- **X-axis and Y-axis quantity units** - Each axis has a quantity unit (e.g., "meters", "volts", "log10")
 - **GLSL shaders** - Vertex and fragment shaders that define how data is rendered on the GPU
 - **Data attributes** - Which fields from your data are passed to the shaders
 - **Schema** - JSON Schema definition for layer parameters
@@ -172,8 +172,8 @@ import { AXES } from './src/index.js'
 
 const redDotsType = new LayerType({
   name: "red_dots",
-  xUnit: "meters",
-  yUnit: "volts",
+  xAxisQuantityUnit: "meters",
+  yAxisQuantityUnit: "volts",
 
   // Vertex shader: transform data coordinates to screen space
   vert: `
@@ -246,7 +246,7 @@ registerLayerType("red_dots", redDotsType)
 ```
 
 **Key Points:**
-- **Units**: `xUnit` and `yUnit` must match one of: "meters", "volts", "m/s", "ampere", "log10"
+- **Quantity Units**: `xAxisQuantityUnit` and `yAxisQuantityUnit` must match one of: "meters", "volts", "m/s", "ampere", "log10"
 - **Uniforms**: `xDomain` and `yDomain` are automatically provided by the library
 - **Attributes**: Map to your data fields using accessor functions
 - **Schema**: Returns a JSON Schema (Draft 2020-12) defining expected parameters
@@ -281,9 +281,9 @@ new Plot(container)
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `container` | HTMLElement | Container element (e.g., div) where canvas and SVG will be created. Must have explicit dimensions via CSS. |
+| `container` | HTMLElement | Container element (e.g., div) where canvas and SVG will be created. Must have explicit dimensions via CSS. Dimensions are auto-detected from `clientWidth` and `clientHeight`. |
 
-Creates an empty plot. No rendering occurs until `update()` is called with both config and data.
+Creates an empty plot with canvas and SVG elements. No rendering occurs until `update()` is called with both config and data. The plot automatically handles resizing via ResizeObserver.
 
 **Instance Methods:**
 
@@ -341,18 +341,10 @@ Omitted axes will have domains auto-calculated from data.
 
 #### `forceUpdate()`
 
-Forces a re-render with the current configuration and data. Useful after external changes or to manually trigger a resize update.
+Forces a re-render with the current configuration and data. Equivalent to calling `update({})` with no parameters.
 
 ```javascript
 plot.forceUpdate()
-```
-
-#### `destroy()`
-
-Cleans up the plot, removing event listeners, destroying the WebGL context, and removing DOM elements.
-
-```javascript
-plot.destroy()
 ```
 
 **Static Methods:**
@@ -365,9 +357,9 @@ plot.destroy()
 
 | Method | Description |
 |--------|-------------|
-| `update({ width, height, margin, data, plot: { layers, axes } })` | Updates the plot with new configuration. Clears and reinitializes the plot without recreating DOM elements. |
-| `render()` | Renders all layers and axes |
-| `renderAxes()` | Renders D3 axes on the SVG overlay |
+| `update({ config, data })` | Updates the plot with new configuration and/or data. See details below. |
+| `forceUpdate()` | Re-renders with current configuration and data. |
+| `destroy()` | Cleans up the plot, removing event listeners and destroying WebGL context. |
 
 ---
 
@@ -453,14 +445,14 @@ Defines how a layer is rendered using custom GLSL shaders.
 
 **Constructor:**
 ```javascript
-new LayerType({ name, xUnit, yUnit, vert, frag, attributes, schema, createLayer })
+new LayerType({ name, xAxisQuantityUnit, yAxisQuantityUnit, vert, frag, attributes, schema, createLayer })
 ```
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `name` | string | Type name (e.g., "scatter") |
-| `xUnit` | string | Unit for x-axis |
-| `yUnit` | string | Unit for y-axis |
+| `xAxisQuantityUnit` | string | Quantity unit for x-axis |
+| `yAxisQuantityUnit` | string | Quantity unit for y-axis |
 | `vert` | string | GLSL vertex shader code |
 | `frag` | string | GLSL fragment shader code |
 | `attributes` | object | Map of attribute names to data accessors |
@@ -572,8 +564,8 @@ import { Plot, LayerType, Layer, registerLayerType } from './src/index.js'
 // Define layer types with different units
 const tempType = new LayerType({
   name: "temperature",
-  xUnit: "meters",
-  yUnit: "volts",
+  xAxisQuantityUnit: "meters",
+  yAxisQuantityUnit: "volts",
   // ... shaders and attributes
   schema: () => ({ /* ... */ }),
   createLayer: function(params, data) { /* ... */ }
@@ -581,8 +573,8 @@ const tempType = new LayerType({
 
 const pressureType = new LayerType({
   name: "pressure",
-  xUnit: "meters",
-  yUnit: "log10",
+  xAxisQuantityUnit: "meters",
+  yAxisQuantityUnit: "log10",
   // ... shaders and attributes
   schema: () => ({ /* ... */ }),
   createLayer: function(params, data) { /* ... */ }
