@@ -26,7 +26,8 @@ export function registerAxisQuantityUnit(name, definition) {
 
 export function getAxisQuantityUnit(name) {
   if (!registry.has(name)) {
-    throw new Error(`Axis quantity unit '${name}' not registered. Available units: ${Array.from(registry.keys()).join(', ')}`)
+    // Return a temporary default definition without registering it
+    return { label: name, scale: "linear" }
   }
   return registry.get(name)
 }

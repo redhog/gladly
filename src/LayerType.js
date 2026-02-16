@@ -45,9 +45,9 @@ export class LayerType {
     })
   }
 
-  schema() {
+  schema(data) {
     if (this._schema) {
-      return this._schema()
+      return this._schema(data)
     }
     throw new Error(`LayerType '${this.name}' does not implement schema()`)
   }

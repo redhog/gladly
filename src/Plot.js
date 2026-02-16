@@ -225,7 +225,7 @@ export class Plot {
     }
   }
 
-  static schema() {
+  static schema(data) {
     const layerTypes = getRegisteredLayerTypes()
 
     return {
@@ -241,7 +241,7 @@ export class Plot {
               return {
                 title: typeName,
                 properties: {
-                  [typeName]: layerType.schema()
+                  [typeName]: layerType.schema(data)
                 },
                 required: [typeName],
                 additionalProperties: false

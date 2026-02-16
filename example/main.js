@@ -1,4 +1,5 @@
 import { Plot, registerLayerType } from "../src/index.js"
+import { } from "../src/ScatterLayer.js"
 import { JSONEditor } from '@json-editor/json-editor'
 import { } from "./layer-types/ScatterMVLayer.js"
 import { } from "./layer-types/ScatterSALayer.js"
@@ -24,7 +25,7 @@ function updatePlot(plotConfig) {
 updatePlot(initialPlotConfig)
 
 const editor = new JSONEditor(document.getElementById('editor-container'), {
-  schema: Plot.schema(),
+  schema: Plot.schema(data),
   startval: initialPlotConfig,
   theme: 'html',
   iconlib: 'fontawesome4',
