@@ -1,5 +1,4 @@
 import { LayerType, Layer, registerLayerType } from "../../src/index.js"
-import { prop } from "../utils.js"
 
 /**
  * Scatter plot layer type for m/s (x) vs ampere (y)
@@ -9,11 +8,6 @@ export const ScatterSALayer = new LayerType({
   name: "scatter-sa",
   xAxisQuantityUnit: "m/s",
   yAxisQuantityUnit: "ampere",
-  attributes: {
-    x: { buffer: prop("data.x") },
-    y: { buffer: prop("data.y") },
-    v: { buffer: prop("data.v") }
-  },
   vert: `
     precision mediump float;
     attribute float x;
@@ -62,7 +56,8 @@ export const ScatterSALayer = new LayerType({
     const { xData, yData, vData, xAxis = "xaxis_bottom", yAxis = "yaxis_left" } = parameters
     return new Layer({
       type: this,
-      data: { x: data[xData], y: data[yData], v: data[vData] },
+      attributes: { x: data[xData], y: data[yData], v: data[vData] },
+      uniforms: {},
       xAxis,
       yAxis
     })

@@ -211,11 +211,13 @@ gl_FragColor = vec4(v, 0.0, 1.0 - v, 1.0)
 Defines parameters: `xData` (required), `yData` (required), `vData` (required), `xAxis` (optional), `yAxis` (optional)
 
 **Factory Method:**
-Extracts data properties from data object and creates Layer instance
+Extracts data properties from data object and creates Layer instance with `attributes` and `uniforms` objects
 
-**Helper Function: prop()**
-- Extracts nested properties from regl context
-- Usage: `prop('data.x')` returns `(context, props) => props.data.x`
+**Dynamic Attribute/Uniform Generation:**
+- Attributes and uniforms are generated dynamically in `createDrawCommand(regl, layer)`
+- Inspects `layer.attributes` and `layer.uniforms` to build regl configuration
+- Each attribute automatically maps to `regl.prop('attributes.ATTRNAME')`
+- Each uniform automatically maps to `regl.prop('uniforms.UNIFORMNAME')`
 
 ---
 
@@ -793,10 +795,6 @@ const myLayerType = new LayerType({
   yAxisQuantityUnit: "volts",
   vert: `/* custom vertex shader */`,
   frag: `/* custom fragment shader */`,
-  attributes: {
-    x: { buffer: (ctx, props) => props.data.x },
-    y: { buffer: (ctx, props) => props.data.y }
-  },
   schema: () => ({
     $schema: "https://json-schema.org/draft/2020-12/schema",
     type: "object",
@@ -809,7 +807,8 @@ const myLayerType = new LayerType({
   createLayer: function(params, data) {
     return new Layer({
       type: this,
-      data: { x: data[params.xData], y: data[params.yData] },
+      attributes: { x: data[params.xData], y: data[params.yData] },
+      uniforms: {},
       xAxis: params.xAxis || "xaxis_bottom",
       yAxis: params.yAxis || "yaxis_left"
     })

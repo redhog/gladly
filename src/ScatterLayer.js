@@ -2,23 +2,10 @@ import { LayerType } from "./LayerType.js"
 import { Layer } from "./Layer.js"
 import { AXES } from "./AxisRegistry.js"
 
-// Helper to create property accessor (repl regl.prop which may not be available)
-const prop = (path) => (context, props) => {
-  const parts = path.split('.')
-  let value = props
-  for (const part of parts) value = value[part]
-  return value
-}
-
 export const scatterLayerType = new LayerType({
   name: "scatter",
   xAxisQuantityUnit: "meters",
   yAxisQuantityUnit: "meters",
-  attributes: {
-    x: { buffer: prop("data.x") },
-    y: { buffer: prop("data.y") },
-    v: { buffer: prop("data.v") }
-  },
   vert: `
     precision mediump float;
     attribute float x;
@@ -85,10 +72,11 @@ export const scatterLayerType = new LayerType({
     if (!y) throw new Error(`Data property '${yData}' not found in data object`)
     if (!v) throw new Error(`Data property '${vData}' not found in data object`)
 
-    // Create and return the layer
+    // Create and return the layer with GPU-ready attributes and uniforms
     return new Layer({
       type: this,
-      data: { x, y, v },
+      attributes: { x, y, v },
+      uniforms: {},
       xAxis,
       yAxis
     })

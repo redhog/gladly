@@ -1,13 +1,12 @@
 import { Layer } from "./Layer.js"
 
 export class LayerType {
-  constructor({ name, xAxisQuantityUnit, yAxisQuantityUnit, vert, frag, attributes, schema, createLayer }) {
+  constructor({ name, xAxisQuantityUnit, yAxisQuantityUnit, vert, frag, schema, createLayer }) {
     this.name = name
     this.xAxisQuantityUnit = xAxisQuantityUnit
     this.yAxisQuantityUnit = yAxisQuantityUnit
     this.vert = vert
     this.frag = frag
-    this.attributes = attributes
 
     // Allow schema and createLayer to be provided as constructor parameters
     if (schema) {
@@ -18,15 +17,27 @@ export class LayerType {
     }
   }
 
-  createDrawCommand(regl) {
+  createDrawCommand(regl, layer) {
+    // Build attributes object dynamically from layer.attributes
+    const attributes = {}
+    for (const key of Object.keys(layer.attributes)) {
+      attributes[key] = { buffer: regl.prop(`attributes.${key}`) }
+    }
+
+    // Build uniforms object with standard uniforms plus any layer-specific ones
+    const uniforms = {
+      xDomain: regl.prop("xDomain"),
+      yDomain: regl.prop("yDomain")
+    }
+    for (const key of Object.keys(layer.uniforms)) {
+      uniforms[key] = regl.prop(`uniforms.${key}`)
+    }
+
     return regl({
       vert: this.vert,
       frag: this.frag,
-      attributes: this.attributes,
-      uniforms: {
-        xDomain: regl.prop("xDomain"),
-        yDomain: regl.prop("yDomain")
-      },
+      attributes: attributes,
+      uniforms: uniforms,
       viewport: regl.prop("viewport"),
       primitive: "points",
       count: regl.prop("count")

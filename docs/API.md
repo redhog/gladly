@@ -230,10 +230,11 @@ const redDotsType = new LayerType({
 
     return new Layer({
       type: this,
-      data: {
+      attributes: {
         x: data[xData],
         y: data[yData]
       },
+      uniforms: {},
       xAxis,
       yAxis
     })
@@ -421,21 +422,27 @@ Represents a data layer to be visualized. Layers are typically created automatic
 
 **Constructor:**
 ```javascript
-new Layer({ type, data, xAxis, yAxis })
+new Layer({ type, attributes, uniforms, xAxis, yAxis })
 ```
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `type` | LayerType | required | LayerType defining rendering behavior |
-| `data` | object | required | Data object with Float32Array properties |
+| `attributes` | object | required | GPU attributes object with Float32Array properties |
+| `uniforms` | object | required | GPU uniforms object with scalars/arrays |
 | `xAxis` | string | `"xaxis_bottom"` | Axis name for x-coordinate |
 | `yAxis` | string | `"yaxis_left"` | Axis name for y-coordinate |
 
-**Data Object:**
-- Must contain `x` and `y` as Float32Array
-- Can contain additional fields (e.g., `v` for values)
-- All arrays must be same length
+**Attributes Object:**
+- Contains GPU attribute data as Float32Array (e.g., `{ x: Float32Array, y: Float32Array, v: Float32Array }`)
+- Property names must match GLSL attribute names in shaders
 - All arrays must be Float32Array (validation enforced)
+- All arrays must be same length
+
+**Uniforms Object:**
+- Contains GPU uniform data as scalars, typed arrays, or lists
+- Property names must match GLSL uniform names in shaders
+- Can be empty object if no layer-specific uniforms needed
 
 ---
 
@@ -445,7 +452,7 @@ Defines how a layer is rendered using custom GLSL shaders.
 
 **Constructor:**
 ```javascript
-new LayerType({ name, xAxisQuantityUnit, yAxisQuantityUnit, vert, frag, attributes, schema, createLayer })
+new LayerType({ name, xAxisQuantityUnit, yAxisQuantityUnit, vert, frag, schema, createLayer })
 ```
 
 | Parameter | Type | Description |
@@ -455,9 +462,10 @@ new LayerType({ name, xAxisQuantityUnit, yAxisQuantityUnit, vert, frag, attribut
 | `yAxisQuantityUnit` | string | Quantity unit for y-axis |
 | `vert` | string | GLSL vertex shader code |
 | `frag` | string | GLSL fragment shader code |
-| `attributes` | object | Map of attribute names to data accessors |
 | `schema` | function | Function returning JSON Schema for parameters |
 | `createLayer` | function | Function to create Layer from parameters and data |
+
+**Note:** Attributes and uniforms are now defined dynamically by the Layer instance created by `createLayer`, not statically in LayerType. The `createDrawCommand` method inspects the layer's `attributes` and `uniforms` objects to build the WebGL configuration.
 
 **Shader Uniforms (automatically provided):**
 - `xDomain` (vec2): [min, max] of x-axis domain

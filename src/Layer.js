@@ -1,11 +1,15 @@
 export class Layer {
-  constructor({ type, data, xAxis="xaxis_bottom", yAxis="yaxis_left" }) {
-    if (!(data.x instanceof Float32Array)) throw "x must be Float32Array"
-    if (!(data.y instanceof Float32Array)) throw "y must be Float32Array"
-    if (data.v && !(data.v instanceof Float32Array)) throw "v must be Float32Array"
+  constructor({ type, attributes, uniforms, xAxis="xaxis_bottom", yAxis="yaxis_left" }) {
+    // Validate that all attributes are typed arrays
+    for (const [key, value] of Object.entries(attributes)) {
+      if (!(value instanceof Float32Array)) {
+        throw new Error(`Attribute '${key}' must be Float32Array`)
+      }
+    }
 
     this.type = type
-    this.data = data
+    this.attributes = attributes
+    this.uniforms = uniforms
     this.xAxis = xAxis
     this.yAxis = yAxis
   }

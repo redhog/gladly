@@ -159,7 +159,7 @@ export class Plot {
       this.axisRegistry.ensureAxis(layer.yAxis, layer.type.yAxisQuantityUnit)
 
       // Create the draw command
-      layer.draw = layer.type.createDrawCommand(this.regl)
+      layer.draw = layer.type.createDrawCommand(this.regl, layer)
 
       this.layers.push(layer)
     }
@@ -181,7 +181,7 @@ export class Plot {
 
       for (const layer of layersUsingAxis) {
         const isXAxis = layer.xAxis === axis
-        const dataArray = isXAxis ? layer.data.x : layer.data.y
+        const dataArray = isXAxis ? layer.attributes.x : layer.attributes.y
 
         for (let i = 0; i < dataArray.length; i++) {
           const val = dataArray[i]
@@ -404,11 +404,12 @@ export class Plot {
     }
     for (const layer of this.layers) {
       layer.draw({
-        data: layer.data,
+        attributes: layer.attributes,
+        uniforms: layer.uniforms,
         xDomain: this.axisRegistry.getScale(layer.xAxis).domain(),
         yDomain: this.axisRegistry.getScale(layer.yAxis).domain(),
         viewport: viewport,
-        count: layer.data.x.length
+        count: layer.attributes.x.length
       })
     }
     this.renderAxes()
