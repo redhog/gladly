@@ -21,13 +21,12 @@ const x = new Float32Array([10, 20, 30, 40, 50])
 const y = new Float32Array([15, 25, 35, 25, 45])
 const v = new Float32Array([0.2, 0.4, 0.6, 0.8, 1.0])
 
-// 3. Create plot declaratively
-const plot = new Plot({
-  container: document.getElementById("plot-container"),
-  width: 800,
-  height: 600,
-  data: { x, y, v },
-  plot: {
+// 3. Create plot (just the container)
+const plot = new Plot(document.getElementById("plot-container"))
+
+// 4. Apply configuration and data
+plot.update({
+  config: {
     layers: [
       { scatter: { xData: "x", yData: "y", vData: "v", xAxis: "xaxis_bottom", yAxis: "yaxis_left" } }
     ],
@@ -35,7 +34,8 @@ const plot = new Plot({
       xaxis_bottom: { min: 0, max: 60 },
       yaxis_left: { min: 0, max: 50 }
     }
-  }
+  },
+  data: { x, y, v }
 })
 ```
 
@@ -44,7 +44,7 @@ const plot = new Plot({
 <div id="plot-container" style="position: relative; width: 800px; height: 600px;"></div>
 ```
 
-The Plot will automatically create and manage the canvas and SVG elements inside the container.
+The Plot will automatically create and manage the canvas and SVG elements inside the container. Width and height are read from the container's dimensions.
 
 ---
 
@@ -106,12 +106,12 @@ const y = new Float32Array([15, 25, 35, 25, 45])
 const v = new Float32Array([0.2, 0.4, 0.6, 0.8, 1.0])
 
 // Create plot
-const plot = new Plot({
-  container: document.getElementById("plot-container"),
-  width: 800,
-  height: 600,
+const plot = new Plot(document.getElementById("plot-container"))
+
+// Apply configuration and data
+plot.update({
   data: { x, y, v },  // Data object with arbitrary structure
-  plot: {
+  config: {
     layers: [
       { scatter: { xData: "x", yData: "y", vData: "v" } }  // References data properties
     ],
@@ -128,12 +128,10 @@ const plot = new Plot({
 If you omit the `axes` parameter (or omit specific axes), domains are automatically calculated from the data:
 
 ```javascript
-const plot = new Plot({
-  container: document.getElementById("plot-container"),
-  width: 800,
-  height: 600,
+const plot = new Plot(document.getElementById("plot-container"))
+plot.update({
   data: { x, y, v },
-  plot: {
+  config: {
     layers: [
       { scatter: { xData: "x", yData: "y", vData: "v" } }
     ]
@@ -145,12 +143,10 @@ const plot = new Plot({
 ### Multi-Layer Plot
 
 ```javascript
-const plot = new Plot({
-  container: document.getElementById("plot-container"),
-  width: 800,
-  height: 600,
+const plot = new Plot(document.getElementById("plot-container"))
+plot.update({
   data: { x1, y1, v1, x2, y2, v2 },
-  plot: {
+  config: {
     layers: [
       { scatter: { xData: "x1", yData: "y1", vData: "v1", xAxis: "xaxis_bottom", yAxis: "yaxis_left" } },
       { scatter: { xData: "x2", yData: "y2", vData: "v2", xAxis: "xaxis_top", yAxis: "yaxis_right" } }
@@ -280,36 +276,58 @@ The main plotting container that manages WebGL rendering and SVG axes.
 
 **Constructor:**
 ```javascript
-new Plot({ container, width, height, margin, data, plot: { layers, axes } })
+new Plot(container)
 ```
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `container` | HTMLElement | required | Container element (e.g., div) where canvas and SVG will be created |
-| `width` | number | required | Plot width in pixels |
-| `height` | number | required | Plot height in pixels |
-| `margin` | object | `{top:60, right:60, bottom:60, left:60}` | Margins for axes |
-| `data` | object | `{}` | Data object with arbitrary structure (Float32Arrays) |
-| `plot` | object | `{layers:[], axes:{}}` | Plot configuration containing layers and axes |
-| `plot.layers` | array | `[]` | Array of layer specifications |
-| `plot.axes` | object | `{}` | Optional domain overrides for axes |
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `container` | HTMLElement | Container element (e.g., div) where canvas and SVG will be created. Must have explicit dimensions via CSS. |
+
+Creates an empty plot. No rendering occurs until `update()` is called with both config and data.
+
+**Instance Methods:**
+
+#### `update({ config, data })`
+
+Updates the plot with new configuration and/or data. Both parameters are optional.
+
+```javascript
+plot.update({ config, data })
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `config` | object | Plot configuration containing `layers` and optional `axes` |
+| `config.layers` | array | Array of layer specifications (see below) |
+| `config.axes` | object | Optional domain overrides for axes (see below) |
+| `data` | object | Data object with arbitrary structure (all values must be Float32Arrays) |
+
+**Behavior:**
+- If only `config` is provided, stores config but doesn't render (waits for data)
+- If only `data` is provided, updates data and re-renders with existing config
+- If both provided, updates both and renders
+- If neither provided, re-renders with existing config/data (same as `forceUpdate()`)
+
+**Width and Height:**
+- Automatically detected from container's `clientWidth` and `clientHeight`
+- Updates automatically on container resize via ResizeObserver
 
 **Layer Specification Format:**
 
 Each layer is an object with a single key (the layer type name) mapping to parameters:
 
 ```javascript
-plot: {
+config: {
   layers: [
     { layerTypeName: { param1: value1, param2: value2, ... } }
   ]
 }
 ```
 
-**Axes Parameter Format:**
+**Axes Configuration Format:**
 
 ```javascript
-plot: {
+config: {
   axes: {
     xaxis_bottom: { min: 0, max: 100 },
     xaxis_top: { min: 0, max: 100 },
@@ -320,6 +338,22 @@ plot: {
 ```
 
 Omitted axes will have domains auto-calculated from data.
+
+#### `forceUpdate()`
+
+Forces a re-render with the current configuration and data. Useful after external changes or to manually trigger a resize update.
+
+```javascript
+plot.forceUpdate()
+```
+
+#### `destroy()`
+
+Cleans up the plot, removing event listeners, destroying the WebGL context, and removing DOM elements.
+
+```javascript
+plot.destroy()
+```
 
 **Static Methods:**
 
@@ -480,12 +514,10 @@ A pre-configured LayerType for scatter plots.
 import { registerLayerType, scatterLayerType } from './src/index.js'
 registerLayerType("scatter", scatterLayerType)
 
-const plot = new Plot({
-  container: document.getElementById("plot-container"),
-  width: 800,
-  height: 600,
+const plot = new Plot(document.getElementById("plot-container"))
+plot.update({
   data: { x, y, v },
-  plot: {
+  config: {
     layers: [
       { scatter: { xData: "x", yData: "y", vData: "v" } }
     ]
@@ -559,12 +591,10 @@ const pressureType = new LayerType({
 registerLayerType("temperature", tempType)
 registerLayerType("pressure", pressureType)
 
-const plot = new Plot({
-  container: document.getElementById("plot-container"),
-  width: 800,
-  height: 600,
+const plot = new Plot(document.getElementById("plot-container"))
+plot.update({
   data: { time, temp, pressure },
-  plot: {
+  config: {
     layers: [
       { temperature: { xData: "time", yData: "temp", vData: "temp", xAxis: "xaxis_bottom", yAxis: "yaxis_left" } },
       { pressure: { xData: "time", yData: "pressure", vData: "pressure", xAxis: "xaxis_bottom", yAxis: "yaxis_right" } }
@@ -595,12 +625,10 @@ for (let i = 0; i < N; i++) {
 
 registerLayerType("scatter", scatterLayerType)
 
-const plot = new Plot({
-  container: document.getElementById("plot-container"),
-  width: 800,
-  height: 600,
+const plot = new Plot(document.getElementById("plot-container"))
+plot.update({
   data: { x, y, v },
-  plot: {
+  config: {
     layers: [
       { scatter: { xData: "x", yData: "y", vData: "v" } }
     ]
@@ -651,12 +679,10 @@ const plot = new Plot({
     }
 
     // Create plot with declarative API
-    const plot = new Plot({
-      container: document.getElementById("plot-container"),
-      width: 800,
-      height: 600,
+    const plot = new Plot(document.getElementById("plot-container"))
+    plot.update({
       data: { x, y, v },
-      plot: {
+      config: {
         layers: [
           { scatter: { xData: "x", yData: "y", vData: "v" } }
         ],

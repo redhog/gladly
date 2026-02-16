@@ -36,27 +36,30 @@ import { Plot, registerLayerType, ScatterLayer } from './src/index.js';
 // Register layer types
 registerLayerType('scatter', ScatterLayer);
 
-// Create a plot with declarative configuration
-const plot = new Plot({
-  container: document.getElementById('plot'),
-  data: {
-    points: {
-      x: new Float32Array([1, 2, 3, 4, 5]),
-      y: new Float32Array([2, 4, 3, 5, 4])
-    }
-  },
-  layers: [
-    {
-      type: 'scatter',
-      data: 'points',
-      params: {
-        xAxis: 'bottom',
-        yAxis: 'left',
-        size: 5.0,
-        color: [1.0, 0.0, 0.0, 1.0]
+// Prepare data (all arrays must be Float32Array)
+const data = {
+  x: new Float32Array([1, 2, 3, 4, 5]),
+  y: new Float32Array([2, 4, 3, 5, 4])
+};
+
+// Create plot (just the container)
+const plot = new Plot(document.getElementById('plot'));
+
+// Apply configuration and data
+plot.update({
+  config: {
+    layers: [
+      {
+        scatter: {
+          xDataKey: 'x',
+          yDataKey: 'y',
+          xAxis: 'xaxis_bottom',
+          yAxis: 'yaxis_left'
+        }
       }
-    }
-  ]
+    ]
+  },
+  data
 });
 ```
 

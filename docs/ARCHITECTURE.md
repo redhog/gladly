@@ -330,15 +330,26 @@ this.axisRegistry  // AxisRegistry instance (created internally)
 2. User prepares data as Float32Arrays
    └─> const data = { x, y, v, ... }
 
-3. User creates Plot with declarative config
-   new Plot({ container, width, height, data, plot: { layers, axes } })
+3. User creates Plot (just container)
+   new Plot(container)
    │
    ├─> Plot creates canvas element and appends to container
    ├─> Plot creates SVG element and appends to container
+   ├─> Plot sets up ResizeObserver for auto-sizing
+   └─> Plot remains empty (no rendering yet)
+
+4. User calls update with config and data
+   plot.update({ config: { layers, axes }, data })
+   │
+   ├─> Detect width/height from container.clientWidth/clientHeight
+   ├─> Update canvas and SVG dimensions
+   ├─> Clean up existing regl context if present
+   ├─> Clear SVG content
+   │
    ├─> Plot initializes regl context
    ├─> Plot creates AxisRegistry internally
    │
-   ├─> Plot._processLayers(plot.layers, data)
+   ├─> Plot._processLayers(config.layers, data)
    │   │
    │   └─> For each { layerTypeName: parameters }:
    │       ├─> getLayerType(layerTypeName)
@@ -352,10 +363,10 @@ this.axisRegistry  // AxisRegistry instance (created internally)
    │       │   └─> Compile shaders, create GPU draw function
    │       └─> Store layer and draw command
    │
-   ├─> Plot._setDomains(plot.axes)
+   ├─> Plot._setDomains(config.axes)
    │   ├─> For each axis, collect all data points
    │   ├─> Calculate min/max from data
-   │   └─> Apply calculated domain or override from `plot.axes` param
+   │   └─> Apply calculated domain or override from `config.axes` param
    │
    ├─> Plot.initZoom()
    │   └─> Set up zoom/pan interactions
@@ -799,12 +810,10 @@ registerLayerType("mytype", myLayerType)
 3. Use it declaratively:
 
 ```javascript
-const plot = new Plot({
-  container: document.getElementById("plot-container"),
-  width: 800,
-  height: 600,
+const plot = new Plot(document.getElementById("plot-container"))
+plot.update({
   data: { myX, myY },
-  plot: {
+  config: {
     layers: [
       { mytype: { xData: "myX", yData: "myY" } }
     ]

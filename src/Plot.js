@@ -8,11 +8,12 @@ import { getLayerType, getRegisteredLayerTypes } from "./LayerTypeRegistry.js"
 import { getAxisQuantityUnit } from "./AxisQuantityUnitRegistry.js"
 
 export class Plot {
-  constructor({ container, width, height, margin = { top: 60, right: 60, bottom: 60, left: 60 }, data = {}, plot: { layers = [], axes = {} } = {} }) {
+  constructor(container) {
+    this.container = container
+    this.margin = { top: 60, right: 60, bottom: 60, left: 60 }
+
     // Create canvas element
     this.canvas = document.createElement('canvas')
-    this.canvas.width = width
-    this.canvas.height = height
     this.canvas.style.display = 'block'
     this.canvas.style.position = 'absolute'
     this.canvas.style.top = '0'
@@ -23,24 +24,70 @@ export class Plot {
     // Create SVG element
     this.svg = d3.select(container)
       .append('svg')
-      .attr('width', width)
-      .attr('height', height)
       .style('position', 'absolute')
       .style('top', '0')
       .style('left', '0')
       .style('z-index', '2')
       .style('user-select', 'none')
 
-    this.width = width
-    this.height = height
-    this.margin = margin
-    this.plotWidth = width - margin.left - margin.right
-    this.plotHeight = height - margin.top - margin.bottom
+    // State storage for updates
+    this.currentConfig = null
+    this.currentData = null
+    this.regl = null
+    this.layers = []
+    this.axisRegistry = null
 
-    this._initialize(data, layers, axes)
+    // Setup resize handling
+    this._setupResizeObserver()
   }
 
-  _initialize(data, layers, axes) {
+  update({ config, data } = {}) {
+    // Store config and data if provided
+    if (config !== undefined) {
+      this.currentConfig = config
+    }
+    if (data !== undefined) {
+      this.currentData = data
+    }
+
+    // Only render if we have both config and data
+    if (!this.currentConfig || !this.currentData) {
+      return
+    }
+
+    // Get dimensions from container
+    const width = this.container.clientWidth
+    const height = this.container.clientHeight
+
+    // Update canvas and SVG dimensions
+    this.canvas.width = width
+    this.canvas.height = height
+    this.svg.attr('width', width).attr('height', height)
+
+    this.width = width
+    this.height = height
+    this.plotWidth = width - this.margin.left - this.margin.right
+    this.plotHeight = height - this.margin.top - this.margin.bottom
+
+    // Clean up existing regl context if it exists
+    if (this.regl) {
+      this.regl.destroy()
+    }
+
+    // Clear SVG content
+    this.svg.selectAll('*').remove()
+
+    // Initialize everything
+    this._initialize()
+  }
+
+  forceUpdate() {
+    this.update({})
+  }
+
+  _initialize() {
+    const { layers = [], axes = {} } = this.currentConfig
+
     // Initialize regl
     this.regl = reglInit({ canvas: this.canvas })
 
@@ -53,7 +100,7 @@ export class Plot {
     this.axisRegistry = new AxisRegistry(this.plotWidth, this.plotHeight)
 
     // Process layers from declarative configuration
-    this._processLayers(layers, data)
+    this._processLayers(layers, this.currentData)
 
     // Auto-calculate domains and apply overrides
     this._setDomains(axes)
@@ -62,30 +109,35 @@ export class Plot {
     this.render()
   }
 
-  update({ width, height, margin = { top: 60, right: 60, bottom: 60, left: 60 }, data = {}, plot: { layers = [], axes = {} } = {} }) {
-    // Clean up existing regl context
+  _setupResizeObserver() {
+    if (typeof ResizeObserver !== 'undefined') {
+      this.resizeObserver = new ResizeObserver(() => {
+        this.forceUpdate()
+      })
+      this.resizeObserver.observe(this.container)
+    } else {
+      // Fallback to window resize for older browsers
+      this._resizeHandler = () => this.forceUpdate()
+      window.addEventListener('resize', this._resizeHandler)
+    }
+  }
+
+  destroy() {
+    // Clean up resize observer
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect()
+    } else if (this._resizeHandler) {
+      window.removeEventListener('resize', this._resizeHandler)
+    }
+
+    // Clean up regl context
     if (this.regl) {
       this.regl.destroy()
     }
 
-    // Clear SVG content
-    this.svg.selectAll('*').remove()
-
-    // Update dimensions if changed
-    if (width !== this.width || height !== this.height) {
-      this.width = width
-      this.height = height
-      this.canvas.width = width
-      this.canvas.height = height
-      this.svg.attr('width', width).attr('height', height)
-    }
-
-    this.margin = margin
-    this.plotWidth = width - margin.left - margin.right
-    this.plotHeight = height - margin.top - margin.bottom
-
-    // Reinitialize everything
-    this._initialize(data, layers, axes)
+    // Clean up DOM elements
+    this.canvas.remove()
+    this.svg.remove()
   }
 
   _processLayers(layersConfig, data) {

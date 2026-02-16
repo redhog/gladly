@@ -1,4 +1,4 @@
-import { LayerType, Layer } from "../../src/index.js"
+import { LayerType, Layer, registerLayerType } from "../../src/index.js"
 import { prop } from "../utils.js"
 
 /**
@@ -68,3 +68,5 @@ export const ScatterSALayer = new LayerType({
     })
   }
 })
+
+registerLayerType("scatter-sa", ScatterSALayer)
