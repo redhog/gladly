@@ -54,7 +54,14 @@ export class LayerType {
 
   createLayer(parameters, data) {
     if (this._createLayer) {
-      return this._createLayer.call(this, parameters, data)
+      const config = this._createLayer.call(this, parameters, data)
+      const resolved = this.resolveAxisQuantityUnits(parameters, data)
+      return new Layer({
+        type: this,
+        ...config,
+        xAxisQuantityUnit: resolved.x,
+        yAxisQuantityUnit: resolved.y
+      })
     }
     throw new Error(`LayerType '${this.name}' does not implement createLayer()`)
   }

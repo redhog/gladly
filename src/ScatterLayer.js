@@ -1,5 +1,4 @@
 import { LayerType } from "./LayerType.js"
-import { Layer } from "./Layer.js"
 import { AXES } from "./AxisRegistry.js"
 
 export const scatterLayerType = new LayerType({
@@ -71,18 +70,12 @@ export const scatterLayerType = new LayerType({
     if (!y) throw new Error(`Data property '${yData}' not found in data object`)
     if (!v) throw new Error(`Data property '${vData}' not found in data object`)
 
-    // Resolve axis quantity units
-    const resolved = this.resolveAxisQuantityUnits(parameters, data)
-
-    // Create and return the layer with GPU-ready attributes and uniforms
-    return new Layer({
-      type: this,
+    // Return layer configuration (Layer construction and unit resolution handled automatically)
+    return {
       attributes: { x, y, v },
       uniforms: {},
       xAxis,
-      yAxis,
-      xAxisQuantityUnit: resolved.x,
-      yAxisQuantityUnit: resolved.y
-    })
+      yAxis
+    }
   }
 })

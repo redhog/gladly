@@ -1,4 +1,4 @@
-import { LayerType, Layer, registerLayerType } from "../../src/index.js"
+import { LayerType, registerLayerType } from "../../src/index.js"
 
 /**
  * Scatter plot layer type for m/s (x) vs ampere (y)
@@ -53,16 +53,12 @@ export const ScatterSALayer = new LayerType({
   }),
   createLayer: function(parameters, data) {
     const { xData, yData, vData, xAxis = "xaxis_bottom", yAxis = "yaxis_left" } = parameters
-    const resolved = this.resolveAxisQuantityUnits(parameters, data)
-    return new Layer({
-      type: this,
+    return {
       attributes: { x: data[xData], y: data[yData], v: data[vData] },
       uniforms: {},
       xAxis,
-      yAxis,
-      xAxisQuantityUnit: resolved.x,
-      yAxisQuantityUnit: resolved.y
-    })
+      yAxis
+    }
   }
 })
 

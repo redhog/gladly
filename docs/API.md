@@ -224,24 +224,19 @@ const redDotsType = new LayerType({
   }),
 
   // Factory method to create layers from parameters and data
+  // Returns a config object - Layer construction and unit resolution handled automatically
   createLayer: function(parameters, data) {
     const { xData, yData, xAxis = "xaxis_bottom", yAxis = "yaxis_left" } = parameters
 
-    // Resolve axis quantity units (handles static and dynamic units)
-    const resolved = this.resolveAxisQuantityUnits(parameters, data)
-
-    return new Layer({
-      type: this,
+    return {
       attributes: {
         x: data[xData],
         y: data[yData]
       },
       uniforms: {},
       xAxis,
-      yAxis,
-      xAxisQuantityUnit: resolved.x,
-      yAxisQuantityUnit: resolved.y
-    })
+      yAxis
+    }
   }
 })
 
@@ -292,18 +287,13 @@ const dynamicScatterType = new LayerType({
   createLayer: function(parameters, data) {
     const { xData, yData, vData, xAxis = "xaxis_bottom", yAxis = "yaxis_left" } = parameters
 
-    // Resolve axis units (static values + dynamic calculation)
-    const resolved = this.resolveAxisQuantityUnits(parameters, data)
-
-    return new Layer({
-      type: this,
+    // Return config - axis units resolved automatically from axisQuantityUnits + getAxisQuantityUnits
+    return {
       attributes: { x: data[xData], y: data[yData], v: data[vData] },
       uniforms: {},
       xAxis,
-      yAxis,
-      xAxisQuantityUnit: resolved.x,
-      yAxisQuantityUnit: resolved.y
-    })
+      yAxis
+    }
   }
 })
 ```

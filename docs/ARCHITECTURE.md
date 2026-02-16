@@ -180,8 +180,8 @@ this.units = {}   // { axisName: unitString }
 **createLayer(parameters, data):**
 - Extracts data from the data object using parameter keys
 - Validates extracted data
-- Calls `this.resolveAxisQuantityUnits(parameters, data)` to resolve axis units
-- Creates and returns a Layer instance with resolved units
+- Returns a config object: `{ attributes, uniforms, xAxis, yAxis }`
+- The base LayerType automatically resolves axis units and constructs the Layer instance
 - Called automatically by Plot during initialization
 
 **getAxisQuantityUnits(parameters, data):** (optional)
@@ -193,7 +193,7 @@ this.units = {}   // { axisName: unitString }
 **resolveAxisQuantityUnits(parameters, data):**
 - Merges static `axisQuantityUnits` with dynamic resolution
 - Returns fully resolved `{x: string, y: string}` (no nulls)
-- Should be called in `createLayer()` before creating Layer instance
+- Called automatically by the base LayerType after custom createLayer returns config
 
 ---
 
@@ -384,9 +384,9 @@ container        // HTMLElement - parent container
    │   │   └─> For each { layerTypeName: parameters }:
    │   │       ├─> getLayerType(layerTypeName)
    │   │       ├─> layerType.createLayer(parameters, data)
-   │   │       │   ├─> Extract data properties
-   │   │       │   ├─> Resolve axis units (static + dynamic)
-   │   │       │   └─> Create Layer instance with resolved units
+   │   │       │   ├─> Custom createLayer: Extract data properties, return config
+   │   │       │   ├─> Base LayerType: Resolve axis units (static + dynamic)
+   │   │       │   └─> Base LayerType: Create Layer instance with resolved units
    │   │       ├─> AxisRegistry.ensureAxis(layer.xAxis, layer.xAxisQuantityUnit)
    │   │       │   └─> Create D3 scale if doesn't exist
    │   │       ├─> AxisRegistry.ensureAxis(layer.yAxis, layer.yAxisQuantityUnit)
@@ -602,7 +602,7 @@ User scrolls/drags over specific axis
 - Each LayerType provides `createLayer(parameters, data)` method
 - Plot calls factory method during initialization
 - Factory extracts relevant data from arbitrary data object
-- Factory validates and creates Layer instance
+- Factory returns config object; base LayerType handles Layer construction
 
 **Benefits:**
 - Layer types control their own instantiation
@@ -817,16 +817,12 @@ const myLayerType = new LayerType({
     required: ["xData", "yData"]
   }),
   createLayer: function(params, data) {
-    const resolved = this.resolveAxisQuantityUnits(params, data)
-    return new Layer({
-      type: this,
+    return {
       attributes: { x: data[params.xData], y: data[params.yData] },
       uniforms: {},
       xAxis: params.xAxis || "xaxis_bottom",
-      yAxis: params.yAxis || "yaxis_left",
-      xAxisQuantityUnit: resolved.x,
-      yAxisQuantityUnit: resolved.y
-    })
+      yAxis: params.yAxis || "yaxis_left"
+    }
   }
 })
 ```
@@ -924,18 +920,13 @@ const dynamicLayerType = new LayerType({
   }),
 
   createLayer: function(params, data) {
-    // Resolve axis units (merges static + dynamic)
-    const resolved = this.resolveAxisQuantityUnits(params, data)
-
-    return new Layer({
-      type: this,
+    // Return config - unit resolution handled automatically by base LayerType
+    return {
       attributes: { x: data[params.xData], y: data[params.yData] },
       uniforms: {},
       xAxis: params.xAxis || "xaxis_bottom",
-      yAxis: params.yAxis || "yaxis_left",
-      xAxisQuantityUnit: resolved.x,
-      yAxisQuantityUnit: resolved.y
-    })
+      yAxis: params.yAxis || "yaxis_left"
+    }
   }
 })
 ```
@@ -943,8 +934,8 @@ const dynamicLayerType = new LayerType({
 **How It Works:**
 1. Set axis unit to `null` in `axisQuantityUnits` to mark it for dynamic resolution
 2. Provide `getAxisQuantityUnits(parameters, data)` method that returns resolved units
-3. Call `this.resolveAxisQuantityUnits(parameters, data)` in `createLayer()` to get final units
-4. Pass resolved units to Layer constructor
+3. The base LayerType automatically calls `resolveAxisQuantityUnits` after createLayer returns
+4. The resolved units are automatically passed to the Layer constructor
 
 **Validation:**
 - Unit resolution happens during `plot.update()`
