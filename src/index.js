@@ -1,6 +1,7 @@
 export { LayerType } from "./LayerType.js"
 export { Layer } from "./Layer.js"
-export { AxisRegistry, AXES, AXIS_UNITS } from "./AxisRegistry.js"
+export { AxisRegistry, AXES } from "./AxisRegistry.js"
 export { Plot } from "./Plot.js"
 export { scatterLayerType } from "./ScatterLayer.js"
 export { registerLayerType, getLayerType, getRegisteredLayerTypes } from "./LayerTypeRegistry.js"
+export { registerAxisQuantityUnit, getAxisQuantityUnit, getRegisteredAxisQuantityUnits } from "./AxisQuantityUnitRegistry.js"

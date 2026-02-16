@@ -1,10 +1,10 @@
 import { Layer } from "./Layer.js"
 
 export class LayerType {
-  constructor({ name, xUnit, yUnit, vert, frag, attributes, schema, createLayer }) {
+  constructor({ name, xAxisQuantityUnit, yAxisQuantityUnit, vert, frag, attributes, schema, createLayer }) {
     this.name = name
-    this.xUnit = xUnit
-    this.yUnit = yUnit
+    this.xAxisQuantityUnit = xAxisQuantityUnit
+    this.yAxisQuantityUnit = yAxisQuantityUnit
     this.vert = vert
     this.frag = frag
     this.attributes = attributes

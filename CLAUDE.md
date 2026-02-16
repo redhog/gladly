@@ -107,5 +107,10 @@ npm start
    - Present a clear plan of what changes are needed
    - Ask for clarification if requirements are unclear
    - Wait for explicit go-ahead before proceeding with modifications
+4. **No backwards compatibility** - This is an early-stage project. When making changes:
+   - Do NOT add backwards compatibility shims, deprecated exports, or compatibility proxies
+   - Make breaking changes cleanly without preserving old APIs
+   - Update all code to use new patterns immediately
+   - Backwards compatibility is irrelevant at this stage
 
 This ensures all changes are deliberate and aligned with project goals.

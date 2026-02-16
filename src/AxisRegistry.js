@@ -1,38 +1,32 @@
 import * as d3 from "d3-scale"
+import { getAxisQuantityUnit } from "./AxisQuantityUnitRegistry.js"
 
 export const AXES = ["xaxis_bottom","xaxis_top","yaxis_left","yaxis_right"]
-
-export const AXIS_UNITS = {
-  meters: { label: "Meters", scale: "linear" },
-  volts: { label: "Volts", scale: "linear" },
-  "m/s": { label: "m/s", scale: "linear" },
-  ampere: { label: "Ampere", scale: "linear" },
-  log10: { label: "Log10", scale: "log" }
-}
 
 export class AxisRegistry {
   constructor(width, height) {
     this.scales = {}
-    this.units = {}
+    this.axisQuantityUnits = {}
     this.width = width
     this.height = height
     AXES.forEach(a => {
       this.scales[a] = null
-      this.units[a] = null
+      this.axisQuantityUnits[a] = null
     })
   }
 
-  ensureAxis(axisName, unit) {
+  ensureAxis(axisName, axisQuantityUnit) {
     if (!AXES.includes(axisName)) throw `Unknown axis ${axisName}`
-    if (this.units[axisName] && this.units[axisName] !== unit)
-      throw `Unit mismatch on axis ${axisName}: ${this.units[axisName]} vs ${unit}`
+    if (this.axisQuantityUnits[axisName] && this.axisQuantityUnits[axisName] !== axisQuantityUnit)
+      throw `Axis quantity unit mismatch on axis ${axisName}: ${this.axisQuantityUnits[axisName]} vs ${axisQuantityUnit}`
 
     if (!this.scales[axisName]) {
-      const scaleType = AXIS_UNITS[unit].scale
+      const quantityUnitDef = getAxisQuantityUnit(axisQuantityUnit)
+      const scaleType = quantityUnitDef.scale
       this.scales[axisName] = scaleType === "log"
         ? d3.scaleLog().range(axisName.includes("y") ? [this.height,0] : [0,this.width])
         : d3.scaleLinear().range(axisName.includes("y") ? [this.height,0] : [0,this.width])
-      this.units[axisName] = unit
+      this.axisQuantityUnits[axisName] = axisQuantityUnit
     }
     return this.scales[axisName]
   }

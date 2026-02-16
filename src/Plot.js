@@ -3,8 +3,9 @@ import * as d3 from "d3-selection"
 import { scaleLinear } from "d3-scale"
 import { axisBottom, axisTop, axisLeft, axisRight } from "d3-axis"
 import { zoom, zoomIdentity } from "d3-zoom"
-import { AXES, AXIS_UNITS, AxisRegistry } from "./AxisRegistry.js"
+import { AXES, AxisRegistry } from "./AxisRegistry.js"
 import { getLayerType, getRegisteredLayerTypes } from "./LayerTypeRegistry.js"
+import { getAxisQuantityUnit } from "./AxisQuantityUnitRegistry.js"
 
 export class Plot {
   constructor({ container, width, height, margin = { top: 60, right: 60, bottom: 60, left: 60 }, data = {}, plot: { layers = [], axes = {} } = {} }) {
@@ -102,8 +103,8 @@ export class Plot {
       const layer = layerType.createLayer(parameters, data)
 
       // Register axes with the AxisRegistry
-      this.axisRegistry.ensureAxis(layer.xAxis, layer.type.xUnit)
-      this.axisRegistry.ensureAxis(layer.yAxis, layer.type.yUnit)
+      this.axisRegistry.ensureAxis(layer.xAxis, layer.type.xAxisQuantityUnit)
+      this.axisRegistry.ensureAxis(layer.yAxis, layer.type.yAxisQuantityUnit)
 
       // Create the draw command
       layer.draw = layer.type.createDrawCommand(this.regl)
@@ -269,10 +270,10 @@ export class Plot {
   }
 
   updateAxisLabel(axisGroup, axisName, centerPos, availableMargin) {
-    const unit = this.axisRegistry.units[axisName]
-    if (!unit) return
+    const axisQuantityUnit = this.axisRegistry.axisQuantityUnits[axisName]
+    if (!axisQuantityUnit) return
 
-    const unitLabel = AXIS_UNITS[unit]?.label || unit
+    const unitLabel = getAxisQuantityUnit(axisQuantityUnit).label
     const isVertical = axisName.includes("y")
     const padding = 5 // Padding from SVG edge
 

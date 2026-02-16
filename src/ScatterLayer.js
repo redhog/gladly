@@ -12,8 +12,8 @@ const prop = (path) => (context, props) => {
 
 export const scatterLayerType = new LayerType({
   name: "scatter",
-  xUnit: "meters",
-  yUnit: "meters",
+  xAxisQuantityUnit: "meters",
+  yAxisQuantityUnit: "meters",
   attributes: {
     x: { buffer: prop("data.x") },
     y: { buffer: prop("data.y") },

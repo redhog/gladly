@@ -12,8 +12,8 @@ const prop = (path) => (context, props) => {
 // Define LayerType 1: meters (x) vs volts (y) - blue to red colormap
 const layerType1 = new LayerType({
   name: "scatter-mv",
-  xUnit: "meters",
-  yUnit: "volts",
+  xAxisQuantityUnit: "meters",
+  yAxisQuantityUnit: "volts",
   attributes: {
     x: { buffer: prop("data.x") },
     y: { buffer: prop("data.y") },
@@ -77,8 +77,8 @@ const layerType1 = new LayerType({
 // Define LayerType 2: m/s (x) vs ampere (y) - green to yellow colormap
 const layerType2 = new LayerType({
   name: "scatter-sa",
-  xUnit: "m/s",
-  yUnit: "ampere",
+  xAxisQuantityUnit: "m/s",
+  yAxisQuantityUnit: "ampere",
   attributes: {
     x: { buffer: prop("data.x") },
     y: { buffer: prop("data.y") },
