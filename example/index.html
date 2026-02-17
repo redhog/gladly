@@ -266,6 +266,58 @@
         background: #fafafa;
       }
 
+      .json-editor-btntype-editjson:not(.je-root-editjson),
+      .json-editor-btntype-properties {
+        display: none;
+      }
+
+      p.je-form-input-label {
+        display: none;
+      }
+
+      .je-description-trigger {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 15px;
+        height: 15px;
+        border-radius: 50%;
+        background: #90caf9;
+        color: #1a237e;
+        font-size: 10px;
+        font-weight: bold;
+        cursor: default;
+        margin-left: 5px;
+        position: relative;
+        user-select: none;
+        vertical-align: middle;
+        flex-shrink: 0;
+      }
+
+      .je-description-popup {
+        display: none;
+        position: absolute;
+        left: 50%;
+        bottom: calc(100% + 6px);
+        transform: translateX(-50%);
+        background: #fff;
+        border: 1px solid #90caf9;
+        border-radius: 4px;
+        padding: 7px 10px;
+        font-size: 12px;
+        font-weight: normal;
+        color: #333;
+        width: 220px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+        z-index: 200;
+        white-space: normal;
+        pointer-events: none;
+      }
+
+      .je-description-trigger:hover .je-description-popup {
+        display: block;
+      }
+
     </style>
   </head>
   <body>

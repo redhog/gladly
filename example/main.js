@@ -63,6 +63,13 @@ let editor = new JSONEditor(document.getElementById('editor-container'), {
   compact: false
 })
 
+editor.on('ready', () => {
+  const rootEditor = editor.editors['root']
+  if (rootEditor && rootEditor.editjson_control) {
+    rootEditor.editjson_control.classList.add('je-root-editjson')
+  }
+})
+
 editor.on('change', () => {
   if (editorSyncing) return
 
@@ -98,6 +105,32 @@ function switchToPlot(plotId) {
   // Clear validation errors
   document.getElementById('validation-errors').innerHTML = ''
 }
+
+// Inject "?" tooltip triggers next to labels for description paragraphs
+function processDescriptions(root) {
+  root.querySelectorAll('p.je-form-input-label[id$="-description"]').forEach(p => {
+    if (p.dataset.processed) return
+    p.dataset.processed = '1'
+    const text = p.textContent.trim()
+    if (!text) return
+    const inputId = p.id.replace(/-description$/, '')
+    const label = root.querySelector(`label[for="${CSS.escape(inputId)}"]`)
+    if (!label) return
+    const trigger = document.createElement('span')
+    trigger.className = 'je-description-trigger'
+    trigger.textContent = '?'
+    const popup = document.createElement('span')
+    popup.className = 'je-description-popup'
+    popup.textContent = text
+    trigger.appendChild(popup)
+    label.appendChild(trigger)
+  })
+}
+
+const editorContainer = document.getElementById('editor-container')
+new MutationObserver(() => processDescriptions(editorContainer))
+  .observe(editorContainer, { childList: true, subtree: true })
+processDescriptions(editorContainer)
 
 // Add event listeners for plot switching buttons
 document.getElementById('edit-plot1-btn').addEventListener('click', () => {
