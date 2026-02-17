@@ -4,18 +4,26 @@
     <meta charset="utf-8">
     <title>GPU MultiAxis Plot Example</title>
     <style>
+      html, body {
+        height: 100%;
+      }
+
       body {
         margin: 0;
         padding: 20px;
         font-family: sans-serif;
         background: #f5f5f5;
+        overflow: hidden;
+        box-sizing: border-box;
       }
 
       .container {
         display: grid;
         grid-template-columns: 800px 1fr;
+        grid-template-rows: 1fr;
         gap: 20px;
         max-width: 1600px;
+        height: 100%;
       }
 
       .plots-container {
@@ -87,8 +95,9 @@
         padding: 20px;
         display: flex;
         flex-direction: column;
-        max-height: calc(100vh - 40px);
+        height: 100%;
         overflow-y: auto;
+        box-sizing: border-box;
       }
 
       .editor-panel h3 {
