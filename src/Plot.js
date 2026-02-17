@@ -37,6 +37,10 @@ export class Plot {
     this.layers = []
     this.axisRegistry = null
 
+    // Axis links (persists across updates)
+    this.axisLinks = new Map()
+    AXES.forEach(axis => this.axisLinks.set(axis, new Set()))
+
     // Setup resize handling
     this._setupResizeObserver()
   }
@@ -73,6 +77,10 @@ export class Plot {
       this.height = height
       this.plotWidth = width - this.margin.left - this.margin.right
       this.plotHeight = height - this.margin.top - this.margin.bottom
+
+      // Validate axis link compatibility before any destructive operations
+      const { layers: pendingLayers = [] } = this.currentConfig
+      this._preValidateAxisLinks(pendingLayers, this.currentData)
 
       // Clean up existing regl context if it exists
       if (this.regl) {
@@ -135,7 +143,155 @@ export class Plot {
     }
   }
 
+  _addAxisLink(axisName, link) {
+    try {
+      if (!this.axisLinks) {
+        this.axisLinks = new Map()
+      }
+      if (!this.axisLinks.has(axisName)) {
+        this.axisLinks.set(axisName, new Set())
+      }
+      this.axisLinks.get(axisName).add(link)
+    } catch (error) {
+      console.error('Error adding axis link:', error)
+    }
+  }
+
+  _removeAxisLink(axisName, link) {
+    try {
+      if (this.axisLinks && this.axisLinks.has(axisName)) {
+        this.axisLinks.get(axisName).delete(link)
+      }
+    } catch (error) {
+      console.error('Error removing axis link:', error)
+    }
+  }
+
+  _preValidateAxisLinks(layersConfig, data) {
+    // Determine what axis/unit assignments the new config would produce,
+    // and check them against linked axes — without touching any DOM or WebGL state.
+    const pendingUnits = {}
+
+    for (const layerSpec of layersConfig) {
+      const entries = Object.entries(layerSpec)
+      if (entries.length !== 1) continue
+
+      const [layerTypeName, parameters] = entries[0]
+      const layerType = getLayerType(layerTypeName)
+      const layer = layerType.createLayer(parameters, data)
+
+      for (const [axisName, unit] of [
+        [layer.xAxis, layer.xAxisQuantityUnit],
+        [layer.yAxis, layer.yAxisQuantityUnit]
+      ]) {
+        if (!axisName || !unit) continue
+
+        // Track units this config would assign (internal conflict check)
+        if (pendingUnits[axisName] && pendingUnits[axisName] !== unit) {
+          throw new Error(`Axis unit conflict on ${axisName}: ${pendingUnits[axisName]} vs ${unit}`)
+        }
+        pendingUnits[axisName] = unit
+
+        // Check against linked axes
+        const links = this.axisLinks.get(axisName)
+        if (!links || links.size === 0) continue
+
+        for (const link of links) {
+          const linked = link.getLinkedAxis(this, axisName)
+          if (!linked) continue
+
+          const linkedPlot = linked.plot
+          const linkedAxis = linked.axis
+
+          if (!linkedPlot.axisRegistry) continue
+
+          const linkedUnit = linkedPlot.axisRegistry.axisQuantityUnits[linkedAxis]
+          if (!linkedUnit) continue
+
+          if (unit !== linkedUnit) {
+            throw new Error(
+              `Linked axes have incompatible quantity units: ` +
+              `${axisName} (${unit}) cannot link to ` +
+              `${linkedPlot.container.id || 'plot'}.${linkedAxis} (${linkedUnit})`
+            )
+          }
+        }
+      }
+    }
+  }
+
+  _validateAxisLinks(axisName) {
+    const links = this.axisLinks.get(axisName)
+    if (!links || links.size === 0) return
+
+    const thisQuantityUnit = this.axisRegistry.axisQuantityUnits[axisName]
+    if (!thisQuantityUnit) return
+
+    for (const link of links) {
+      const linked = link.getLinkedAxis(this, axisName)
+      if (!linked) continue
+
+      const linkedPlot = linked.plot
+      const linkedAxis = linked.axis
+
+      // Only validate if the linked plot has been initialized with an AxisRegistry
+      if (!linkedPlot.axisRegistry) continue
+
+      const linkedQuantityUnit = linkedPlot.axisRegistry.axisQuantityUnits[linkedAxis]
+      if (!linkedQuantityUnit) continue
+
+      // Validate unit compatibility
+      if (thisQuantityUnit !== linkedQuantityUnit) {
+        throw new Error(
+          `Linked axes have incompatible quantity units: ` +
+          `${axisName} (${thisQuantityUnit}) cannot link to ` +
+          `${linkedPlot.container.id || 'plot'}.${linkedAxis} (${linkedQuantityUnit})`
+        )
+      }
+    }
+  }
+
+  _propagateDomainToLinks(axisName, newDomain) {
+    try {
+      const links = this.axisLinks.get(axisName)
+      if (!links || links.size === 0) return
+
+      for (const link of links) {
+        const linked = link.getLinkedAxis(this, axisName)
+        if (!linked) continue
+
+        const linkedPlot = linked.plot
+        const linkedAxis = linked.axis
+
+        // Only propagate if the linked plot has been initialized
+        if (!linkedPlot.axisRegistry) continue
+
+        const linkedScale = linkedPlot.axisRegistry.getScale(linkedAxis)
+        if (!linkedScale) continue
+
+        // Update the linked scale's domain
+        linkedScale.domain(newDomain)
+
+        // Render the linked plot
+        linkedPlot.render()
+      }
+    } catch (error) {
+      console.error('Error propagating domain to linked axes:', error)
+    }
+  }
+
   destroy() {
+    // Clean up axis links
+    const allLinks = new Set()
+    for (const links of this.axisLinks.values()) {
+      for (const link of links) {
+        allLinks.add(link)
+      }
+    }
+    for (const link of allLinks) {
+      link.unlink()
+    }
+
     // Clean up resize observer
     if (this.resizeObserver) {
       this.resizeObserver.disconnect()
@@ -170,6 +326,10 @@ export class Plot {
       // Register axes with the AxisRegistry using resolved units
       this.axisRegistry.ensureAxis(layer.xAxis, layer.xAxisQuantityUnit)
       this.axisRegistry.ensureAxis(layer.yAxis, layer.yAxisQuantityUnit)
+
+      // Validate axis links after ensuring axes
+      this._validateAxisLinks(layer.xAxis)
+      this._validateAxisLinks(layer.yAxis)
 
       // Create the draw command
       layer.draw = layer.type.createDrawCommand(this.regl, layer)
@@ -560,6 +720,11 @@ export class Plot {
 
             const newDomain = [center - newDomainWidth / 2, center + newDomainWidth / 2]
             scale.domain(newDomain)
+
+            // Propagate domain changes to linked axes (only for user interactions)
+            if (event.sourceEvent) {
+              this._propagateDomainToLinks(axis, newDomain)
+            }
           }
         })
 

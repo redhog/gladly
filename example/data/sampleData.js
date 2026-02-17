@@ -29,15 +29,25 @@ for (let i = 0; i < N; i++) {
 // Export data object (shared across all plots)
 export const data = { x1, y1, v1, x2, y2, v2 }
 
-// Export initial plot configuration
-export const initialPlotConfig = {
+// Export initial plot configuration for plot 1
+export const initialPlot1Config = {
   layers: [
-    { "scatter-mv": { xData: "x1", yData: "y1", vData: "v1", xAxis: "xaxis_bottom", yAxis: "yaxis_left" } },
-    { "scatter-sa": { xData: "x2", yData: "y2", vData: "v2", xAxis: "xaxis_top", yAxis: "yaxis_right" } }
+    { "scatter-mv": { xData: "x1", yData: "y1", vData: "v1", xAxis: "xaxis_bottom", yAxis: "yaxis_left" } }
   ],
   axes: {
     xaxis_bottom: { min: 0, max: 10 },
     yaxis_left: { min: 0, max: 5 }
-    // xaxis_top and yaxis_right will be auto-calculated from data
   }
 }
+
+// Export initial plot configuration for plot 2
+// NOTE: Plot 2 uses x1 (same as plot 1) so the linked x-axes have compatible units (meters)
+export const initialPlot2Config = {
+  layers: [
+    { "scatter-mv": { xData: "x1", yData: "y2", vData: "v2", xAxis: "xaxis_top", yAxis: "yaxis_right" } }
+  ]
+  // axes will be auto-calculated from data
+}
+
+// Backwards compatibility - keep the old export
+export const initialPlotConfig = initialPlot1Config

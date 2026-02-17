@@ -18,14 +18,43 @@
         max-width: 1600px;
       }
 
+      .plots-container {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+      }
+
       .plot-panel {
         position: relative;
         width: 800px;
-        height: 600px;
+        height: 400px;
         background: white;
         border: 1px solid #ddd;
         border-radius: 4px;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      }
+
+      .plot-panel.active {
+        border: 2px solid #2196f3;
+        box-shadow: 0 4px 8px rgba(33, 150, 243, 0.3);
+      }
+
+      .plot-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 8px;
+      }
+
+      .plot-header h3 {
+        margin: 0;
+        font-size: 16px;
+        color: #333;
+      }
+
+      .plot-header button {
+        padding: 4px 12px;
+        font-size: 12px;
       }
 
       canvas {
@@ -40,8 +69,6 @@
         position: absolute;
         top: 0;
         left: 0;
-        width: 800px;
-        height: 600px;
         z-index: 2;
         user-select: none;
       }
@@ -165,12 +192,27 @@
   </head>
   <body>
     <div class="container">
-      <div class="plot-panel">
+      <div class="plots-container">
+        <div>
+          <div class="plot-header">
+            <h3>Plot 1 (Bottom X-Axis)</h3>
+            <button id="edit-plot1-btn">Edit This Plot</button>
+          </div>
+          <div id="plot1" class="plot-panel active"></div>
+        </div>
+        <div>
+          <div class="plot-header">
+            <h3>Plot 2 (Top X-Axis - Linked to Plot 1)</h3>
+            <button id="edit-plot2-btn">Edit This Plot</button>
+          </div>
+          <div id="plot2" class="plot-panel"></div>
+        </div>
       </div>
       <div class="editor-panel">
-        <h3>Layer Configuration</h3>
+        <h3>Layer Configuration - <span id="current-plot-label">Plot 1</span></h3>
         <div class="info">
-          Use the form below to modify the plot layers. Changes are applied automatically.
+          Use the form below to modify the plot layers. Changes are applied automatically.<br>
+          <strong>Note:</strong> The X-axes of both plots are linked - zooming one affects the other!
         </div>
         <div id="editor-container"></div>
         <div id="validation-errors"></div>
