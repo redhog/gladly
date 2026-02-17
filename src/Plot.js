@@ -672,7 +672,6 @@ export class Plot {
     let gestureStartTransform = null
 
     const zoomBehavior = zoom()
-      .scaleExtent([0.5, 50])
       .on("start", (event) => {
         if (!event.sourceEvent) return
 
