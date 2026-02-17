@@ -8,6 +8,8 @@ export { registerLayerType, getLayerType, getRegisteredLayerTypes } from "./Laye
 export { registerAxisQuantityUnit, getAxisQuantityUnit, getRegisteredAxisQuantityUnits } from "./AxisQuantityUnitRegistry.js"
 export { registerColorscale, getRegisteredColorscales, getColorscaleIndex, buildColorGlsl } from "./ColorscaleRegistry.js"
 export { linkAxes, AxisLink } from "./AxisLink.js"
+export { Colorbar } from "./Colorbar.js"
+export { colorbarLayerType } from "./ColorbarLayer.js"
 
 // Register all matplotlib colorscales (side-effect import)
 import "./MatplotlibColorscales.js"

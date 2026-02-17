@@ -4,6 +4,7 @@ import { JSONEditor } from '@json-editor/json-editor'
 import { } from "./layer-types/ScatterMVLayer.js"
 import { } from "./layer-types/ScatterSALayer.js"
 import { data, initialPlot1Config, initialPlot2Config } from "./data/sampleData.js"
+import { Colorbar } from "../src/Colorbar.js"
 
 // Create both plots
 const plot1 = new Plot(document.getElementById('plot1'))
@@ -44,6 +45,11 @@ function updatePlot(plotId, plotConfig) {
 // Initial updates
 updatePlot('plot1', plot1Config)
 updatePlot('plot2', plot2Config)
+
+// Create colorbars after plots are initialised so the initial sync can read
+// the correct range and colorscale from each target plot.
+const colorbar1 = new Colorbar(document.getElementById('colorbar1'), plot1, 'v1')
+const colorbar2 = new Colorbar(document.getElementById('colorbar2'), plot2, 'v2')
 
 // Initialize editor with plot1's config
 let editor = new JSONEditor(document.getElementById('editor-container'), {

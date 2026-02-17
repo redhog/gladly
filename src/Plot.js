@@ -9,9 +9,9 @@ import { getLayerType, getRegisteredLayerTypes } from "./LayerTypeRegistry.js"
 import { getAxisQuantityUnit } from "./AxisQuantityUnitRegistry.js"
 
 export class Plot {
-  constructor(container) {
+  constructor(container, { margin } = {}) {
     this.container = container
-    this.margin = { top: 60, right: 60, bottom: 60, left: 60 }
+    this.margin = margin ?? { top: 60, right: 60, bottom: 60, left: 60 }
 
     // Create canvas element
     this.canvas = document.createElement('canvas')
@@ -37,6 +37,7 @@ export class Plot {
     this.layers = []
     this.axisRegistry = null
     this.colorAxisRegistry = null
+    this._renderCallbacks = new Set()
 
     // Axis links (persists across updates); any axis ID (spatial or color) is allowed
     this.axisLinks = new Map()
@@ -305,6 +306,7 @@ export class Plot {
       this.regl.destroy()
     }
 
+    this._renderCallbacks.clear()
     this.canvas.remove()
     this.svg.remove()
   }
@@ -321,12 +323,12 @@ export class Plot {
 
       const layer = layerType.createLayer(parameters, data)
 
-      // Register spatial axes
-      this.axisRegistry.ensureAxis(layer.xAxis, layer.xAxisQuantityUnit)
-      this.axisRegistry.ensureAxis(layer.yAxis, layer.yAxisQuantityUnit)
+      // Register spatial axes (null means no axis for that direction)
+      if (layer.xAxis) this.axisRegistry.ensureAxis(layer.xAxis, layer.xAxisQuantityUnit)
+      if (layer.yAxis) this.axisRegistry.ensureAxis(layer.yAxis, layer.yAxisQuantityUnit)
 
-      this._validateAxisLinks(layer.xAxis)
-      this._validateAxisLinks(layer.yAxis)
+      if (layer.xAxis) this._validateAxisLinks(layer.xAxis)
+      if (layer.yAxis) this._validateAxisLinks(layer.yAxis)
 
       // Register color axes (pass optional layer-type default colorscale)
       for (const [slot, { quantityKind, colorscale }] of Object.entries(layer.colorAxes)) {
@@ -357,6 +359,7 @@ export class Plot {
       for (const layer of layersUsingAxis) {
         const isXAxis = layer.xAxis === axis
         const dataArray = isXAxis ? layer.attributes.x : layer.attributes.y
+        if (!dataArray) continue
 
         for (let i = 0; i < dataArray.length; i++) {
           const val = dataArray[i]
@@ -365,7 +368,7 @@ export class Plot {
         }
       }
 
-      autoDomains[axis] = [min, max]
+      if (min !== Infinity) autoDomains[axis] = [min, max]
     }
 
     for (const axis of AXES) {
@@ -599,10 +602,10 @@ export class Plot {
     }
     for (const layer of this.layers) {
       const props = {
-        xDomain: this.axisRegistry.getScale(layer.xAxis).domain(),
-        yDomain: this.axisRegistry.getScale(layer.yAxis).domain(),
+        xDomain: layer.xAxis ? this.axisRegistry.getScale(layer.xAxis).domain() : [0, 1],
+        yDomain: layer.yAxis ? this.axisRegistry.getScale(layer.yAxis).domain() : [0, 1],
         viewport: viewport,
-        count: layer.attributes.x.length
+        count: layer.vertexCount ?? layer.attributes.x?.length ?? 0
       }
 
       // Add color axis uniforms
@@ -615,6 +618,7 @@ export class Plot {
       layer.draw(props)
     }
     this.renderAxes()
+    for (const cb of this._renderCallbacks) cb()
   }
 
   initZoom() {

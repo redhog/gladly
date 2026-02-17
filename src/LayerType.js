@@ -2,9 +2,10 @@ import { Layer } from "./Layer.js"
 import { buildColorGlsl } from "./ColorscaleRegistry.js"
 
 export class LayerType {
-  constructor({ name, axisQuantityUnits, colorAxisQuantityKinds, vert, frag, schema, createLayer, getAxisQuantityUnits, getColorAxisQuantityKinds }) {
+  constructor({ name, axisQuantityUnits, colorAxisQuantityKinds, primitive, vert, frag, schema, createLayer, getAxisQuantityUnits, getColorAxisQuantityKinds }) {
     this.name = name
     this.axisQuantityUnits = axisQuantityUnits
+    this.primitive = primitive ?? "points"
     // colorAxisQuantityKinds: { [slotName]: quantityKind | null }
     // null means the quantity kind is resolved dynamically via getColorAxisQuantityKinds()
     this.colorAxisQuantityKinds = colorAxisQuantityKinds ?? {}
@@ -65,7 +66,7 @@ export class LayerType {
       attributes,
       uniforms,
       viewport: regl.prop("viewport"),
-      primitive: "points",
+      primitive: this.primitive,
       count: regl.prop("count")
     })
   }

@@ -188,6 +188,32 @@
         margin: 8px 0;
         background: #fafafa;
       }
+
+      .colorbars-row {
+        display: flex;
+        gap: 20px;
+      }
+
+      .colorbar-section {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .colorbar-label {
+        font-size: 13px;
+        color: #666;
+        margin-bottom: 4px;
+      }
+
+      .colorbar-panel {
+        position: relative;
+        height: 100px;
+        background: white;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        overflow: hidden;
+      }
     </style>
   </head>
   <body>
@@ -206,6 +232,16 @@
             <button id="edit-plot2-btn">Edit This Plot</button>
           </div>
           <div id="plot2" class="plot-panel"></div>
+        </div>
+        <div class="colorbars-row">
+          <div class="colorbar-section">
+            <div class="colorbar-label">Plot 1 color scale (v1)</div>
+            <div id="colorbar1" class="colorbar-panel"></div>
+          </div>
+          <div class="colorbar-section">
+            <div class="colorbar-label">Plot 2 color scale (v2)</div>
+            <div id="colorbar2" class="colorbar-panel"></div>
+          </div>
         </div>
       </div>
       <div class="editor-panel">
