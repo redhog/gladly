@@ -10,6 +10,19 @@ import { getLayerType, getRegisteredLayerTypes } from "./LayerTypeRegistry.js"
 import { getAxisQuantityUnit } from "./AxisQuantityUnitRegistry.js"
 import { getRegisteredColorscales } from "./ColorscaleRegistry.js"
 
+function formatTick(v) {
+  if (v === 0) return "0"
+  const abs = Math.abs(v)
+  if (abs >= 10000 || abs < 0.01) {
+    return v.toExponential(2)
+  }
+  const s = v.toPrecision(4)
+  if (s.includes('.') && !s.includes('e')) {
+    return s.replace(/\.?0+$/, '')
+  }
+  return s
+}
+
 export class Plot {
   static _FloatClass = null
   static _FilterbarFloatClass = null
@@ -692,38 +705,60 @@ export class Plot {
     }
   }
 
+  _tickCount(axisName) {
+    if (axisName.includes("y")) {
+      return Math.max(2, Math.floor(this.plotHeight / 27))
+    }
+    return Math.max(2, Math.floor(this.plotWidth / 40))
+  }
+
+  _makeAxis(axisConstructor, scale, axisName) {
+    const count = this._tickCount(axisName)
+    const gen = axisConstructor(scale).tickFormat(formatTick)
+    if (count <= 2) {
+      gen.tickValues(scale.domain())
+    } else {
+      gen.ticks(count)
+    }
+    return gen
+  }
+
   renderAxes() {
     if (this.axisRegistry.getScale("xaxis_bottom")) {
+      const scale = this.axisRegistry.getScale("xaxis_bottom")
       const g = this.svg.select(".xaxis_bottom")
         .attr("transform", `translate(${this.margin.left},${this.margin.top + this.plotHeight})`)
-        .call(axisBottom(this.axisRegistry.getScale("xaxis_bottom")))
+        .call(this._makeAxis(axisBottom, scale, "xaxis_bottom"))
       g.select(".domain").attr("stroke", "#000").attr("stroke-width", 2)
       g.selectAll(".tick line").attr("stroke", "#000")
       g.selectAll(".tick text").attr("fill", "#000").style("font-size", "12px")
       this.updateAxisLabel(g, "xaxis_bottom", this.plotWidth / 2, this.margin.bottom)
     }
     if (this.axisRegistry.getScale("xaxis_top")) {
+      const scale = this.axisRegistry.getScale("xaxis_top")
       const g = this.svg.select(".xaxis_top")
         .attr("transform", `translate(${this.margin.left},${this.margin.top})`)
-        .call(axisTop(this.axisRegistry.getScale("xaxis_top")))
+        .call(this._makeAxis(axisTop, scale, "xaxis_top"))
       g.select(".domain").attr("stroke", "#000").attr("stroke-width", 2)
       g.selectAll(".tick line").attr("stroke", "#000")
       g.selectAll(".tick text").attr("fill", "#000").style("font-size", "12px")
       this.updateAxisLabel(g, "xaxis_top", this.plotWidth / 2, this.margin.top)
     }
     if (this.axisRegistry.getScale("yaxis_left")) {
+      const scale = this.axisRegistry.getScale("yaxis_left")
       const g = this.svg.select(".yaxis_left")
         .attr("transform", `translate(${this.margin.left},${this.margin.top})`)
-        .call(axisLeft(this.axisRegistry.getScale("yaxis_left")))
+        .call(this._makeAxis(axisLeft, scale, "yaxis_left"))
       g.select(".domain").attr("stroke", "#000").attr("stroke-width", 2)
       g.selectAll(".tick line").attr("stroke", "#000")
       g.selectAll(".tick text").attr("fill", "#000").style("font-size", "12px")
       this.updateAxisLabel(g, "yaxis_left", -this.plotHeight / 2, this.margin.left)
     }
     if (this.axisRegistry.getScale("yaxis_right")) {
+      const scale = this.axisRegistry.getScale("yaxis_right")
       const g = this.svg.select(".yaxis_right")
         .attr("transform", `translate(${this.margin.left + this.plotWidth},${this.margin.top})`)
-        .call(axisRight(this.axisRegistry.getScale("yaxis_right")))
+        .call(this._makeAxis(axisRight, scale, "yaxis_right"))
       g.select(".domain").attr("stroke", "#000").attr("stroke-width", 2)
       g.selectAll(".tick line").attr("stroke", "#000")
       g.selectAll(".tick text").attr("fill", "#000").style("font-size", "12px")
