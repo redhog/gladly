@@ -19,24 +19,13 @@ Gladly is a lightweight, high-performance plotting library that combines WebGL (
 
 For detailed information about using and understanding Gladly:
 
-- **[API Documentation](docs/API.md)**: User-facing API reference for using the library
-  - Installation and quick start
-  - Declarative plot creation
-  - Layer type registration
-  - Core classes (Plot, LayerType, Layer)
-  - Data format requirements
-  - Interaction features
-  - Complete examples
+- **[API Documentation](docs/API.md)**: User-facing API reference overview and data model
+  - **[Configuring Plots](docs/api/PlotConfiguration.md)**: `plot.update()`, axes config, auto-domain, multi-layer, interaction, examples
+  - **[Writing Layer Types](docs/api/LayerTypes.md)**: `LayerType` constructor, shaders, color/filter axes, GLSL helpers, constants, API reference
 
-- **[Architecture Documentation](docs/ARCHITECTURE.md)**: Developer-facing architecture guide
-  - Declarative API design
-  - Layer type registry pattern
-  - Project structure and module organization
-  - Component responsibilities and dependencies
-  - Data flow and rendering pipeline
-  - Design patterns and architectural decisions
-  - Performance considerations
-  - Extensibility points
+- **[Architecture Documentation](docs/ARCHITECTURE.md)**: Developer-facing architecture overview
+  - **[Module Responsibilities](docs/architecture/Modules.md)**: Per-module purpose, patterns, key properties and methods
+  - **[Data Flow & Rendering](docs/architecture/DataFlow.md)**: Setup phase, render cycle, zoom/pan interaction
 
 ## Technology Stack
 
