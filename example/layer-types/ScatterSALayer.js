@@ -1,14 +1,14 @@
 import { LayerType, registerLayerType } from "../../src/index.js"
 
 /**
- * Scatter plot layer type for meters (x) vs ampere (y)
+ * Scatter plot layer type for distance (x) vs current (y)
  * Uses coolwarm colorscale. Supports an optional filter axis (fData).
  */
 export const ScatterSALayer = new LayerType({
   name: "scatter-sa",
-  axisQuantityUnits: {x: "meters", y: "ampere"},
-  colorAxisQuantityKinds: { v: null },
-  filterAxisQuantityKinds: { f: null },
+  axisQuantityUnits: {x: "distance_m", y: "current_A"},
+  colorAxisQuantityKinds: { v: "temperature_K" },
+  filterAxisQuantityKinds: { f: "velocity_ms" },
   vert: `
     precision mediump float;
     attribute float x;
@@ -42,7 +42,7 @@ export const ScatterSALayer = new LayerType({
   `,
   schema: () => ({
     type: "object",
-    title: "Scatter (Speed/Ampere)",
+    title: "Scatter (Distance/Current)",
     properties: {
       xData: { type: "string", title: "X Data Property", description: "Property name for x coordinates" },
       yData: { type: "string", title: "Y Data Property", description: "Property name for y coordinates" },
@@ -63,12 +63,6 @@ export const ScatterSALayer = new LayerType({
     },
     required: ["xData", "yData", "vData", "fData"]
   }),
-  getColorAxisQuantityKinds: function(parameters) {
-    return { v: parameters.vData }
-  },
-  getFilterAxisQuantityKinds: function(parameters) {
-    return { f: parameters.fData }
-  },
   createLayer: function(parameters, data) {
     const { xData, yData, vData, fData, xAxis = "xaxis_bottom", yAxis = "yaxis_left" } = parameters
     const v = data[vData]
@@ -78,8 +72,8 @@ export const ScatterSALayer = new LayerType({
       uniforms: {},
       xAxis,
       yAxis,
-      colorAxes: { v: { quantityKind: vData, data: v, colorscale: "coolwarm" } },
-      filterAxes: { f: { quantityKind: fData, data: f } }
+      colorAxes: { v: { quantityKind: "temperature_K", data: v, colorscale: "coolwarm" } },
+      filterAxes: { f: { quantityKind: "velocity_ms", data: f } }
     }
   }
 })

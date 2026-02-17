@@ -1,14 +1,14 @@
 import { LayerType, registerLayerType } from "../../src/index.js"
 
 /**
- * Scatter plot layer type for meters (x) vs volts (y)
+ * Scatter plot layer type for distance (x) vs voltage (y)
  * Uses plasma colorscale. Supports an optional filter axis (fData).
  */
 export const ScatterMVLayer = new LayerType({
   name: "scatter-mv",
-  axisQuantityUnits: {x: "meters", y: "volts"},
-  colorAxisQuantityKinds: { v: null },
-  filterAxisQuantityKinds: { f: null },
+  axisQuantityUnits: {x: "distance_m", y: "voltage_V"},
+  colorAxisQuantityKinds: { v: "reflectance_au" },
+  filterAxisQuantityKinds: { f: "incidence_angle_rad" },
   vert: `
     precision mediump float;
     attribute float x;
@@ -42,7 +42,7 @@ export const ScatterMVLayer = new LayerType({
   `,
   schema: () => ({
     type: "object",
-    title: "Scatter (Meters/Volts)",
+    title: "Scatter (Distance/Voltage)",
     properties: {
       xData: { type: "string", title: "X Data Property", description: "Property name for x coordinates" },
       yData: { type: "string", title: "Y Data Property", description: "Property name for y coordinates" },
@@ -63,12 +63,6 @@ export const ScatterMVLayer = new LayerType({
     },
     required: ["xData", "yData", "vData", "fData"]
   }),
-  getColorAxisQuantityKinds: function(parameters) {
-    return { v: parameters.vData }
-  },
-  getFilterAxisQuantityKinds: function(parameters) {
-    return { f: parameters.fData }
-  },
   createLayer: function(parameters, data) {
     const { xData, yData, vData, fData, xAxis = "xaxis_bottom", yAxis = "yaxis_left" } = parameters
     const v = data[vData]
@@ -78,8 +72,8 @@ export const ScatterMVLayer = new LayerType({
       uniforms: {},
       xAxis,
       yAxis,
-      colorAxes: { v: { quantityKind: vData, data: v, colorscale: "plasma" } },
-      filterAxes: { f: { quantityKind: fData, data: f } }
+      colorAxes: { v: { quantityKind: "reflectance_au", data: v, colorscale: "plasma" } },
+      filterAxes: { f: { quantityKind: "incidence_angle_rad", data: f } }
     }
   }
 })

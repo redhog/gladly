@@ -4,7 +4,7 @@
 
 const N = 1_000_000
 
-// First sine curve: meters (0-10) vs volts (0-5)
+// First sine curve: distance (0-10 m) vs voltage (0-5 V)
 // f1 = tan(x1) — used as filter axis to cut out points near tan asymptotes
 const x1 = new Float32Array(N)
 const y1 = new Float32Array(N)
@@ -18,7 +18,7 @@ for (let i = 0; i < N; i++) {
   f1[i] = Math.tan(xVal)
 }
 
-// Second sine curve: meters (0-100) vs ampere (10-50)
+// Second sine curve: distance (0-100 m) vs current (10-50 A)
 // f2 = tan(x2 * 0.1) — gentler period so asymptotes stay visible at dataset scale
 const x2 = new Float32Array(N)
 const y2 = new Float32Array(N)
@@ -44,8 +44,8 @@ export const initialPlot1Config = {
   axes: {
     xaxis_bottom: { min: 0, max: 10 },
     yaxis_left: { min: 0, max: 5 },
-    v1: { min: 0, max: 1, colorbar: "vertical" },
-    f1: { min: -1.5, max: 1.5, filterbar: "horizontal" }
+    reflectance_au: { min: 0, max: 1, colorbar: "vertical" },
+    incidence_angle_rad: { min: -1.5, max: 1.5, filterbar: "horizontal" }
   }
 }
 
@@ -56,8 +56,8 @@ export const initialPlot2Config = {
     { "scatter-sa": { xData: "x2", yData: "y2", vData: "v2", fData: "f2", xAxis: "xaxis_top", yAxis: "yaxis_left" } }
   ],
   axes: {
-    v2: { min: 0, max: 1, colorbar: "vertical" },
-    f2: { min: -2, max: 2, filterbar: "horizontal" }
+    temperature_K: { min: 0, max: 1, colorbar: "vertical" },
+    velocity_ms: { min: -2, max: 2, filterbar: "horizontal" }
   }
 }
 

@@ -1,19 +1,5 @@
 const registry = new Map()
 
-// Initialize with default axis quantity units
-const DEFAULT_AXIS_QUANTITY_UNITS = {
-  meters: { label: "Meters", scale: "linear" },
-  volts: { label: "Volts", scale: "linear" },
-  "m/s": { label: "m/s", scale: "linear" },
-  ampere: { label: "Ampere", scale: "linear" },
-  log10: { label: "Log10", scale: "log" }
-}
-
-// Register defaults
-for (const [name, definition] of Object.entries(DEFAULT_AXIS_QUANTITY_UNITS)) {
-  registry.set(name, definition)
-}
-
 export function registerAxisQuantityUnit(name, definition) {
   if (registry.has(name)) {
     // Merge new properties into existing definition

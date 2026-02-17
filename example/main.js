@@ -1,4 +1,12 @@
-import { Plot, registerLayerType, linkAxes } from "../src/index.js"
+import { Plot, registerLayerType, linkAxes, registerAxisQuantityUnit } from "../src/index.js"
+
+registerAxisQuantityUnit("voltage_V",            { label: "Voltage (V)",          scale: "linear" })
+registerAxisQuantityUnit("distance_m",           { label: "Distance (m)",         scale: "linear" })
+registerAxisQuantityUnit("current_A",            { label: "Current (A)",          scale: "linear" })
+registerAxisQuantityUnit("reflectance_au",       { label: "Reflectance (a.u.)",   scale: "linear" })
+registerAxisQuantityUnit("incidence_angle_rad",  { label: "Incidence angle (rad)",scale: "linear" })
+registerAxisQuantityUnit("temperature_K",        { label: "Temperature (K)",      scale: "linear" })
+registerAxisQuantityUnit("velocity_ms",          { label: "Velocity (m/s)",       scale: "linear" })
 import { } from "../src/ScatterLayer.js"
 import { } from "../src/FilterbarFloat.js"
 import { JSONEditor } from '@json-editor/json-editor'
