@@ -10,6 +10,7 @@ export { registerColorscale, getRegisteredColorscales, getColorscaleIndex, build
 export { linkAxes, AxisLink } from "./AxisLink.js"
 export { Colorbar } from "./Colorbar.js"
 export { colorbarLayerType } from "./ColorbarLayer.js"
+export { Float } from "./Float.js"
 
 // Register all matplotlib colorscales (side-effect import)
 import "./MatplotlibColorscales.js"

@@ -189,31 +189,6 @@
         background: #fafafa;
       }
 
-      .colorbars-row {
-        display: flex;
-        gap: 20px;
-      }
-
-      .colorbar-section {
-        flex: 1;
-        min-width: 0;
-      }
-
-      .colorbar-label {
-        font-size: 13px;
-        color: #666;
-        margin-bottom: 4px;
-      }
-
-      .colorbar-panel {
-        position: relative;
-        height: 100px;
-        background: white;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        overflow: hidden;
-      }
     </style>
   </head>
   <body>
@@ -233,22 +208,13 @@
           </div>
           <div id="plot2" class="plot-panel"></div>
         </div>
-        <div class="colorbars-row">
-          <div class="colorbar-section">
-            <div class="colorbar-label">Plot 1 color scale (v1)</div>
-            <div id="colorbar1" class="colorbar-panel"></div>
-          </div>
-          <div class="colorbar-section">
-            <div class="colorbar-label">Plot 2 color scale (v2)</div>
-            <div id="colorbar2" class="colorbar-panel"></div>
-          </div>
-        </div>
       </div>
       <div class="editor-panel">
         <h3>Layer Configuration - <span id="current-plot-label">Plot 1</span></h3>
         <div class="info">
           Use the form below to modify the plot layers. Changes are applied automatically.<br>
-          <strong>Note:</strong> The X-axes of both plots are linked - zooming one affects the other!
+          <strong>Note:</strong> The X-axes of both plots are linked - zooming one affects the other!<br>
+          <strong>Colorbars</strong> float over each plot — drag to reposition, drag the corner handle to resize.
         </div>
         <div id="editor-container"></div>
         <div id="validation-errors"></div>
