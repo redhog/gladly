@@ -54,7 +54,8 @@ The Plot will automatically create and manage the canvas and SVG elements inside
 
 A **LayerType** defines how data is visualized. Each LayerType specifies:
 
-- **X-axis and Y-axis quantity units** - Each axis has a quantity unit (e.g., "meters", "volts", "log10")
+- **X-axis and Y-axis quantity units** - Each spatial axis has a quantity unit (e.g., "meters", "volts", "log10")
+- **Color axis quantity kinds** - Named slots mapping a data dimension to a color scale (e.g., slot `v` → quantity kind `"temperature"`)
 - **GLSL shaders** - Vertex and fragment shaders that define how data is rendered on the GPU
 - **Data attributes** - Which fields from your data are passed to the shaders
 - **Schema** - JSON Schema definition for layer parameters
@@ -67,7 +68,8 @@ A **Layer** is an instance of a LayerType with specific data. Layers are created
 Each layer has:
 - **A LayerType** - Which defines how to render the data
 - **Data** - Type-specific data in typed arrays (always `Float32Array`)
-- **Axis assignment** - Which axes to use (e.g., "xaxis_bottom", "yaxis_left")
+- **Axis assignment** - Which spatial axes to use (e.g., "xaxis_bottom", "yaxis_left")
+- **Color axes** - Named slots mapping data arrays to color scales via quantity kinds
 
 ### Data Format
 
@@ -164,11 +166,15 @@ plot.update({
 
 ## Making a LayerType
 
-To create a custom LayerType, define it with custom GLSL shaders, a schema, and a factory method:
+To create a custom LayerType, define it with custom GLSL shaders, a schema, and a factory method.
+
+### Without Color Axes
+
+A simple layer type that renders fixed-color dots:
 
 ```javascript
-import { LayerType, Layer } from './src/index.js'
-import { AXES } from './src/index.js'
+import { LayerType } from './src/index.js'
+import { registerLayerType, AXES } from './src/index.js'
 
 const redDotsType = new LayerType({
   name: "red_dots",
@@ -188,64 +194,139 @@ const redDotsType = new LayerType({
     }
   `,
 
-  // Fragment shader: define color
+  // Fragment shader: fixed red color
   frag: `
     precision mediump float;
     void main() {
-      gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);  // Red
+      gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
     }
   `,
 
-  // Map data fields to shader attributes
-  attributes: {
-    x: { buffer: (context, props) => props.data.x },
-    y: { buffer: (context, props) => props.data.y }
-  },
-
-  // JSON Schema for layer parameters
   schema: () => ({
     $schema: "https://json-schema.org/draft/2020-12/schema",
     type: "object",
     properties: {
-      xData: { type: "string", description: "Property name for x coordinates" },
-      yData: { type: "string", description: "Property name for y coordinates" },
-      xAxis: {
-        type: "string",
-        enum: AXES.filter(a => a.includes("x")),
-        default: "xaxis_bottom"
-      },
-      yAxis: {
-        type: "string",
-        enum: AXES.filter(a => a.includes("y")),
-        default: "yaxis_left"
-      }
+      xData: { type: "string" },
+      yData: { type: "string" },
+      xAxis: { type: "string", enum: AXES.filter(a => a.includes("x")), default: "xaxis_bottom" },
+      yAxis: { type: "string", enum: AXES.filter(a => a.includes("y")), default: "yaxis_left" }
     },
     required: ["xData", "yData"]
   }),
 
-  // Factory method to create layers from parameters and data
-  // Returns a config object - Layer construction and unit resolution handled automatically
   createLayer: function(parameters, data) {
     const { xData, yData, xAxis = "xaxis_bottom", yAxis = "yaxis_left" } = parameters
-
     return {
-      attributes: {
-        x: data[xData],
-        y: data[yData]
-      },
+      attributes: { x: data[xData], y: data[yData] },
       uniforms: {},
       xAxis,
       yAxis
+      // No colorAxes: no color axis for this layer type
     }
   }
 })
 
-// Register the layer type
-import { registerLayerType } from './src/index.js'
 registerLayerType("red_dots", redDotsType)
 ```
 
-### Dynamic Axis Unit Resolution
+### With Color Axes
+
+A layer type that maps a data value to color via a colorscale:
+
+```javascript
+import { LayerType, registerLayerType, AXES } from './src/index.js'
+
+const heatDotsType = new LayerType({
+  name: "heat_dots",
+  axisQuantityUnits: { x: "meters", y: "volts" },
+
+  // Declare color axis slot "v"; null = quantity kind resolved dynamically
+  colorAxisQuantityKinds: { v: null },
+
+  // Vertex shader: pass color value through as a varying
+  vert: `
+    precision mediump float;
+    attribute float x, y, v;
+    uniform vec2 xDomain, yDomain;
+    varying float value;
+
+    void main() {
+      float nx = (x - xDomain.x)/(xDomain.y-xDomain.x);
+      float ny = (y - yDomain.x)/(yDomain.y-yDomain.x);
+      gl_Position = vec4(nx*2.0-1.0, ny*2.0-1.0, 0, 1);
+      gl_PointSize = 6.0;
+      value = v;
+    }
+  `,
+
+  // Fragment shader: use map_color() - injected automatically when color axes are present
+  frag: `
+    precision mediump float;
+    uniform int colorscale_v;    // colorscale index for slot "v"
+    uniform vec2 color_range_v;  // [min, max] range for slot "v"
+    varying float value;
+
+    void main() {
+      gl_FragColor = map_color(colorscale_v, color_range_v, value);
+    }
+  `,
+
+  schema: () => ({
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    type: "object",
+    properties: {
+      xData: { type: "string" },
+      yData: { type: "string" },
+      vData: { type: "string", description: "Property name for color values; becomes the color axis quantity kind" },
+      xAxis: { type: "string", enum: AXES.filter(a => a.includes("x")), default: "xaxis_bottom" },
+      yAxis: { type: "string", enum: AXES.filter(a => a.includes("y")), default: "yaxis_left" }
+    },
+    required: ["xData", "yData", "vData"]
+  }),
+
+  // Resolve the quantity kind for slot "v" dynamically from parameters
+  getColorAxisQuantityKinds: function(parameters, data) {
+    return { v: parameters.vData }
+  },
+
+  createLayer: function(parameters, data) {
+    const { xData, yData, vData, xAxis = "xaxis_bottom", yAxis = "yaxis_left" } = parameters
+    return {
+      attributes: { x: data[xData], y: data[yData], v: data[vData] },
+      uniforms: {},
+      xAxis,
+      yAxis,
+      colorAxes: {
+        v: {
+          quantityKind: vData,     // axis config key; links data to range/colorscale
+          data: data[vData],       // Float32Array used for auto-domain calculation
+          colorscale: "viridis"    // default colorscale (can be overridden in config)
+        }
+      }
+    }
+  }
+})
+
+registerLayerType("heat_dots", heatDotsType)
+```
+
+**Usage:**
+```javascript
+plot.update({
+  data: { x, y, temperature },
+  config: {
+    layers: [
+      { heat_dots: { xData: "x", yData: "y", vData: "temperature" } }
+    ],
+    axes: {
+      // Override color axis range and colorscale (optional)
+      temperature: { min: 0, max: 100, colorscale: "plasma" }
+    }
+  }
+})
+```
+
+### Dynamic Spatial Axis Unit Resolution
 
 Layer types can calculate axis units dynamically based on parameters or data by setting an axis unit to `null` and providing a `getAxisQuantityUnits` method:
 
@@ -309,7 +390,96 @@ const dynamicScatterType = new LayerType({
 - **Uniforms**: `xDomain` and `yDomain` are automatically provided by the library
 - **Attributes**: Map to your data fields using accessor functions
 - **Schema**: Returns a JSON Schema (Draft 2020-12) defining expected parameters
-- **createLayer**: Extracts data from the data object and creates a Layer instance. Must call `this.resolveAxisQuantityUnits(parameters, data)` and pass resolved units to Layer constructor
+- **createLayer**: Returns a plain config object; `LayerType.createLayer()` handles `Layer` construction and unit resolution automatically
+
+---
+
+## Color Axes
+
+Color axes map a numeric data dimension to a color by looking up a colorscale. They work in parallel to spatial axes: each color axis has a **quantity kind** (a string identifier) and a **range** [min, max] that is either auto-calculated from data or overridden in the plot config.
+
+### Concepts
+
+| Term | Description |
+|------|-------------|
+| **Slot** | A named position in the layer (e.g., `"v"`). One slot per color dimension. The slot name determines the GLSL uniform names (`colorscale_v`, `color_range_v`). |
+| **Quantity kind** | A string identifier for the color axis (e.g., `"temperature"`, `"v1"`). Multiple layers can share the same quantity kind, automatically sharing a common range. |
+| **Colorscale** | A named GLSL color function (e.g., `"viridis"`, `"plasma"`). Set a default in `createLayer`; override per-plot in `config.axes`. |
+
+### How the Plot Handles Color Axes
+
+1. **Registration**: When processing layers, the Plot registers each color axis quantity kind with the `ColorAxisRegistry`.
+2. **Auto-domain**: The Plot scans all layer data arrays sharing the same quantity kind and calculates [min, max].
+3. **Override**: The `config.axes` object can override range and colorscale for any quantity kind:
+   ```javascript
+   axes: {
+     temperature: { min: 20, max: 80, colorscale: "coolwarm" }
+   }
+   ```
+4. **Rendering**: The Plot passes `colorscale_<slot>` (int index) and `color_range_<slot>` (vec2) as uniforms to the shader.
+
+### Declaring Color Axes in a LayerType
+
+Use `colorAxisQuantityKinds` to declare which slots a layer type uses. Set the value to `null` for dynamic resolution:
+
+```javascript
+colorAxisQuantityKinds: { v: null }   // slot "v", quantity kind resolved per-layer
+```
+
+Provide `getColorAxisQuantityKinds` to resolve null slots:
+
+```javascript
+getColorAxisQuantityKinds: function(parameters, data) {
+  return { v: parameters.vData }   // use the data property name as quantity kind
+}
+```
+
+### Providing Color Axis Data in createLayer
+
+The `createLayer` factory returns a `colorAxes` map. The Plot uses `data` for auto-domain calculation:
+
+```javascript
+createLayer: function(parameters, data) {
+  return {
+    attributes: { ... },
+    uniforms: {},
+    xAxis, yAxis,
+    colorAxes: {
+      v: {
+        quantityKind: parameters.vData,  // links to a shared color axis
+        data: data[parameters.vData],    // Float32Array for auto-domain
+        colorscale: "viridis"            // default; overridable in config.axes
+      }
+    }
+  }
+}
+```
+
+### GLSL Integration
+
+When a layer has one or more color axes, `createDrawCommand` automatically:
+1. Injects all registered colorscale GLSL functions into the shader
+2. Injects the `map_color(int cs, vec2 range, float value)` dispatch function
+3. Adds `colorscale_<slot>` and `color_range_<slot>` uniforms
+
+Use `map_color` in your fragment shader:
+
+```glsl
+precision mediump float;
+uniform int colorscale_v;
+uniform vec2 color_range_v;
+varying float value;
+
+void main() {
+  gl_FragColor = map_color(colorscale_v, color_range_v, value);
+}
+```
+
+### Colorscales Provided by Default
+
+Gladly registers all standard matplotlib colorscales on import. See the [Colorscales Reference](#colorscales) in the Constants section for the full list.
+
+Use `registerColorscale(name, glslFn)` to add custom colorscales.
 
 ---
 
@@ -358,7 +528,7 @@ plot.update({ config, data })
 |-----------|------|-------------|
 | `config` | object | Plot configuration containing `layers` and optional `axes` |
 | `config.layers` | array | Array of layer specifications (see below) |
-| `config.axes` | object | Optional domain overrides for axes (see below) |
+| `config.axes` | object | Optional domain overrides for spatial and color axes (see below) |
 | `data` | object | Data object with arbitrary structure (all values must be Float32Arrays) |
 
 **Behavior:**
@@ -388,15 +558,18 @@ config: {
 ```javascript
 config: {
   axes: {
+    // Spatial axes
     xaxis_bottom: { min: 0, max: 100 },
     xaxis_top: { min: 0, max: 100 },
     yaxis_left: { min: 0, max: 50 },
-    yaxis_right: { min: 0, max: 50 }
+    yaxis_right: { min: 0, max: 50 },
+    // Color axes: key is the quantity kind used by the layer's color slot
+    temperature: { min: 0, max: 100, colorscale: "plasma" }
   }
 }
 ```
 
-Omitted axes will have domains auto-calculated from data.
+Omitted axes will have domains auto-calculated from data. Color axis keys are the quantity kind strings declared by layer types (e.g., the value of `vData` in the built-in scatter layer type).
 
 #### `forceUpdate()`
 
@@ -480,7 +653,7 @@ Represents a data layer to be visualized. Layers are typically created automatic
 
 **Constructor:**
 ```javascript
-new Layer({ type, attributes, uniforms, xAxis, yAxis, xAxisQuantityUnit, yAxisQuantityUnit })
+new Layer({ type, attributes, uniforms, xAxis, yAxis, xAxisQuantityUnit, yAxisQuantityUnit, colorAxes })
 ```
 
 | Parameter | Type | Default | Description |
@@ -492,6 +665,21 @@ new Layer({ type, attributes, uniforms, xAxis, yAxis, xAxisQuantityUnit, yAxisQu
 | `yAxis` | string | `"yaxis_left"` | Axis name for y-coordinate |
 | `xAxisQuantityUnit` | string | required | Resolved x-axis quantity unit |
 | `yAxisQuantityUnit` | string | required | Resolved y-axis quantity unit |
+| `colorAxes` | object | `{}` | Map of slot names to color axis entries (see below) |
+
+**Color Axes Entry Format:**
+
+Each key in `colorAxes` is a slot name (matching a GLSL uniform suffix, e.g., `"v"`). The value is:
+
+```javascript
+{
+  quantityKind: "temperature",  // string identifying the color axis (becomes the axes config key)
+  data: Float32Array,           // data values to be color-mapped
+  colorscale: "plasma"          // optional: preferred colorscale name
+}
+```
+
+Layers are typically created by calling `layerType.createLayer()`, which constructs this automatically.
 
 **Attributes Object:**
 - Contains GPU attribute data as Float32Array (e.g., `{ x: Float32Array, y: Float32Array, v: Float32Array }`)
@@ -512,18 +700,20 @@ Defines how a layer is rendered using custom GLSL shaders.
 
 **Constructor:**
 ```javascript
-new LayerType({ name, axisQuantityUnits, vert, frag, schema, createLayer, getAxisQuantityUnits })
+new LayerType({ name, axisQuantityUnits, colorAxisQuantityKinds, vert, frag, schema, createLayer, getAxisQuantityUnits, getColorAxisQuantityKinds })
 ```
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `name` | string | Type name (e.g., "scatter") |
-| `axisQuantityUnits` | object | Axis quantity units: `{x: string\|null, y: string\|null}`. Use `null` for dynamic resolution. |
+| `axisQuantityUnits` | object | Spatial axis quantity units: `{x: string\|null, y: string\|null}`. Use `null` for dynamic resolution. |
+| `colorAxisQuantityKinds` | object | Color axis slot declarations: `{ [slotName]: string\|null }`. Use `null` for dynamic resolution via `getColorAxisQuantityKinds`. Defaults to `{}` (no color axes). |
 | `vert` | string | GLSL vertex shader code |
 | `frag` | string | GLSL fragment shader code |
 | `schema` | function | Function returning JSON Schema for parameters |
-| `createLayer` | function | Function to create Layer from parameters and data |
-| `getAxisQuantityUnits` | function | Optional function `(parameters, data) => {x: string, y: string}` for dynamic unit resolution |
+| `createLayer` | function | Function to create Layer config from parameters and data |
+| `getAxisQuantityUnits` | function | Optional: `(parameters, data) => {x: string, y: string}` for dynamic spatial unit resolution |
+| `getColorAxisQuantityKinds` | function | Optional: `(parameters, data) => { [slotName]: string }` for dynamic color axis quantity kind resolution |
 
 **Note:** Attributes and uniforms are now defined dynamically by the Layer instance created by `createLayer`, not statically in LayerType. The `createDrawCommand` method inspects the layer's `attributes` and `uniforms` objects to build the WebGL configuration.
 
@@ -531,6 +721,16 @@ new LayerType({ name, axisQuantityUnits, vert, frag, schema, createLayer, getAxi
 - `xDomain` (vec2): [min, max] of x-axis domain
 - `yDomain` (vec2): [min, max] of y-axis domain
 - `count` (int): Number of data points
+- `colorscale_<slot>` (int): Colorscale index for each color axis slot (e.g., `colorscale_v`)
+- `color_range_<slot>` (vec2): [min, max] range for each color axis slot (e.g., `color_range_v`)
+
+**GLSL Color Function (automatically injected when color axes are present):**
+
+```glsl
+vec4 map_color(int cs, vec2 range, float value)
+```
+
+Normalizes `value` into `[0, 1]` over `range` and returns the RGBA color from colorscale `cs`. Use this in your fragment shader to apply color mapping.
 
 **Attribute Accessor Format:**
 ```javascript
@@ -545,11 +745,13 @@ attributes: {
 
 | Method | Description |
 |--------|-------------|
-| `createDrawCommand(regl, layer)` | Compiles shaders into a regl draw command |
+| `createDrawCommand(regl, layer)` | Compiles shaders into a regl draw command; injects color GLSL automatically if layer has color axes |
 | `schema()` | Returns JSON Schema (Draft 2020-12) for layer parameters |
 | `createLayer(parameters, data)` | Creates a Layer instance from parameters and data object |
-| `getAxisQuantityUnits(parameters, data)` | Returns `{x: string, y: string}` with dynamically resolved units (optional, only needed if some units are `null`) |
-| `resolveAxisQuantityUnits(parameters, data)` | Returns `{x: string, y: string}` with fully resolved units (merges static and dynamic). Call this in `createLayer()` |
+| `getAxisQuantityUnits(parameters, data)` | Returns `{x: string, y: string}` with dynamically resolved spatial units (only needed if some units are `null`) |
+| `resolveAxisQuantityUnits(parameters, data)` | Returns `{x: string, y: string}` with fully resolved spatial units (merges static and dynamic) |
+| `getColorAxisQuantityKinds(parameters, data)` | Returns `{ [slotName]: string }` with dynamically resolved color axis quantity kinds (only needed if some entries are `null`) |
+| `resolveColorAxisQuantityKinds(parameters, data, factoryColorAxes)` | Returns fully resolved color axes map, merging static declarations with factory-provided entries |
 
 ---
 
@@ -559,15 +761,15 @@ A pre-configured LayerType for scatter plots.
 
 **Configuration:**
 - **Name:** "scatter"
-- **Units:** "meters" (both x and y)
-- **Attributes:** x, y, v (value for coloring)
+- **Spatial units:** dynamic — resolved from `xData` and `yData` parameter names as quantity kinds
+- **Color axis:** slot `v`, quantity kind resolved from `vData` parameter name; default colorscale "viridis"
+- **Attributes:** x, y, v (value for color mapping)
 - **Point Size:** 4.0 pixels
-- **Color Map:** Blue (v=0) → Red (v=1) via `rgb(v, 0, 1-v)`
 
 **Parameters Schema:**
-- `xData` (required): Property name in data object for x coordinates
-- `yData` (required): Property name in data object for y coordinates
-- `vData` (required): Property name in data object for color values
+- `xData` (required): Property name in data object for x coordinates; also used as the x-axis quantity kind
+- `yData` (required): Property name in data object for y coordinates; also used as the y-axis quantity kind
+- `vData` (required): Property name in data object for color values; also used as the color axis quantity kind
 - `xAxis` (optional): Which x-axis to use (default: "xaxis_bottom")
 - `yAxis` (optional): Which y-axis to use (default: "yaxis_left")
 
@@ -586,6 +788,61 @@ plot.update({
   }
 })
 ```
+
+---
+
+### registerColorscale
+
+Registers a custom colorscale for use in color axes.
+
+**Syntax:**
+```javascript
+registerColorscale(name, glslFn)
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | string | Unique colorscale name (e.g., `"my_scale"`) |
+| `glslFn` | string | Complete GLSL function string: `vec4 colorscale_<name>(float t) { ... }` where `t` is in [0, 1] |
+
+**Example:**
+```javascript
+import { registerColorscale } from './src/index.js'
+
+registerColorscale("my_scale", `
+  vec4 colorscale_my_scale(float t) {
+    return vec4(t, 1.0 - t, 0.5, 1.0);
+  }
+`)
+```
+
+The function must be named `colorscale_<name>` and accept a single `float t` in [0, 1], returning `vec4` RGBA.
+
+---
+
+### getRegisteredColorscales
+
+Returns a Map of all registered colorscale names to their GLSL function strings.
+
+**Syntax:**
+```javascript
+getRegisteredColorscales()
+```
+
+**Returns:** `Map<string, string>`
+
+---
+
+### buildColorGlsl
+
+Builds the complete GLSL color dispatch code for all registered colorscales.
+
+**Syntax:**
+```javascript
+buildColorGlsl()
+```
+
+**Returns:** string — GLSL source including all `colorscale_<name>` functions and the `map_color(int cs, vec2 range, float value)` dispatcher. This is automatically injected by `createDrawCommand` when a layer has color axes; you only need this if building custom WebGL integrations.
 
 ---
 
@@ -780,3 +1037,32 @@ Unit definitions with labels and scale types:
   log10: { label: "Log10", scale: "log" }
 }
 ```
+
+---
+
+### Colorscales
+
+All [matplotlib colorscales](https://matplotlib.org/stable/gallery/color/colormap_reference.html) are registered by default when you import from `./src/index.js`. Reference them by name in `colorAxes` entries or `config.axes` overrides.
+
+**Perceptually uniform sequential:**
+`viridis`, `plasma`, `inferno`, `magma`, `cividis`
+
+**Sequential (single-hue):**
+`Blues`, `Greens`, `Reds`, `Oranges`, `Purples`, `Greys`
+
+**Sequential (multi-hue):**
+`YlOrBr`, `YlOrRd`, `OrRd`, `PuRd`, `RdPu`, `BuPu`, `GnBu`, `PuBu`, `YlGnBu`, `PuBuGn`, `BuGn`, `YlGn`
+
+**Diverging:**
+`PiYG`, `PRGn`, `BrBG`, `PuOr`, `RdGy`, `RdBu`, `RdYlBu`, `RdYlGn`, `Spectral`, `coolwarm`, `bwr`, `seismic`
+
+**Cyclic:**
+`twilight`, `twilight_shifted`, `hsv`
+
+**Sequential (misc):**
+`hot`, `afmhot`, `gist_heat`, `copper`, `bone`, `pink`, `spring`, `summer`, `autumn`, `winter`, `cool`, `Wistia`, `gray`
+
+**Miscellaneous:**
+`jet`, `turbo`, `rainbow`, `gnuplot`, `gnuplot2`, `CMRmap`, `cubehelix`, `nipy_spectral`, `gist_rainbow`, `gist_earth`, `terrain`, `ocean`, `brg`
+
+Use `registerColorscale(name, glslFn)` to add custom colorscales.
