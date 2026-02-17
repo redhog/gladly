@@ -7,6 +7,7 @@ import { AXES, AxisRegistry } from "./AxisRegistry.js"
 import { ColorAxisRegistry } from "./ColorAxisRegistry.js"
 import { getLayerType, getRegisteredLayerTypes } from "./LayerTypeRegistry.js"
 import { getAxisQuantityUnit } from "./AxisQuantityUnitRegistry.js"
+import { getRegisteredColorscales } from "./ColorscaleRegistry.js"
 
 export class Plot {
   constructor(container, { margin } = {}) {
@@ -93,6 +94,35 @@ export class Plot {
 
   forceUpdate() {
     this.update({})
+  }
+
+  getConfig() {
+    const axes = { ...(this.currentConfig?.axes ?? {}) }
+
+    if (this.axisRegistry) {
+      for (const axisId of AXES) {
+        const scale = this.axisRegistry.getScale(axisId)
+        if (scale) {
+          const [min, max] = scale.domain()
+          axes[axisId] = { ...(axes[axisId] ?? {}), min, max }
+        }
+      }
+    }
+
+    if (this.colorAxisRegistry) {
+      for (const quantityKind of this.colorAxisRegistry.getQuantityKinds()) {
+        const range = this.colorAxisRegistry.getRange(quantityKind)
+        const colorscale = this.colorAxisRegistry.getColorscale(quantityKind)
+        const existing = axes[quantityKind] ?? {}
+        axes[quantityKind] = {
+          ...existing,
+          ...(range ? { min: range[0], max: range[1] } : {}),
+          ...(!existing.colorscale && colorscale ? { colorscale } : {})
+        }
+      }
+    }
+
+    return { ...this.currentConfig, axes }
   }
 
   _initialize() {
@@ -487,7 +517,10 @@ export class Plot {
             properties: {
               min: { type: "number" },
               max: { type: "number" },
-              colorscale: { type: "string" }
+              colorscale: {
+                type: "string",
+                enum: [...getRegisteredColorscales().keys()]
+              }
             },
             required: ["min", "max"]
           }

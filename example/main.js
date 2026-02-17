@@ -16,6 +16,7 @@ const axisLink = linkAxes(plot1, "xaxis_bottom", plot2, "xaxis_bottom")
 let activePlot = 'plot1'
 let plot1Config = initialPlot1Config
 let plot2Config = initialPlot2Config
+let editorSyncing = false
 
 function updatePlot(plotId, plotConfig) {
   const plot = plotId === 'plot1' ? plot1 : plot2
@@ -23,11 +24,12 @@ function updatePlot(plotId, plotConfig) {
     plot.update({ config: plotConfig, data })
     document.getElementById('validation-errors').innerHTML = ''
 
-    // Update stored config
+    // Store the full config (includes live axes/colorscales from getConfig)
+    const fullConfig = plot.getConfig()
     if (plotId === 'plot1') {
-      plot1Config = plotConfig
+      plot1Config = fullConfig
     } else {
-      plot2Config = plotConfig
+      plot2Config = fullConfig
     }
 
     return true
@@ -66,6 +68,8 @@ let editor = new JSONEditor(document.getElementById('editor-container'), {
 })
 
 editor.on('change', () => {
+  if (editorSyncing) return
+
   const errors = editor.validate()
 
   if (errors.length === 0) {
@@ -91,7 +95,9 @@ function switchToPlot(plotId) {
 
   // Update editor value without destroying
   const newConfig = plotId === 'plot1' ? plot1Config : plot2Config
+  editorSyncing = true
   editor.setValue(newConfig)
+  editorSyncing = false
 
   // Clear validation errors
   document.getElementById('validation-errors').innerHTML = ''
