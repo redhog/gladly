@@ -2,11 +2,12 @@ import { LayerType, registerLayerType } from "../../src/index.js"
 
 /**
  * Scatter plot layer type for meters (x) vs volts (y)
- * Uses blue to red colormap
+ * Uses plasma colorscale
  */
 export const ScatterMVLayer = new LayerType({
   name: "scatter-mv",
   axisQuantityUnits: {x: "meters", y: "volts"},
+  colorAxisQuantityKinds: { v: null },
   vert: `
     precision mediump float;
     attribute float x;
@@ -25,9 +26,12 @@ export const ScatterMVLayer = new LayerType({
   `,
   frag: `
     precision mediump float;
+    uniform int colorscale_v;
+    uniform vec2 color_range_v;
     varying float value;
-    vec3 colormap(float t){ return vec3(t, 0.0, 1.0-t); }
-    void main(){ gl_FragColor=vec4(colormap(value), 1.0); }
+    void main() {
+      gl_FragColor = map_color(colorscale_v, color_range_v, value);
+    }
   `,
   schema: () => ({
     type: "object",
@@ -51,13 +55,18 @@ export const ScatterMVLayer = new LayerType({
     },
     required: ["xData", "yData", "vData"]
   }),
+  getColorAxisQuantityKinds: function(parameters) {
+    return { v: parameters.vData }
+  },
   createLayer: function(parameters, data) {
     const { xData, yData, vData, xAxis = "xaxis_bottom", yAxis = "yaxis_left" } = parameters
+    const v = data[vData]
     return {
-      attributes: { x: data[xData], y: data[yData], v: data[vData] },
+      attributes: { x: data[xData], y: data[yData], v },
       uniforms: {},
       xAxis,
-      yAxis
+      yAxis,
+      colorAxes: { v: { quantityKind: vData, data: v, colorscale: "plasma" } }
     }
   }
 })

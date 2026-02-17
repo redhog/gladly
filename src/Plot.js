@@ -4,6 +4,7 @@ import { scaleLinear } from "d3-scale"
 import { axisBottom, axisTop, axisLeft, axisRight } from "d3-axis"
 import { zoom, zoomIdentity } from "d3-zoom"
 import { AXES, AxisRegistry } from "./AxisRegistry.js"
+import { ColorAxisRegistry } from "./ColorAxisRegistry.js"
 import { getLayerType, getRegisteredLayerTypes } from "./LayerTypeRegistry.js"
 import { getAxisQuantityUnit } from "./AxisQuantityUnitRegistry.js"
 
@@ -30,28 +31,25 @@ export class Plot {
       .style('z-index', '2')
       .style('user-select', 'none')
 
-    // State storage for updates
     this.currentConfig = null
     this.currentData = null
     this.regl = null
     this.layers = []
     this.axisRegistry = null
+    this.colorAxisRegistry = null
 
-    // Axis links (persists across updates)
+    // Axis links (persists across updates); any axis ID (spatial or color) is allowed
     this.axisLinks = new Map()
     AXES.forEach(axis => this.axisLinks.set(axis, new Set()))
 
-    // Setup resize handling
     this._setupResizeObserver()
   }
 
   update({ config, data } = {}) {
-    // Store previous config and data for rollback on error
     const previousConfig = this.currentConfig
     const previousData = this.currentData
 
     try {
-      // Store config and data if provided
       if (config !== undefined) {
         this.currentConfig = config
       }
@@ -59,16 +57,13 @@ export class Plot {
         this.currentData = data
       }
 
-      // Only render if we have both config and data
       if (!this.currentConfig || !this.currentData) {
         return
       }
 
-      // Get dimensions from container
       const width = this.container.clientWidth
       const height = this.container.clientHeight
 
-      // Update canvas and SVG dimensions
       this.canvas.width = width
       this.canvas.height = height
       this.svg.attr('width', width).attr('height', height)
@@ -78,26 +73,19 @@ export class Plot {
       this.plotWidth = width - this.margin.left - this.margin.right
       this.plotHeight = height - this.margin.top - this.margin.bottom
 
-      // Validate axis link compatibility before any destructive operations
       const { layers: pendingLayers = [] } = this.currentConfig
       this._preValidateAxisLinks(pendingLayers, this.currentData)
 
-      // Clean up existing regl context if it exists
       if (this.regl) {
         this.regl.destroy()
       }
 
-      // Clear SVG content
       this.svg.selectAll('*').remove()
 
-      // Initialize everything
       this._initialize()
     } catch (error) {
-      // Restore previous config and data on error
       this.currentConfig = previousConfig
       this.currentData = previousData
-
-      // Re-throw error for caller to handle
       throw error
     }
   }
@@ -109,21 +97,16 @@ export class Plot {
   _initialize() {
     const { layers = [], axes = {} } = this.currentConfig
 
-    // Initialize regl
     this.regl = reglInit({ canvas: this.canvas })
 
     this.layers = []
 
-    // SVG groups for axes
     AXES.forEach(a => this.svg.append("g").attr("class", a))
 
-    // Create AxisRegistry internally
     this.axisRegistry = new AxisRegistry(this.plotWidth, this.plotHeight)
+    this.colorAxisRegistry = new ColorAxisRegistry()
 
-    // Process layers from declarative configuration
     this._processLayers(layers, this.currentData)
-
-    // Auto-calculate domains and apply overrides
     this._setDomains(axes)
 
     this.initZoom()
@@ -137,7 +120,6 @@ export class Plot {
       })
       this.resizeObserver.observe(this.container)
     } else {
-      // Fallback to window resize for older browsers
       this._resizeHandler = () => this.forceUpdate()
       window.addEventListener('resize', this._resizeHandler)
     }
@@ -167,9 +149,35 @@ export class Plot {
     }
   }
 
+  // Returns the quantity kind for any axis ID (spatial or color axis).
+  // For color axes, the axis ID IS the quantity kind.
+  getAxisQuantityKind(axisId) {
+    if (AXES.includes(axisId)) {
+      return this.axisRegistry ? this.axisRegistry.axisQuantityUnits[axisId] : null
+    }
+    return axisId
+  }
+
+  // Unified domain getter for both spatial and color axes.
+  getAxisDomain(axisId) {
+    if (AXES.includes(axisId)) {
+      const scale = this.axisRegistry?.getScale(axisId)
+      return scale ? scale.domain() : null
+    }
+    return this.colorAxisRegistry?.getRange(axisId) ?? null
+  }
+
+  // Unified domain setter for both spatial and color axes.
+  setAxisDomain(axisId, domain) {
+    if (AXES.includes(axisId)) {
+      const scale = this.axisRegistry?.getScale(axisId)
+      if (scale) scale.domain(domain)
+    } else {
+      this.colorAxisRegistry?.setRange(axisId, domain[0], domain[1])
+    }
+  }
+
   _preValidateAxisLinks(layersConfig, data) {
-    // Determine what axis/unit assignments the new config would produce,
-    // and check them against linked axes — without touching any DOM or WebGL state.
     const pendingUnits = {}
 
     for (const layerSpec of layersConfig) {
@@ -186,13 +194,11 @@ export class Plot {
       ]) {
         if (!axisName || !unit) continue
 
-        // Track units this config would assign (internal conflict check)
         if (pendingUnits[axisName] && pendingUnits[axisName] !== unit) {
           throw new Error(`Axis unit conflict on ${axisName}: ${pendingUnits[axisName]} vs ${unit}`)
         }
         pendingUnits[axisName] = unit
 
-        // Check against linked axes
         const links = this.axisLinks.get(axisName)
         if (!links || links.size === 0) continue
 
@@ -200,19 +206,36 @@ export class Plot {
           const linked = link.getLinkedAxis(this, axisName)
           if (!linked) continue
 
-          const linkedPlot = linked.plot
-          const linkedAxis = linked.axis
-
-          if (!linkedPlot.axisRegistry) continue
-
-          const linkedUnit = linkedPlot.axisRegistry.axisQuantityUnits[linkedAxis]
+          const linkedUnit = linked.plot.getAxisQuantityKind(linked.axis)
           if (!linkedUnit) continue
 
           if (unit !== linkedUnit) {
             throw new Error(
               `Linked axes have incompatible quantity units: ` +
               `${axisName} (${unit}) cannot link to ` +
-              `${linkedPlot.container.id || 'plot'}.${linkedAxis} (${linkedUnit})`
+              `${linked.plot.container.id || 'plot'}.${linked.axis} (${linkedUnit})`
+            )
+          }
+        }
+      }
+
+      // Validate color axis links
+      for (const [slot, { quantityKind }] of Object.entries(layer.colorAxes)) {
+        const links = this.axisLinks.get(quantityKind)
+        if (!links || links.size === 0) continue
+
+        for (const link of links) {
+          const linked = link.getLinkedAxis(this, quantityKind)
+          if (!linked) continue
+
+          const linkedUnit = linked.plot.getAxisQuantityKind(linked.axis)
+          if (!linkedUnit) continue
+
+          if (quantityKind !== linkedUnit) {
+            throw new Error(
+              `Linked axes have incompatible quantity units: ` +
+              `color axis '${quantityKind}' cannot link to ` +
+              `${linked.plot.container.id || 'plot'}.${linked.axis} (${linkedUnit})`
             )
           }
         }
@@ -220,60 +243,41 @@ export class Plot {
     }
   }
 
-  _validateAxisLinks(axisName) {
-    const links = this.axisLinks.get(axisName)
+  _validateAxisLinks(axisId) {
+    const links = this.axisLinks.get(axisId)
     if (!links || links.size === 0) return
 
-    const thisQuantityUnit = this.axisRegistry.axisQuantityUnits[axisName]
-    if (!thisQuantityUnit) return
+    const thisUnit = this.getAxisQuantityKind(axisId)
+    if (!thisUnit) return
 
     for (const link of links) {
-      const linked = link.getLinkedAxis(this, axisName)
+      const linked = link.getLinkedAxis(this, axisId)
       if (!linked) continue
 
-      const linkedPlot = linked.plot
-      const linkedAxis = linked.axis
+      const linkedUnit = linked.plot.getAxisQuantityKind(linked.axis)
+      if (!linkedUnit) continue
 
-      // Only validate if the linked plot has been initialized with an AxisRegistry
-      if (!linkedPlot.axisRegistry) continue
-
-      const linkedQuantityUnit = linkedPlot.axisRegistry.axisQuantityUnits[linkedAxis]
-      if (!linkedQuantityUnit) continue
-
-      // Validate unit compatibility
-      if (thisQuantityUnit !== linkedQuantityUnit) {
+      if (thisUnit !== linkedUnit) {
         throw new Error(
           `Linked axes have incompatible quantity units: ` +
-          `${axisName} (${thisQuantityUnit}) cannot link to ` +
-          `${linkedPlot.container.id || 'plot'}.${linkedAxis} (${linkedQuantityUnit})`
+          `${axisId} (${thisUnit}) cannot link to ` +
+          `${linked.plot.container.id || 'plot'}.${linked.axis} (${linkedUnit})`
         )
       }
     }
   }
 
-  _propagateDomainToLinks(axisName, newDomain) {
+  _propagateDomainToLinks(axisId, newDomain) {
     try {
-      const links = this.axisLinks.get(axisName)
+      const links = this.axisLinks.get(axisId)
       if (!links || links.size === 0) return
 
       for (const link of links) {
-        const linked = link.getLinkedAxis(this, axisName)
+        const linked = link.getLinkedAxis(this, axisId)
         if (!linked) continue
 
-        const linkedPlot = linked.plot
-        const linkedAxis = linked.axis
-
-        // Only propagate if the linked plot has been initialized
-        if (!linkedPlot.axisRegistry) continue
-
-        const linkedScale = linkedPlot.axisRegistry.getScale(linkedAxis)
-        if (!linkedScale) continue
-
-        // Update the linked scale's domain
-        linkedScale.domain(newDomain)
-
-        // Render the linked plot
-        linkedPlot.render()
+        linked.plot.setAxisDomain(linked.axis, newDomain)
+        linked.plot.render()
       }
     } catch (error) {
       console.error('Error propagating domain to linked axes:', error)
@@ -281,7 +285,6 @@ export class Plot {
   }
 
   destroy() {
-    // Clean up axis links
     const allLinks = new Set()
     for (const links of this.axisLinks.values()) {
       for (const link of links) {
@@ -292,26 +295,22 @@ export class Plot {
       link.unlink()
     }
 
-    // Clean up resize observer
     if (this.resizeObserver) {
       this.resizeObserver.disconnect()
     } else if (this._resizeHandler) {
       window.removeEventListener('resize', this._resizeHandler)
     }
 
-    // Clean up regl context
     if (this.regl) {
       this.regl.destroy()
     }
 
-    // Clean up DOM elements
     this.canvas.remove()
     this.svg.remove()
   }
 
   _processLayers(layersConfig, data) {
     for (const layerSpec of layersConfig) {
-      // Each layerSpec is an object with a single key-value pair: {layerTypeName: parameters}
       const entries = Object.entries(layerSpec)
       if (entries.length !== 1) {
         throw new Error("Each layer specification must have exactly one layer type key")
@@ -320,18 +319,21 @@ export class Plot {
       const [layerTypeName, parameters] = entries[0]
       const layerType = getLayerType(layerTypeName)
 
-      // Create the layer using the layer type's factory method
       const layer = layerType.createLayer(parameters, data)
 
-      // Register axes with the AxisRegistry using resolved units
+      // Register spatial axes
       this.axisRegistry.ensureAxis(layer.xAxis, layer.xAxisQuantityUnit)
       this.axisRegistry.ensureAxis(layer.yAxis, layer.yAxisQuantityUnit)
 
-      // Validate axis links after ensuring axes
       this._validateAxisLinks(layer.xAxis)
       this._validateAxisLinks(layer.yAxis)
 
-      // Create the draw command
+      // Register color axes (pass optional layer-type default colorscale)
+      for (const [slot, { quantityKind, colorscale }] of Object.entries(layer.colorAxes)) {
+        this.colorAxisRegistry.ensureColorAxis(quantityKind, colorscale ?? null)
+        this._validateAxisLinks(quantityKind)
+      }
+
       layer.draw = layer.type.createDrawCommand(this.regl, layer)
 
       this.layers.push(layer)
@@ -339,7 +341,7 @@ export class Plot {
   }
 
   _setDomains(axesOverrides) {
-    // Auto-calculate domain for each axis from layer data
+    // Auto-calculate spatial axis domains
     const autoDomains = {}
 
     for (const axis of AXES) {
@@ -366,13 +368,11 @@ export class Plot {
       autoDomains[axis] = [min, max]
     }
 
-    // Apply domains (use override if provided, otherwise use auto-calculated)
     for (const axis of AXES) {
       const scale = this.axisRegistry.getScale(axis)
       if (scale) {
         let domain
         if (axesOverrides[axis]) {
-          // Convert { min, max } to [min, max] array
           const override = axesOverrides[axis]
           domain = [override.min, override.max]
         } else {
@@ -380,6 +380,35 @@ export class Plot {
         }
         if (domain) {
           scale.domain(domain)
+        }
+      }
+    }
+
+    // Auto-calculate color axis domains
+    for (const quantityKind of this.colorAxisRegistry.getQuantityKinds()) {
+      let min = Infinity
+      let max = -Infinity
+
+      for (const layer of this.layers) {
+        for (const [slot, { quantityKind: qk, data }] of Object.entries(layer.colorAxes)) {
+          if (qk === quantityKind) {
+            for (let i = 0; i < data.length; i++) {
+              if (data[i] < min) min = data[i]
+              if (data[i] > max) max = data[i]
+            }
+          }
+        }
+      }
+
+      if (min !== Infinity) {
+        if (axesOverrides[quantityKind]) {
+          const override = axesOverrides[quantityKind]
+          if (override.colorscale) {
+            this.colorAxisRegistry.ensureColorAxis(quantityKind, override.colorscale)
+          }
+          this.colorAxisRegistry.setRange(quantityKind, override.min, override.max)
+        } else {
+          this.colorAxisRegistry.setRange(quantityKind, min, max)
         }
       }
     }
@@ -449,7 +478,16 @@ export class Plot {
               additionalProperties: false
             }
           },
-          additionalProperties: false
+          additionalProperties: {
+            // Color axes: { min, max, colorscale? }
+            type: "object",
+            properties: {
+              min: { type: "number" },
+              max: { type: "number" },
+              colorscale: { type: "string" }
+            },
+            required: ["min", "max"]
+          }
         }
       }
     }
@@ -500,12 +538,10 @@ export class Plot {
 
     const unitLabel = getAxisQuantityUnit(axisQuantityUnit).label
     const isVertical = axisName.includes("y")
-    const padding = 5 // Padding from SVG edge
+    const padding = 5
 
-    // Remove existing label
     axisGroup.select(".axis-label").remove()
 
-    // Create text element
     const text = axisGroup.append("text")
       .attr("class", "axis-label")
       .attr("fill", "#000")
@@ -513,7 +549,6 @@ export class Plot {
       .style("font-size", "14px")
       .style("font-weight", "bold")
 
-    // Handle multiline text
     const lines = unitLabel.split('\n')
     if (lines.length > 1) {
       lines.forEach((line, i) => {
@@ -526,40 +561,27 @@ export class Plot {
       text.text(unitLabel)
     }
 
-    // Apply rotation for vertical axes
     if (isVertical) {
       text.attr("transform", "rotate(-90)")
     }
 
-    // Position at center, temporarily at y=0 to measure
     text.attr("x", centerPos).attr("y", 0)
 
-    // Measure actual text bounds
     const bbox = text.node().getBBox()
-
-    // Reserve space for tick marks and tick labels (approximately 25px from axis)
     const tickSpace = 25
 
-    // Position based on actual bounds to center within available margin MINUS tick space
-    // bbox.y is the top of the text bounds, bbox.height is the height
-    // Text center is at: bbox.y + bbox.height / 2
     let yOffset
 
     if (axisName === "xaxis_bottom") {
-      // Center in space between ticks and SVG bottom: [tickSpace, availableMargin]
       const centerY = tickSpace + (availableMargin - tickSpace) / 2
       yOffset = centerY - (bbox.y + bbox.height / 2)
     } else if (axisName === "xaxis_top") {
-      // Center in space between SVG top and ticks: [-availableMargin, -tickSpace]
       const centerY = -(tickSpace + (availableMargin - tickSpace) / 2)
       yOffset = centerY - (bbox.y + bbox.height / 2)
     } else if (axisName === "yaxis_left") {
-      // For rotated text, bbox is in rotated coordinates
-      // Center in space between SVG left and ticks: [-availableMargin, -tickSpace]
       const centerY = -(tickSpace + (availableMargin - tickSpace) / 2)
       yOffset = centerY - (bbox.y + bbox.height / 2)
     } else if (axisName === "yaxis_right") {
-      // Center in space between ticks and SVG right: [tickSpace, availableMargin]
       const centerY = tickSpace + (availableMargin - tickSpace) / 2
       yOffset = centerY - (bbox.y + bbox.height / 2)
     }
@@ -576,18 +598,26 @@ export class Plot {
       height: this.plotHeight
     }
     for (const layer of this.layers) {
-      layer.draw({
+      const props = {
         xDomain: this.axisRegistry.getScale(layer.xAxis).domain(),
         yDomain: this.axisRegistry.getScale(layer.yAxis).domain(),
         viewport: viewport,
         count: layer.attributes.x.length
-      })
+      }
+
+      // Add color axis uniforms
+      for (const [slot, { quantityKind }] of Object.entries(layer.colorAxes)) {
+        props[`colorscale_${slot}`] = this.colorAxisRegistry.getColorscaleIndex(quantityKind)
+        const range = this.colorAxisRegistry.getRange(quantityKind)
+        props[`color_range_${slot}`] = range ?? [0, 1]
+      }
+
+      layer.draw(props)
     }
     this.renderAxes()
   }
 
   initZoom() {
-    // Create full-coverage overlay for zoom/pan events
     const fullOverlay = this.svg.append("rect")
       .attr("class", "zoom-overlay")
       .attr("x", 0)
@@ -599,21 +629,19 @@ export class Plot {
       .style("cursor", "move")
 
     let currentRegion = null
-    let gestureStartDomains = {} // Store domains at start of each gesture
-    let gestureStartMousePos = {} // Store mouse position (pixels) at start
-    let gestureStartDataPos = {} // Store data coordinates at mouse position
-    let gestureStartTransform = null // Store transform at start to compute delta
+    let gestureStartDomains = {}
+    let gestureStartMousePos = {}
+    let gestureStartDataPos = {}
+    let gestureStartTransform = null
 
     const zoomBehavior = zoom()
       .scaleExtent([0.5, 50])
       .on("start", (event) => {
-        // Ignore programmatic zoom events (no sourceEvent)
         if (!event.sourceEvent) return
 
         gestureStartTransform = { k: event.transform.k, x: event.transform.x, y: event.transform.y }
         const [mouseX, mouseY] = d3.pointer(event.sourceEvent, this.svg.node())
 
-        // Detect region using existing margin properties
         const inPlotX = mouseX >= this.margin.left && mouseX < this.margin.left + this.plotWidth
         const inPlotY = mouseY >= this.margin.top && mouseY < this.margin.top + this.plotHeight
 
@@ -628,10 +656,9 @@ export class Plot {
         } else if (inPlotX && inPlotY) {
           currentRegion = "plot_area"
         } else {
-          currentRegion = null // In corners - no zoom
+          currentRegion = null
         }
 
-        // Store current domains, mouse position, and data coordinates at mouse
         gestureStartDomains = {}
         gestureStartMousePos = {}
         gestureStartDataPos = {}
@@ -641,23 +668,20 @@ export class Plot {
             const scale = this.axisRegistry.getScale(axis)
             if (scale) {
               const currentDomain = scale.domain()
-              gestureStartDomains[axis] = currentDomain.slice() // Clone the domain
+              gestureStartDomains[axis] = currentDomain.slice()
 
               const isY = axis.includes("y")
               const mousePixel = isY ? (mouseY - this.margin.top) : (mouseX - this.margin.left)
               gestureStartMousePos[axis] = mousePixel
 
-              // Calculate what data value is currently at the mouse position
               const pixelSize = isY ? this.plotHeight : this.plotWidth
               const [d0, d1] = currentDomain
               const domainWidth = d1 - d0
               const fraction = mousePixel / pixelSize
 
               if (isY) {
-                // Y axis inverted: pixel 0 (top) = d1, pixel max (bottom) = d0
                 gestureStartDataPos[axis] = d1 - fraction * domainWidth
               } else {
-                // X axis normal: pixel 0 (left) = d0, pixel max (right) = d1
                 gestureStartDataPos[axis] = d0 + fraction * domainWidth
               }
             }
@@ -667,12 +691,10 @@ export class Plot {
       .on("zoom", (event) => {
         if (!this.axisRegistry || !currentRegion || !gestureStartTransform) return
 
-        // Calculate delta from start of this gesture
         const deltaK = event.transform.k / gestureStartTransform.k
         const deltaX = event.transform.x - gestureStartTransform.x
         const deltaY = event.transform.y - gestureStartTransform.y
 
-        // Detect if this is a wheel event (scroll-to-zoom) vs drag
         const isWheel = event.sourceEvent && event.sourceEvent.type === 'wheel'
 
         const axesToZoom = currentRegion === "plot_area" ? AXES : [currentRegion]
@@ -690,38 +712,24 @@ export class Plot {
             const mousePixelPos = gestureStartMousePos[axis]
             const targetDataPos = gestureStartDataPos[axis]
 
-            // New domain width from zoom
             const newDomainWidth = domainWidth / zoomScale
 
-            // Domain delta from pan (ignore pan for wheel events - pure zoom only)
-            // Y is inverted (range is [plotHeight, 0]), so positive screen delta = positive domain delta
-            // X is normal (range is [0, plotWidth]), so positive screen delta = negative domain delta
             const panDomainDelta = isWheel ? 0 : (isY
               ? pixelDelta * domainWidth / pixelSize / zoomScale
               : -pixelDelta * domainWidth / pixelSize / zoomScale)
 
-            // Calculate new domain keeping targetDataPos at mousePixelPos
             const fraction = mousePixelPos / pixelSize
             let center
 
             if (isY) {
-              // Y axis: inverted range [plotHeight, 0]
-              // We want: newDomain[1] - (targetDataPos + panDomainDelta) = fraction * newDomainWidth
-              // center + newDomainWidth/2 - targetDataPos - panDomainDelta = fraction * newDomainWidth
-              // center = targetDataPos + panDomainDelta + fraction * newDomainWidth - newDomainWidth/2
               center = (targetDataPos + panDomainDelta) + (fraction - 0.5) * newDomainWidth
             } else {
-              // X axis: normal range [0, plotWidth]
-              // We want: (targetDataPos + panDomainDelta) - newDomain[0] = fraction * newDomainWidth
-              // targetDataPos + panDomainDelta - (center - newDomainWidth/2) = fraction * newDomainWidth
-              // center = targetDataPos + panDomainDelta - fraction * newDomainWidth + newDomainWidth/2
               center = (targetDataPos + panDomainDelta) + (0.5 - fraction) * newDomainWidth
             }
 
             const newDomain = [center - newDomainWidth / 2, center + newDomainWidth / 2]
             scale.domain(newDomain)
 
-            // Propagate domain changes to linked axes (only for user interactions)
             if (event.sourceEvent) {
               this._propagateDomainToLinks(axis, newDomain)
             }

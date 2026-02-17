@@ -2,11 +2,12 @@ import { LayerType, registerLayerType } from "../../src/index.js"
 
 /**
  * Scatter plot layer type for m/s (x) vs ampere (y)
- * Uses green to yellow colormap
+ * Uses coolwarm colorscale
  */
 export const ScatterSALayer = new LayerType({
   name: "scatter-sa",
   axisQuantityUnits: {x: "m/s", y: "ampere"},
+  colorAxisQuantityKinds: { v: null },
   vert: `
     precision mediump float;
     attribute float x;
@@ -25,9 +26,12 @@ export const ScatterSALayer = new LayerType({
   `,
   frag: `
     precision mediump float;
+    uniform int colorscale_v;
+    uniform vec2 color_range_v;
     varying float value;
-    vec3 colormap(float t){ return vec3(0.0, 0.5+t*0.5, 1.0-t); }
-    void main(){ gl_FragColor=vec4(colormap(value), 1.0); }
+    void main() {
+      gl_FragColor = map_color(colorscale_v, color_range_v, value);
+    }
   `,
   schema: () => ({
     type: "object",
@@ -51,13 +55,18 @@ export const ScatterSALayer = new LayerType({
     },
     required: ["xData", "yData", "vData"]
   }),
+  getColorAxisQuantityKinds: function(parameters) {
+    return { v: parameters.vData }
+  },
   createLayer: function(parameters, data) {
     const { xData, yData, vData, xAxis = "xaxis_bottom", yAxis = "yaxis_left" } = parameters
+    const v = data[vData]
     return {
-      attributes: { x: data[xData], y: data[yData], v: data[vData] },
+      attributes: { x: data[xData], y: data[yData], v },
       uniforms: {},
       xAxis,
-      yAxis
+      yAxis,
+      colorAxes: { v: { quantityKind: vData, data: v, colorscale: "coolwarm" } }
     }
   }
 })

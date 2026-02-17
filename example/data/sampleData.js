@@ -40,11 +40,10 @@ export const initialPlot1Config = {
   }
 }
 
-// Export initial plot configuration for plot 2
-// NOTE: Plot 2 uses x1 (same as plot 1) so the linked x-axes have compatible units (meters)
+// Export initial plot configuration for plot 2 (m/s vs ampere, coolwarm colorscale)
 export const initialPlot2Config = {
   layers: [
-    { "scatter-mv": { xData: "x1", yData: "y2", vData: "v2", xAxis: "xaxis_top", yAxis: "yaxis_right" } }
+    { "scatter-sa": { xData: "x2", yData: "y2", vData: "v2", xAxis: "xaxis_bottom", yAxis: "yaxis_left" } }
   ]
   // axes will be auto-calculated from data
 }

@@ -1,15 +1,5 @@
-import { AXES } from "./AxisRegistry.js"
-
 export class AxisLink {
   constructor(plot1, axis1, plot2, axis2) {
-    // Validate axis names
-    if (!AXES.includes(axis1)) {
-      throw new Error(`Invalid axis name: ${axis1}`)
-    }
-    if (!AXES.includes(axis2)) {
-      throw new Error(`Invalid axis name: ${axis2}`)
-    }
-
     this.plot1 = plot1
     this.axis1 = axis1
     this.plot2 = plot2
@@ -31,7 +21,6 @@ export class AxisLink {
     this.plot2 = null
   }
 
-  // Get the other end of the link given one plot and axis
   getLinkedAxis(plot, axis) {
     if (plot === this.plot1 && axis === this.axis1) {
       return { plot: this.plot2, axis: this.axis2 }

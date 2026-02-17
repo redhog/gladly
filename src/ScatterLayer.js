@@ -5,6 +5,7 @@ import { registerLayerType } from "./LayerTypeRegistry.js"
 export const scatterLayerType = new LayerType({
   name: "scatter",
   axisQuantityUnits: {x: null, y: null},
+  colorAxisQuantityKinds: { v: null },
   vert: `
     precision mediump float;
     attribute float x;
@@ -23,9 +24,12 @@ export const scatterLayerType = new LayerType({
   `,
   frag: `
     precision mediump float;
+    uniform int colorscale_v;
+    uniform vec2 color_range_v;
     varying float value;
-    vec3 colormap(float t){ return vec3(t,0.0,1.0-t); }
-    void main(){ gl_FragColor=vec4(colormap(value),1.0); }
+    void main() {
+      gl_FragColor = map_color(colorscale_v, color_range_v, value);
+    }
   `,
   schema: (data) => {
     const dataProperties = data ? Object.keys(data) : []
@@ -68,25 +72,27 @@ export const scatterLayerType = new LayerType({
     const { xData, yData } = parameters
     return { x: xData, y: yData }
   },
+  getColorAxisQuantityKinds: function(parameters, data) {
+    return { v: parameters.vData }
+  },
   createLayer: function(parameters, data) {
     const { xData, yData, vData, xAxis = "xaxis_bottom", yAxis = "yaxis_left" } = parameters
 
-    // Extract data from the data object
     const x = data[xData]
     const y = data[yData]
     const v = data[vData]
 
-    // Validate that data exists
     if (!x) throw new Error(`Data property '${xData}' not found in data object`)
     if (!y) throw new Error(`Data property '${yData}' not found in data object`)
     if (!v) throw new Error(`Data property '${vData}' not found in data object`)
 
-    // Return layer configuration (Layer construction and unit resolution handled automatically)
     return {
       attributes: { x, y, v },
       uniforms: {},
       xAxis,
-      yAxis
+      yAxis,
+      // slot 'v' maps to the quantity kind named by vData, backed by the v data array
+      colorAxes: { v: { quantityKind: vData, data: v, colorscale: "viridis" } }
     }
   }
 })
