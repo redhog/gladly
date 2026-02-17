@@ -10,6 +10,7 @@ import { getAxisQuantityUnit } from "./AxisQuantityUnitRegistry.js"
 import { getRegisteredColorscales } from "./ColorscaleRegistry.js"
 
 export class Plot {
+  static _FloatClass = null
   constructor(container, { margin } = {}) {
     this.container = container
     this.margin = margin ?? { top: 60, right: 60, bottom: 60, left: 60 }
@@ -45,6 +46,9 @@ export class Plot {
     // Axis links (persists across updates); any axis ID (spatial or color) is allowed
     this.axisLinks = new Map()
     AXES.forEach(axis => this.axisLinks.set(axis, new Set()))
+
+    // Auto-managed Float colorbars keyed by color axis name
+    this._floats = new Map()
 
     this._setupResizeObserver()
   }
@@ -87,6 +91,7 @@ export class Plot {
       this.svg.selectAll('*').remove()
 
       this._initialize()
+      this._syncFloats()
     } catch (error) {
       this.currentConfig = previousConfig
       this.currentData = previousData
@@ -117,6 +122,7 @@ export class Plot {
         const colorscale = this.colorAxisRegistry.getColorscale(quantityKind)
         const existing = axes[quantityKind] ?? {}
         axes[quantityKind] = {
+          colorbar: "none",
           ...existing,
           ...(range ? { min: range[0], max: range[1] } : {}),
           ...(!existing.colorscale && colorscale ? { colorscale } : {})
@@ -317,7 +323,42 @@ export class Plot {
     }
   }
 
+  _syncFloats() {
+    const axes = this.currentConfig?.axes ?? {}
+
+    // Determine desired state: map of axisName → orientation for color axes with colorbar set
+    const desired = new Map()
+    for (const [axisName, axisConfig] of Object.entries(axes)) {
+      if (AXES.includes(axisName)) continue  // skip spatial axes
+      const cb = axisConfig.colorbar
+      if (cb === "vertical" || cb === "horizontal") {
+        desired.set(axisName, cb)
+      }
+    }
+
+    // Destroy floats that are no longer wanted or have changed orientation
+    for (const [axisName, float] of this._floats) {
+      const wantedOrientation = desired.get(axisName)
+      if (wantedOrientation === undefined || wantedOrientation !== float._colorbar._orientation) {
+        float.destroy()
+        this._floats.delete(axisName)
+      }
+    }
+
+    // Create floats that are newly wanted
+    for (const [axisName, orientation] of desired) {
+      if (!this._floats.has(axisName)) {
+        this._floats.set(axisName, new Plot._FloatClass(this, axisName, { orientation }))
+      }
+    }
+  }
+
   destroy() {
+    for (const float of this._floats.values()) {
+      float.destroy()
+    }
+    this._floats.clear()
+
     const allLinks = new Set()
     for (const links of this.axisLinks.values()) {
       for (const link of links) {
@@ -519,7 +560,7 @@ export class Plot {
             }
           },
           additionalProperties: {
-            // Color axes: { min, max, colorscale? }
+            // Color axes: { min, max, colorscale?, colorbar? }
             type: "object",
             properties: {
               min: { type: "number" },
@@ -527,6 +568,10 @@ export class Plot {
               colorscale: {
                 type: "string",
                 enum: [...getRegisteredColorscales().keys()]
+              },
+              colorbar: {
+                type: "string",
+                enum: ["none", "vertical", "horizontal"]
               }
             },
             required: ["min", "max"]

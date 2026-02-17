@@ -1,4 +1,4 @@
-import { Plot, registerLayerType, linkAxes, Float } from "../src/index.js"
+import { Plot, registerLayerType, linkAxes } from "../src/index.js"
 import { } from "../src/ScatterLayer.js"
 import { JSONEditor } from '@json-editor/json-editor'
 import { } from "./layer-types/ScatterMVLayer.js"
@@ -46,11 +46,6 @@ function updatePlot(plotId, plotConfig) {
 // Initial updates
 updatePlot('plot1', plot1Config)
 updatePlot('plot2', plot2Config)
-
-// Create floating colorbars after plots are initialised so the initial sync
-// can read the correct range and colorscale from each target plot.
-const float1 = new Float(plot1, 'v1', { x: 10, y: 308 })
-const float2 = new Float(plot2, 'v2', { x: 10, y: 308 })
 
 // Initialize editor with plot1's config
 let editor = new JSONEditor(document.getElementById('editor-container'), {

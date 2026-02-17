@@ -36,7 +36,8 @@ export const initialPlot1Config = {
   ],
   axes: {
     xaxis_bottom: { min: 0, max: 10 },
-    yaxis_left: { min: 0, max: 5 }
+    yaxis_left: { min: 0, max: 5 },
+    v1: { min: 0, max: 1, colorbar: "vertical" }
   }
 }
 
@@ -44,8 +45,10 @@ export const initialPlot1Config = {
 export const initialPlot2Config = {
   layers: [
     { "scatter-sa": { xData: "x2", yData: "y2", vData: "v2", xAxis: "xaxis_bottom", yAxis: "yaxis_left" } }
-  ]
-  // axes will be auto-calculated from data
+  ],
+  axes: {
+    v2: { min: 0, max: 1, colorbar: "vertical" }
+  }
 }
 
 // Backwards compatibility - keep the old export

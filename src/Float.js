@@ -1,4 +1,5 @@
 import { Colorbar } from "./Colorbar.js"
+import { Plot } from "./Plot.js"
 
 const DRAG_BAR_HEIGHT = 12
 const MIN_WIDTH  = 80
@@ -154,3 +155,5 @@ export class Float {
     this._el.remove()
   }
 }
+
+Plot._FloatClass = Float
