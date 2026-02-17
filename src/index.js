@@ -12,6 +12,9 @@ export { linkAxes, AxisLink } from "./AxisLink.js"
 export { Colorbar } from "./Colorbar.js"
 export { colorbarLayerType } from "./ColorbarLayer.js"
 export { Float } from "./Float.js"
+export { Filterbar } from "./Filterbar.js"
+export { filterbarLayerType } from "./FilterbarLayer.js"
+export { FilterbarFloat } from "./FilterbarFloat.js"
 
 // Register all matplotlib colorscales (side-effect import)
 import "./MatplotlibColorscales.js"

@@ -1,11 +1,12 @@
 export class FilterAxisRegistry {
   constructor() {
-    this._axes = new Map() // quantityKind -> { min: number|null, max: number|null }
+    // quantityKind -> { min: number|null, max: number|null, dataExtent: [number,number]|null }
+    this._axes = new Map()
   }
 
   ensureFilterAxis(quantityKind) {
     if (!this._axes.has(quantityKind)) {
-      this._axes.set(quantityKind, { min: null, max: null })
+      this._axes.set(quantityKind, { min: null, max: null, dataExtent: null })
     }
   }
 
@@ -34,6 +35,19 @@ export class FilterAxisRegistry {
       range.min !== null ? 1.0 : 0.0,
       range.max !== null ? 1.0 : 0.0
     ]
+  }
+
+  // Store the min/max extent of the actual per-point data (used by Filterbar for display).
+  setDataExtent(quantityKind, min, max) {
+    if (!this._axes.has(quantityKind)) {
+      throw new Error(`Filter axis '${quantityKind}' not found in registry`)
+    }
+    this._axes.get(quantityKind).dataExtent = [min, max]
+  }
+
+  // Returns [min, max] extent of the raw data, or null if not yet computed.
+  getDataExtent(quantityKind) {
+    return this._axes.get(quantityKind)?.dataExtent ?? null
   }
 
   hasAxis(quantityKind) {

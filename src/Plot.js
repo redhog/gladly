@@ -12,6 +12,7 @@ import { getRegisteredColorscales } from "./ColorscaleRegistry.js"
 
 export class Plot {
   static _FloatClass = null
+  static _FilterbarFloatClass = null
   constructor(container, { margin } = {}) {
     this.container = container
     this.margin = margin ?? { top: 60, right: 60, bottom: 60, left: 60 }
@@ -51,6 +52,8 @@ export class Plot {
 
     // Auto-managed Float colorbars keyed by color axis name
     this._floats = new Map()
+    // Auto-managed FilterbarFloat widgets keyed by filter axis name
+    this._filterbarFloats = new Map()
 
     this._setupResizeObserver()
   }
@@ -137,6 +140,7 @@ export class Plot {
         const range = this.filterAxisRegistry.getRange(quantityKind)
         const existing = axes[quantityKind] ?? {}
         axes[quantityKind] = {
+          filterbar: "none",
           ...existing,
           ...(range && range.min !== null ? { min: range.min } : {}),
           ...(range && range.max !== null ? { max: range.max } : {})
@@ -370,29 +374,52 @@ export class Plot {
   _syncFloats() {
     const axes = this.currentConfig?.axes ?? {}
 
-    // Determine desired state: map of axisName → orientation for color axes with colorbar set
-    const desired = new Map()
+    // --- Color axis floats ---
+    const desiredColor = new Map()
     for (const [axisName, axisConfig] of Object.entries(axes)) {
       if (AXES.includes(axisName)) continue  // skip spatial axes
       const cb = axisConfig.colorbar
       if (cb === "vertical" || cb === "horizontal") {
-        desired.set(axisName, cb)
+        desiredColor.set(axisName, cb)
       }
     }
 
-    // Destroy floats that are no longer wanted or have changed orientation
     for (const [axisName, float] of this._floats) {
-      const wantedOrientation = desired.get(axisName)
+      const wantedOrientation = desiredColor.get(axisName)
       if (wantedOrientation === undefined || wantedOrientation !== float._colorbar._orientation) {
         float.destroy()
         this._floats.delete(axisName)
       }
     }
 
-    // Create floats that are newly wanted
-    for (const [axisName, orientation] of desired) {
+    for (const [axisName, orientation] of desiredColor) {
       if (!this._floats.has(axisName)) {
         this._floats.set(axisName, new Plot._FloatClass(this, axisName, { orientation }))
+      }
+    }
+
+    // --- Filter axis floats ---
+    const desiredFilter = new Map()
+    for (const [axisName, axisConfig] of Object.entries(axes)) {
+      if (AXES.includes(axisName)) continue
+      if (!this.filterAxisRegistry?.hasAxis(axisName)) continue
+      const fb = axisConfig.filterbar
+      if (fb === "vertical" || fb === "horizontal") {
+        desiredFilter.set(axisName, fb)
+      }
+    }
+
+    for (const [axisName, float] of this._filterbarFloats) {
+      const wantedOrientation = desiredFilter.get(axisName)
+      if (wantedOrientation === undefined || wantedOrientation !== float._filterbar._orientation) {
+        float.destroy()
+        this._filterbarFloats.delete(axisName)
+      }
+    }
+
+    for (const [axisName, orientation] of desiredFilter) {
+      if (!this._filterbarFloats.has(axisName)) {
+        this._filterbarFloats.set(axisName, new Plot._FilterbarFloatClass(this, axisName, { orientation }))
       }
     }
   }
@@ -402,6 +429,11 @@ export class Plot {
       float.destroy()
     }
     this._floats.clear()
+
+    for (const float of this._filterbarFloats.values()) {
+      float.destroy()
+    }
+    this._filterbarFloats.clear()
 
     const allLinks = new Set()
     for (const links of this.axisLinks.values()) {
@@ -515,8 +547,23 @@ export class Plot {
       }
     }
 
-    // Apply filter axis ranges from config (default: open bounds — no filtering)
+    // Compute data extent for each filter axis and store it (used by Filterbar for display).
+    // Also apply any range overrides from config; default is fully open bounds (no filtering).
     for (const quantityKind of this.filterAxisRegistry.getQuantityKinds()) {
+      let extMin = Infinity, extMax = -Infinity
+      for (const layer of this.layers) {
+        for (const [, { quantityKind: qk, data }] of Object.entries(layer.filterAxes)) {
+          if (qk !== quantityKind) continue
+          for (let i = 0; i < data.length; i++) {
+            if (data[i] < extMin) extMin = data[i]
+            if (data[i] > extMax) extMax = data[i]
+          }
+        }
+      }
+      if (extMin !== Infinity) {
+        this.filterAxisRegistry.setDataExtent(quantityKind, extMin, extMax)
+      }
+
       if (axesOverrides[quantityKind]) {
         const override = axesOverrides[quantityKind]
         const min = override.min !== undefined ? override.min : null
@@ -621,6 +668,7 @@ export class Plot {
           },
           additionalProperties: {
             // Color axes: { min, max, colorscale?, colorbar? }
+            // Filter axes: { min?, max?, filterbar? }  (bounds optional for open intervals)
             type: "object",
             properties: {
               min: { type: "number" },
@@ -632,9 +680,12 @@ export class Plot {
               colorbar: {
                 type: "string",
                 enum: ["none", "vertical", "horizontal"]
+              },
+              filterbar: {
+                type: "string",
+                enum: ["none", "vertical", "horizontal"]
               }
-            },
-            required: ["min", "max"]
+            }
           }
         }
       }

@@ -45,7 +45,7 @@ export const initialPlot1Config = {
     xaxis_bottom: { min: 0, max: 10 },
     yaxis_left: { min: 0, max: 5 },
     v1: { min: 0, max: 1, colorbar: "vertical" },
-    f1: { min: -1.5, max: 1.5 }
+    f1: { min: -1.5, max: 1.5, filterbar: "horizontal" }
   }
 }
 
@@ -57,7 +57,7 @@ export const initialPlot2Config = {
   ],
   axes: {
     v2: { min: 0, max: 1, colorbar: "vertical" },
-    f2: { min: -2, max: 2 }
+    f2: { min: -2, max: 2, filterbar: "horizontal" }
   }
 }
 

@@ -1,5 +1,6 @@
 import { Plot, registerLayerType, linkAxes } from "../src/index.js"
 import { } from "../src/ScatterLayer.js"
+import { } from "../src/FilterbarFloat.js"
 import { JSONEditor } from '@json-editor/json-editor'
 import { } from "./layer-types/ScatterMVLayer.js"
 import { } from "./layer-types/ScatterSALayer.js"
