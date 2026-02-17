@@ -59,7 +59,7 @@ The parameters accepted by each layer type are defined by its JSON Schema. The b
 
 ## Axes Configuration
 
-The `config.axes` object controls domains and colorscales. All entries are optional.
+The `config.axes` object controls ranges and colorscales. All entries are optional.
 
 ```javascript
 config: {
@@ -92,7 +92,7 @@ Four positions are available:
 | `yaxis_left` | Left |
 | `yaxis_right` | Right |
 
-Each accepts `{ min, max }`. Omit an axis entirely to have its domain auto-calculated from the data.
+Each accepts `{ min, max }`. Omit an axis entirely to have its range auto-calculated from the data.
 
 ### Color Axes
 
@@ -119,9 +119,9 @@ Both `min` and `max` are independently optional. Omitting both (or not listing t
 
 ---
 
-## Auto Domain Calculation
+## Auto Range Calculation
 
-If you omit an axis from `config.axes`, its domain is automatically calculated from the data of all layers that use it:
+If you omit an axis from `config.axes`, its range is automatically calculated from the data of all layers that use it:
 
 ```javascript
 plot.update({
@@ -130,7 +130,7 @@ plot.update({
     layers: [
       { scatter: { xData: "x", yData: "y", vData: "v" } }
     ]
-    // No axes — all domains auto-calculated
+    // No axes — ranges auto-calculated from data
   }
 })
 ```
@@ -233,7 +233,7 @@ plot.update({
   data: { x, y, v },
   config: {
     layers: [{ scatter: { xData: "x", yData: "y", vData: "v" } }]
-    // Domains auto-calculated
+    // Ranges auto-calculated from data
   }
 })
 // GPU renders 100k points efficiently at 60fps

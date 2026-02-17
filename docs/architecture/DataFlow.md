@@ -54,7 +54,7 @@ Plot._initialize()
   │       │   └─> Construct Layer instance (validates Float32Arrays)
   │       │
   │       ├─> AxisRegistry.ensureAxis(layer.xAxis, layer.xAxisQuantityUnit)
-  │       │   └─> Create D3 scale if new; throw if unit conflicts
+  │       │   └─> Create D3 scale if new; throw if quantity kind conflicts
   │       ├─> AxisRegistry.ensureAxis(layer.yAxis, layer.yAxisQuantityUnit)
   │       │
   │       ├─> ColorAxisRegistry.ensureColorAxis(quantityKind) — per color slot

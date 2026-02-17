@@ -8,8 +8,8 @@ Gladly is a GPU-accelerated multi-axis plotting library built on WebGL (via regl
 - Declarative plot configuration — specify what to render, not how
 - GPU rendering for data points (WebGL canvas) + SVG overlay for axes
 - Layer type registry for extensibility without modifying core code
-- Auto-domain calculation from data, with opt-in overrides
-- Unit-aware multi-axis system that prevents mixing incompatible data
+- Auto range calculation from data, with opt-in overrides
+- Multi-axis system with quantity kind enforcement to prevent incompatible layer combinations
 - Strategy pattern: each layer type encapsulates its own shaders and schema
 
 ---
@@ -35,7 +35,6 @@ gladly/
 │   ├── ColorAxisRegistry.js          # Color axis range + colorscale management
 │   ├── FilterAxisRegistry.js         # Filter axis range management + GLSL helper
 │   ├── LayerTypeRegistry.js          # Global layer type registration
-│   ├── AxisQuantityUnitRegistry.js   # Unit label + scale-type definitions
 │   ├── ColorscaleRegistry.js         # GLSL colorscale registration + dispatch builder
 │   ├── MatplotlibColorscales.js      # All matplotlib colorscales pre-registered
 │   ├── AxisLink.js                   # Cross-plot axis linking
@@ -83,7 +82,7 @@ Plot (main orchestrator)
 
 **Intent:** Specify what to render, not how.
 
-Users pass a `config` object with layer specifications and optional domain overrides. The Plot interprets this to build and render layers automatically. The configuration is serialisable JSON (data arrays aside).
+Users pass a `config` object with layer specifications and optional range overrides. The Plot interprets this to build and render layers automatically. The configuration is serialisable JSON (data arrays aside).
 
 **Benefits:** Concise plot creation; easy serialisation; self-documenting via JSON Schema.
 
@@ -103,7 +102,7 @@ Users pass a `config` object with layer specifications and optional domain overr
 
 **Intent:** Define a family of rendering algorithms and make them interchangeable.
 
-Each `LayerType` encapsulates shaders, axis units, schema, and a factory. The Plot calls a uniform interface regardless of layer type. New types can be added without modifying `Plot`.
+Each `LayerType` encapsulates shaders, axis quantity kinds, schema, and a factory. The Plot calls a uniform interface regardless of layer type. New types can be added without modifying `Plot`.
 
 **Benefits:** Easy extensibility; type-specific shader code isolated; type-specific validation.
 
@@ -113,7 +112,7 @@ Each `LayerType` encapsulates shaders, axis units, schema, and a factory. The Pl
 
 **Intent:** Encapsulate layer instantiation in the LayerType.
 
-`LayerType.createLayer(parameters, data)` extracts data arrays, resolves axis units and quantity kinds, and returns a `Layer` instance. `Plot` calls this without knowing type-specific details.
+`LayerType.createLayer(parameters, data)` extracts data arrays, resolves all axis quantity kinds, and returns a ready-to-render layer. `Plot` calls this without knowing type-specific details.
 
 **Benefits:** Data extraction co-located with layer type; validation at the type level.
 
@@ -121,11 +120,11 @@ Each `LayerType` encapsulates shaders, axis units, schema, and a factory. The Pl
 
 ### 5. Registry Pattern — AxisRegistry
 
-**Intent:** Central scale registry with lazy initialisation and unit validation.
+**Intent:** Central scale registry with lazy initialisation and quantity kind validation.
 
-`AxisRegistry.ensureAxis(name, unit)` creates a D3 scale on first use. Subsequent calls with a different unit throw, preventing incompatible data from sharing an axis.
+`AxisRegistry.ensureAxis(name, quantityKind)` creates a D3 scale on first use. Subsequent calls with a different quantity kind throw, preventing incompatible data from sharing an axis.
 
-**Benefits:** Single source of truth for scales; prevents unit mismatch bugs at runtime.
+**Benefits:** Single source of truth for scales; prevents quantity kind mismatch bugs at runtime.
 
 ---
 
@@ -146,9 +145,9 @@ The SVG sits on top with `pointer-events: none` on most elements so zoom/pan rea
 
 A layer type registry and declarative config are more concise than an imperative builder API, easier to serialise, and enable schema introspection. Trade-off: one registration step per type, but that happens once at startup.
 
-### Auto Domain Calculation
+### Auto Range Calculation
 
-Domains are computed from data by default, eliminating boilerplate. Explicit overrides via `config.axes` remain available. Trade-off: negligible O(n) scan on each `update()`.
+Ranges are computed from data by default, eliminating boilerplate. Explicit overrides via `config.axes` remain available. Trade-off: negligible O(n) scan on each `update()`.
 
 ### Typed Arrays for GPU Efficiency
 
@@ -177,7 +176,7 @@ Each `LayerType` provides a JSON Schema for its parameters. `Plot.schema()` aggr
 | Area | Complexity | Notes |
 |------|-----------|-------|
 | GPU rendering | O(n) GPU-parallel | Fragment fill rate is the typical bottleneck |
-| Domain calculation | O(n) CPU, one pass per axis | Negligible for < 1 M points |
+| Range calculation  | O(n) CPU, one pass per axis | Negligible for < 1 M points |
 | Zoom handling | O(4) scale updates | One `render()` call per event |
 | Memory | 4 bytes/value (Float32Array) | No data duplication; regl manages GPU buffers |
 

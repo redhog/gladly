@@ -12,38 +12,68 @@ The library features a **declarative API** where you register layer types once a
 
 Understanding the core data model makes all other concepts fall into place.
 
+```mermaid
+flowchart LR
+    LD["Layer\n{ layerTypeName: params }"]
+    LT["LayerType"]
+    SA["Spatial Axis"]
+    CA["Color Axis"]
+    FA["Filter Axis"]
+    QK["Quantity Kind\n(string)"]
+    R["Range\n[min, max]"]
+    CS["Colorscale"]
+
+    LD -- has --> LT
+    LD -- declares --> SA
+    LD -- declares --> CA
+    LD -- declares --> FA
+    SA & CA & FA -- identified by --> QK
+    QK -- has --> R
+    CA -- has --> CS
+```
+
 ### Axes
 
-A plot has up to four **spatial axes**: `xaxis_bottom`, `xaxis_top`, `yaxis_left`, `yaxis_right`. Each axis has a **domain** [min, max] and a **quantity unit** (e.g. `"meters"`, `"volts"`) that enforces compatibility between layers sharing that axis.
+All axes — spatial, color, and filter — share two concepts:
+
+- A **quantity kind**: a string that identifies what the axis measures. Layers that use the same quantity kind on the same axis position automatically share that axis and its range.
+- A **range** [min, max]: the interval of values displayed or filtered on that axis.
+
+A plot has up to four **spatial axes** (`xaxis_bottom`, `xaxis_top`, `yaxis_left`, `yaxis_right`). For spatial axes the quantity kind is any string; it determines the axis label and, for the special value `"log10"`, switches to a logarithmic scale.
 
 In addition to spatial axes, each layer can declare:
 
-- **Color axes** — map a numeric data dimension to a color via a colorscale. Each color axis is identified by a **quantity kind** string (e.g. `"temperature"`). Multiple layers sharing the same quantity kind automatically share a common range.
-- **Filter axes** — map a numeric data dimension to a discard range. Same quantity kind = shared filter. Bounds are optional (open interval).
+- **Color axes** — map a per-point numeric value to a color via a colorscale. Layers sharing the same quantity kind share a common range and colorscale.
+- **Filter axes** — discard points outside a range. Bounds are independently optional (open interval): `{ min: 10 }` discards values below 10 with no upper limit.
 
-All axes (spatial, color, filter) can have their domains/ranges overridden in `config.axes`.
+All axes can have their ranges overridden in `config.axes`.
+
+### Colorscale
+
+A **colorscale** maps a normalized value in [0, 1] to an RGBA color. Every color axis has a colorscale, referenced by name (e.g. `"viridis"`, `"plasma"`). The layer type sets a default; it can be overridden per quantity kind in `config.axes`.
+
+All standard matplotlib colorscales are available without any setup. Custom colorscales can be registered with `registerColorscale()`. See the [colorscales reference](api/LayerTypes.md#colorscales).
 
 ### LayerType
 
 A **LayerType** defines a visualization strategy. It specifies:
 
-- Spatial axis **quantity units** (`x`, `y`) — for unit compatibility checking
+- Spatial axis **quantity kinds** (`x`, `y`) — for compatibility checking between layers sharing an axis
 - Color axis **quantity kinds** — named slots (e.g. slot `"v"`) mapping to a shared color axis
 - Filter axis **quantity kinds** — named slots (e.g. slot `"z"`) mapping to a shared filter axis
 - **GLSL vertex and fragment shaders**
 - A **JSON Schema** describing its configuration parameters
 - A **`createLayer` factory** that extracts data arrays and returns a layer config object
 
-### Layer
+### Layers in Config
 
-A **Layer** is a LayerType bound to specific data arrays. Layers are created automatically by `plot.update()` from the declarative layer specifications in `config.layers`.
+Each entry in `config.layers` is a JSON object `{ layerTypeName: parameters }`. The plot creates a rendered layer for each entry by calling the layer type's `createLayer` factory with those parameters and the current data object.
 
-Each layer holds:
-- GPU **attributes** (`Float32Array` per GLSL attribute)
-- GPU **uniforms** (scalars / typed arrays)
-- Which **spatial axes** to use (`xAxis`, `yAxis`)
-- Resolved **color axes** map (slot → `{ quantityKind, data, colorscale }`)
-- Resolved **filter axes** map (slot → `{ quantityKind, data }`)
+A layer's parameters typically include:
+- **Data references** — property names in the `data` object (e.g. `xData: "x"`)
+- **Axis assignments** — which spatial axes to use (`xAxis`, `yAxis`)
+
+See [Configuring Plots](api/PlotConfiguration.md) for the full config format.
 
 ### Data Format
 
@@ -72,7 +102,7 @@ plot.update({
       { scatter: { xData: "x", yData: "y", vData: "v" } }
     ],
     axes: {
-      // Spatial axes — omit for auto-domain
+      // Spatial axes — omit for auto-calculated range
       xaxis_bottom: { min: 0, max: 100 },
       yaxis_left:   { min: 0, max: 50 },
       // Color axes — key is the quantity kind
@@ -88,8 +118,9 @@ plot.update({
 
 ## Sub-topics
 
-- **[Configuring Plots](api/PlotConfiguration.md)** — `plot.update()`, axes config, auto-domain, multi-layer, interaction, examples
-- **[Writing Layer Types](api/LayerTypes.md)** — `LayerType` constructor, shaders, color axes, filter axes, GLSL helpers, constants, API reference
+- **[Configuring Plots](api/PlotConfiguration.md)** — `plot.update()`, axes config, auto-range, multi-layer, interaction, examples
+- **[Writing Layer Types](api/LayerTypes.md)** — `LayerType` constructor, shaders, color axes, filter axes, GLSL helpers, constants
+- **[API Reference](api/Reference.md)** — `Plot`, `registerLayerType`, `getLayerType` and other public API entries
 
 ---
 
@@ -142,85 +173,3 @@ plot.update({
 ```
 
 Width and height are auto-detected from `clientWidth`/`clientHeight` and update automatically via `ResizeObserver`.
-
----
-
-## API Reference
-
-### `Plot`
-
-The main plotting container that manages WebGL rendering and SVG axes.
-
-**Constructor:**
-```javascript
-new Plot(container)
-```
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `container` | HTMLElement | Parent `<div>`. Must have explicit CSS dimensions. Canvas and SVG are created inside it automatically. |
-
-**Instance methods:**
-
-#### `update({ config, data })`
-
-Updates the plot with new configuration and/or data.
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `config` | object | `{ layers, axes }` — see [Configuring Plots](api/PlotConfiguration.md) |
-| `config.layers` | array | Layer specifications: `[{ typeName: params }, ...]` |
-| `config.axes` | object | Domain overrides for spatial, color, and filter axes |
-| `data` | object | Named `Float32Array` values |
-
-**Behaviour:**
-- Config-only: stores config, waits for data before rendering
-- Data-only: updates data, re-renders with existing config
-- Both: updates and renders
-- Neither: re-renders (equivalent to `forceUpdate()`)
-
-#### `forceUpdate()`
-
-Re-renders with existing config and data.
-
-#### `destroy()`
-
-Removes event listeners and destroys the WebGL context.
-
-**Static methods:**
-
-#### `Plot.schema()`
-
-Returns JSON Schema (Draft 2020-12) for the plot configuration object, aggregated from all registered layer types.
-
----
-
-### `registerLayerType(name, layerType)`
-
-Registers a LayerType under a name for use in `config.layers`.
-
-```javascript
-registerLayerType("scatter", scatterLayerType)
-```
-
-Throws if `name` is already registered.
-
----
-
-### `getLayerType(name)`
-
-Returns the registered `LayerType` for `name`. Throws with a helpful message if not found.
-
----
-
-### `getRegisteredLayerTypes()`
-
-Returns an array of all registered layer type name strings.
-
----
-
-### `scatterLayerType`
-
-A built-in `LayerType` for scatter plots. See [Writing Layer Types — scatterLayerType](api/LayerTypes.md#scatterlayertype) for full details.
-
-**Parameters:** `xData`, `yData`, `vData` (required), `xAxis`, `yAxis` (optional).

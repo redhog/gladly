@@ -9,7 +9,7 @@ This page covers how to define and register custom `LayerType` instances. For us
 A `LayerType` encapsulates everything needed to render one kind of data visualization:
 
 - GLSL vertex and fragment shaders
-- Spatial axis quantity units (for compatibility checking)
+- Spatial axis **quantity kinds** (for compatibility checking between layers sharing an axis)
 - Color axis slot declarations (optional)
 - Filter axis slot declarations (optional)
 - A JSON Schema describing configuration parameters
@@ -142,7 +142,7 @@ const heatDotsType = new LayerType({
       colorAxes: {
         v: {
           quantityKind: vData,      // links to shared color axis
-          data: data[vData],        // Float32Array for auto-domain
+          data: data[vData],        // Float32Array for auto-range calculation
           colorscale: "viridis"     // default; overridable in config.axes
         }
       }
@@ -303,9 +303,9 @@ const filteredScatterType = new LayerType({
 
 ---
 
-## Dynamic Spatial Axis Units
+## Dynamic Spatial Axis Quantity Kinds
 
-Set an axis unit to `null` in `axisQuantityUnits` and provide `getAxisQuantityUnits` to resolve it at runtime from parameters or data:
+Set an axis quantity kind to `null` in `axisQuantityUnits` and provide `getAxisQuantityUnits` to resolve it at runtime from parameters or data:
 
 ```javascript
 const dynamicScatterType = new LayerType({
@@ -313,8 +313,8 @@ const dynamicScatterType = new LayerType({
   axisQuantityUnits: { x: null, y: "meters" },  // x resolved dynamically
 
   getAxisQuantityUnits: function(parameters, data) {
-    const xUnit = parameters.xUnit || "meters"
-    return { x: xUnit, y: null }   // y already static; return null to skip override
+    const xKind = parameters.xUnit || "meters"
+    return { x: xKind, y: null }   // y already static; return null to skip override
   },
 
   schema: () => ({
@@ -345,7 +345,7 @@ const dynamicScatterType = new LayerType({
 })
 ```
 
-If layers on the same axis have conflicting resolved units, an error is thrown during `plot.update()` and the previous configuration is preserved.
+If layers on the same axis have conflicting quantity kinds, an error is thrown during `plot.update()` and the previous configuration is preserved.
 
 ---
 
@@ -360,7 +360,7 @@ If layers on the same axis have conflicting resolved units, an error is thrown d
 ### How the Plot Handles Color Axes
 
 1. Registers each slot's quantity kind with the `ColorAxisRegistry`
-2. Scans all layers sharing that quantity kind and calculates [min, max]
+2. Scans all layers sharing that quantity kind and calculates the auto range [min, max]
 3. Applies any override from `config.axes`
 4. Passes `colorscale_<slot>` (int) and `color_range_<slot>` (vec2) as uniforms
 
@@ -372,7 +372,7 @@ When a layer has color axes, `createDrawCommand` automatically:
 
 ```glsl
 uniform int colorscale_v;     // colorscale index for slot "v"
-uniform vec2 color_range_v;   // [min, max] for slot "v"
+uniform vec2 color_range_v;   // [min, max] range for slot "v"
 varying float value;
 
 void main() {
@@ -433,14 +433,14 @@ new LayerType({ name, axisQuantityUnits, colorAxisQuantityKinds, filterAxisQuant
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `name` | string | Type identifier (e.g. `"scatter"`) |
-| `axisQuantityUnits` | `{x, y}` | Spatial axis units. Use `null` for dynamic resolution. |
+| `axisQuantityUnits` | `{x, y}` | Spatial axis quantity kinds. Use `null` for dynamic resolution. |
 | `colorAxisQuantityKinds` | object | `{ [slot]: string\|null }`. Defaults to `{}`. |
 | `filterAxisQuantityKinds` | object | `{ [slot]: string\|null }`. Defaults to `{}`. |
 | `vert` | string | GLSL vertex shader |
 | `frag` | string | GLSL fragment shader |
 | `schema` | function | `() => JSONSchema` |
-| `createLayer` | function | `(parameters, data) => layerConfig` |
-| `getAxisQuantityUnits` | function | `(parameters, data) => {x, y}` — required when any unit is `null` |
+| `createLayer` | function | `(parameters, data) => layerConfig` — see [createLayer Return Value](#createlayer-return-value) |
+| `getAxisQuantityUnits` | function | `(parameters, data) => {x, y}` — required when any quantity kind is `null` |
 | `getColorAxisQuantityKinds` | function | `(parameters, data) => { [slot]: string }` — required when any kind is `null` |
 | `getFilterAxisQuantityKinds` | function | `(parameters, data) => { [slot]: string }` — required when any kind is `null` |
 
@@ -448,8 +448,8 @@ new LayerType({ name, axisQuantityUnits, colorAxisQuantityKinds, filterAxisQuant
 
 | Uniform | GLSL type | Description |
 |---------|-----------|-------------|
-| `xDomain` | `vec2` | [min, max] of the x spatial axis |
-| `yDomain` | `vec2` | [min, max] of the y spatial axis |
+| `xDomain` | `vec2` | [min, max] of the x spatial axis current range |
+| `yDomain` | `vec2` | [min, max] of the y spatial axis current range |
 | `count` | `int` | Number of data points |
 | `colorscale_<slot>` | `int` | Colorscale index (one per color slot) |
 | `color_range_<slot>` | `vec2` | [min, max] color range (one per color slot) |
@@ -471,35 +471,53 @@ bool filter_in_range(vec4 range, float value)
 |--------|-------------|
 | `createDrawCommand(regl, layer)` | Compiles shaders and returns a regl draw function |
 | `schema()` | Returns JSON Schema for layer parameters |
-| `createLayer(parameters, data)` | Creates a `Layer` instance from parameters and data |
+| `createLayer(parameters, data)` | Calls user factory, resolves axis quantity kinds, returns a ready-to-render layer |
 | `resolveAxisQuantityUnits(parameters, data)` | Returns fully resolved `{x, y}` (merges static + dynamic) |
 | `resolveColorAxisQuantityKinds(parameters, data, factoryColorAxes)` | Returns fully resolved color axes map |
 | `resolveFilterAxisQuantityKinds(parameters, data, factoryFilterAxes)` | Returns fully resolved filter axes map |
 
 ---
 
-### `Layer` Constructor
+### `createLayer` Return Value
 
-Layers are normally created automatically by `layerType.createLayer()`, but can be constructed manually:
+The object returned by your `createLayer` function has this shape:
 
 ```javascript
-new Layer({ type, attributes, uniforms, xAxis, yAxis,
-            xAxisQuantityUnit, yAxisQuantityUnit, colorAxes, filterAxes })
+{
+  // GPU attribute arrays — property names must match GLSL attribute names
+  attributes: {
+    x: Float32Array,   // all arrays must be same length
+    y: Float32Array,
+    // ...
+  },
+
+  // Layer-specific GPU uniforms (in addition to the auto-provided ones)
+  uniforms: {},
+
+  // Which spatial axes to use
+  xAxis: "xaxis_bottom",   // default
+  yAxis: "yaxis_left",     // default
+
+  // Color axes (optional) — one entry per declared slot
+  colorAxes: {
+    v: {
+      quantityKind: "temperature",  // links to a shared color axis in config.axes
+      data: Float32Array,           // per-point values for auto-range calculation
+      colorscale: "viridis"         // default; overridable in config.axes
+    }
+  },
+
+  // Filter axes (optional) — one entry per declared slot
+  filterAxes: {
+    z: {
+      quantityKind: "depth",   // links to a shared filter axis in config.axes
+      data: Float32Array       // per-point values tested against the filter range
+    }
+  }
+}
 ```
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `type` | LayerType | required | Rendering strategy |
-| `attributes` | object | required | `{ [name]: Float32Array }` — all same length |
-| `uniforms` | object | required | `{ [name]: scalar\|typed-array }` |
-| `xAxis` | string | `"xaxis_bottom"` | Spatial x-axis name |
-| `yAxis` | string | `"yaxis_left"` | Spatial y-axis name |
-| `xAxisQuantityUnit` | string | required | Resolved x unit |
-| `yAxisQuantityUnit` | string | required | Resolved y unit |
-| `colorAxes` | object | `{}` | `{ [slot]: { quantityKind, data, colorscale? } }` |
-| `filterAxes` | object | `{}` | `{ [slot]: { quantityKind, data } }` |
-
-All `attributes` values and all `colorAxes`/`filterAxes` `data` values must be `Float32Array` — a `TypeError` is thrown otherwise.
+All `Float32Array` values are validated at layer construction time — a `TypeError` is thrown if a regular array is passed.
 
 ---
 
@@ -507,7 +525,7 @@ All `attributes` values and all `colorAxes`/`filterAxes` `data` values must be `
 
 The built-in scatter plot layer type.
 
-- **Spatial units:** dynamic — each resolved from the corresponding `xData`/`yData` property name
+- **Spatial quantity kinds:** dynamic — each resolved from the corresponding `xData`/`yData` property name
 - **Color slot:** `v`, quantity kind resolved from `vData`; default colorscale `"viridis"`
 - **Point size:** 4.0 pixels
 
@@ -568,18 +586,6 @@ Returns the GLSL `filter_in_range` helper string. Injected automatically by `cre
 
 ```javascript
 ["xaxis_bottom", "xaxis_top", "yaxis_left", "yaxis_right"]
-```
-
-### `AXIS_UNITS`
-
-```javascript
-{
-  meters: { label: "Meters", scale: "linear" },
-  volts:  { label: "Volts",  scale: "linear" },
-  "m/s":  { label: "m/s",    scale: "linear" },
-  ampere: { label: "Ampere", scale: "linear" },
-  log10:  { label: "Log10",  scale: "log" }
-}
 ```
 
 ### Colorscales

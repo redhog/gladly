@@ -17,7 +17,7 @@ Detailed breakdown of each source module. For the high-level picture see [ARCHIT
 - `registerLayerType`, `getLayerType`, `getRegisteredLayerTypes`
 - `registerColorscale`, `getRegisteredColorscales`, `buildColorGlsl`
 - `buildFilterGlsl`
-- `AXES`, `AXIS_UNITS`
+- `AXES`
 
 ---
 
@@ -70,10 +70,10 @@ Detailed breakdown of each source module. For the high-level picture see [ARCHIT
 
 **`createLayer(parameters, data)`**
 - Calls the user-supplied factory to get a layer config object
-- Resolves spatial axis units via `resolveAxisQuantityUnits()`
+- Resolves spatial axis quantity kinds via `resolveAxisQuantityUnits()`
 - Resolves color axis quantity kinds via `resolveColorAxisQuantityKinds()`
 - Resolves filter axis quantity kinds via `resolveFilterAxisQuantityKinds()`
-- Constructs and returns a `Layer` instance
+- Constructs and returns a ready-to-render layer
 
 **`schema()`** — Returns JSON Schema (Draft 2020-12) for layer parameters.
 
@@ -102,7 +102,7 @@ Detailed breakdown of each source module. For the high-level picture see [ARCHIT
 **Purpose:** Built-in scatter plot `LayerType` implementation.
 
 **Configuration:**
-- Spatial units: dynamic (`x` ← `xData` name, `y` ← `yData` name)
+- Spatial quantity kinds: dynamic (`x` ← `xData` name, `y` ← `yData` name)
 - Color slot `v`, quantity kind ← `vData` name; default colorscale `"viridis"`
 - Point size: 4.0 px
 
@@ -132,7 +132,7 @@ this._renderCallbacks    // Set<function> — called after each render()
 
 **`update({ config, data })`** — Stores config/data, then calls `_initialize()` if both are present.
 
-**`_initialize()`** — Rebuilds regl context, processes layers, sets domains, initialises zoom, renders.
+**`_initialize()`** — Rebuilds regl context, processes layers, sets ranges, initialises zoom, renders.
 
 **`_processLayers(layersConfig, data)`**
 1. For each `{ typeName: parameters }`, looks up the `LayerType`
@@ -141,11 +141,11 @@ this._renderCallbacks    // Set<function> — called after each render()
 4. Calls `layerType.createDrawCommand(regl, layer)` and stores the result
 
 **`_setDomains(axesOverrides)`**
-- Spatial: collects attribute data per axis, computes min/max, applies config override
-- Color: scans all layer `colorAxes[slot].data` per quantity kind, applies config override
+- Spatial: collects attribute data per axis, computes min/max range, applies config override
+- Color: scans all layer `colorAxes[slot].data` per quantity kind, computes auto range, applies config override
 - Filter: applies config `min`/`max` if present; defaults to open bounds
 
-**`render()`** — Clears canvas; assembles props (domains, colorscale indices, filter ranges); calls all draw commands; calls `renderAxes()`; fires `_renderCallbacks`.
+**`render()`** — Clears canvas; assembles props (current ranges, colorscale indices, filter ranges); calls all draw commands; calls `renderAxes()`; fires `_renderCallbacks`.
 
 **`renderAxes()`** — For each axis in the registry, creates a D3 axis generator, renders to an SVG `<g>`, adds a unit label.
 
@@ -157,22 +157,22 @@ this._renderCallbacks    // Set<function> — called after each render()
 
 ## `AxisRegistry.js`
 
-**Purpose:** Centralised D3 scale management with unit validation.
+**Purpose:** Centralised D3 scale management with quantity kind validation.
 
 **Pattern:** Registry with lazy initialisation
 
 **Key data structures:**
 ```javascript
 this.scales = {}   // { axisName: D3Scale }
-this.units  = {}   // { axisName: unitString }
+this.units  = {}   // { axisName: quantityKind }
 ```
 
-**`ensureAxis(name, unit)`**
-- Creates a D3 scale (linear or log, based on unit) if the axis doesn't exist yet
+**`ensureAxis(name, quantityKind)`**
+- Creates a D3 scale (linear or log, based on quantity kind) if the axis doesn't exist yet
 - Maps axis position to pixel range:
   - `xaxis_bottom` / `xaxis_top` → `[0, width]`
   - `yaxis_left` / `yaxis_right` → `[height, 0]` (inverted for canvas coords)
-- Throws if the axis already exists with a different unit
+- Throws if the axis already exists with a different quantity kind
 
 ---
 
@@ -199,25 +199,6 @@ this.units  = {}   // { axisName: unitString }
 **`setRange(quantityKind, min, max)`** — Sets one or both bounds (each independently optional).
 
 **`getVec4(quantityKind)`** — Returns `[min, max, hasMin, hasMax]` for use as a GLSL `vec4` uniform.
-
----
-
-## `AxisQuantityUnitRegistry.js`
-
-**Purpose:** Define the set of valid quantity units and their display properties.
-
-**Exports `AXIS_UNITS`:**
-```javascript
-{
-  meters: { label: "Meters", scale: "linear" },
-  volts:  { label: "Volts",  scale: "linear" },
-  "m/s":  { label: "m/s",    scale: "linear" },
-  ampere: { label: "Ampere", scale: "linear" },
-  log10:  { label: "Log10",  scale: "log" }
-}
-```
-
-`getAxisQuantityUnit(name)` falls back to `{ label: name, scale: "linear" }` for any unknown string, allowing ad-hoc units without explicit registration.
 
 ---
 
