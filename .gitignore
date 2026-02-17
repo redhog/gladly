@@ -1,3 +1,4 @@
 dist
+dist-example
 .parcel-cache/
 node_modules
