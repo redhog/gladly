@@ -53,7 +53,7 @@ export const initialPlot1Config = {
 // f2 filter axis: only show points where -2 ≤ tan(x*0.1) ≤ 2
 export const initialPlot2Config = {
   layers: [
-    { "scatter-sa": { xData: "x2", yData: "y2", vData: "v2", fData: "f2", xAxis: "xaxis_bottom", yAxis: "yaxis_left" } }
+    { "scatter-sa": { xData: "x2", yData: "y2", vData: "v2", fData: "f2", xAxis: "xaxis_top", yAxis: "yaxis_left" } }
   ],
   axes: {
     v2: { min: 0, max: 1, colorbar: "vertical" },

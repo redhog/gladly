@@ -11,7 +11,7 @@ const plot1 = new Plot(document.getElementById('plot1'))
 const plot2 = new Plot(document.getElementById('plot2'))
 
 // Link the x-axes: plot1's xaxis_bottom to plot2's xaxis_top
-const axisLink = linkAxes(plot1, "xaxis_bottom", plot2, "xaxis_bottom")
+const axisLink = linkAxes(plot1, "xaxis_bottom", plot2, "xaxis_top")
 
 // Track which plot is currently being edited
 let activePlot = 'plot1'
