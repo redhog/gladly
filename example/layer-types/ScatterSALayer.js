@@ -1,22 +1,29 @@
 import { LayerType, registerLayerType } from "../../src/index.js"
 
 /**
- * Scatter plot layer type for m/s (x) vs ampere (y)
- * Uses coolwarm colorscale
+ * Scatter plot layer type for meters (x) vs ampere (y)
+ * Uses coolwarm colorscale. Supports an optional filter axis (fData).
  */
 export const ScatterSALayer = new LayerType({
   name: "scatter-sa",
   axisQuantityUnits: {x: "meters", y: "ampere"},
   colorAxisQuantityKinds: { v: null },
+  filterAxisQuantityKinds: { f: null },
   vert: `
     precision mediump float;
     attribute float x;
     attribute float y;
     attribute float v;
+    attribute float f;
     uniform vec2 xDomain;
     uniform vec2 yDomain;
+    uniform vec4 filter_range_f;
     varying float value;
     void main() {
+      if (!filter_in_range(filter_range_f, f)) {
+        gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+        return;
+      }
       float nx = (x - xDomain.x)/(xDomain.y-xDomain.x);
       float ny = (y - yDomain.x)/(yDomain.y-yDomain.x);
       gl_Position = vec4(nx*2.0-1.0, ny*2.0-1.0, 0, 1);
@@ -40,6 +47,7 @@ export const ScatterSALayer = new LayerType({
       xData: { type: "string", title: "X Data Property", description: "Property name for x coordinates" },
       yData: { type: "string", title: "Y Data Property", description: "Property name for y coordinates" },
       vData: { type: "string", title: "Color Data Property", description: "Property name for color values" },
+      fData: { type: "string", title: "Filter Data Property", description: "Property name for filter values (tan(x*0.1) by default)" },
       xAxis: {
         type: "string",
         title: "X Axis",
@@ -53,20 +61,25 @@ export const ScatterSALayer = new LayerType({
         default: "yaxis_left"
       }
     },
-    required: ["xData", "yData", "vData"]
+    required: ["xData", "yData", "vData", "fData"]
   }),
   getColorAxisQuantityKinds: function(parameters) {
     return { v: parameters.vData }
   },
+  getFilterAxisQuantityKinds: function(parameters) {
+    return { f: parameters.fData }
+  },
   createLayer: function(parameters, data) {
-    const { xData, yData, vData, xAxis = "xaxis_bottom", yAxis = "yaxis_left" } = parameters
+    const { xData, yData, vData, fData, xAxis = "xaxis_bottom", yAxis = "yaxis_left" } = parameters
     const v = data[vData]
+    const f = data[fData]
     return {
-      attributes: { x: data[xData], y: data[yData], v },
+      attributes: { x: data[xData], y: data[yData], v, f },
       uniforms: {},
       xAxis,
       yAxis,
-      colorAxes: { v: { quantityKind: vData, data: v, colorscale: "coolwarm" } }
+      colorAxes: { v: { quantityKind: vData, data: v, colorscale: "coolwarm" } },
+      filterAxes: { f: { quantityKind: fData, data: f } }
     }
   }
 })

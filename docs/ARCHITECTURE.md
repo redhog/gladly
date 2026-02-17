@@ -20,13 +20,22 @@ Gladly is a GPU-accelerated multi-axis plotting library built on WebGL (via regl
 ```
 gladly/
 ├── src/
-│   ├── index.js              # 6 LOC  - Public API exports
-│   ├── Plot.js               # 150 LOC - Main rendering orchestrator
-│   ├── Layer.js              # 12 LOC - Data container
-│   ├── LayerType.js          # 38 LOC - Shader + metadata + schema
-│   ├── ScatterLayer.js       # 60 LOC - Scatter plot implementation
-│   ├── AxisRegistry.js       # 42 LOC - Scale management
-│   └── LayerTypeRegistry.js  # 17 LOC - Layer type registration
+│   ├── index.js                  # Public API exports
+│   ├── Plot.js                   # Main rendering orchestrator
+│   ├── Layer.js                  # Data container
+│   ├── LayerType.js              # Shader + metadata + schema
+│   ├── ScatterLayer.js           # Scatter plot implementation
+│   ├── AxisRegistry.js           # Spatial scale management
+│   ├── ColorAxisRegistry.js      # Color axis range + colorscale management
+│   ├── FilterAxisRegistry.js     # Filter axis range management + GLSL helper
+│   ├── LayerTypeRegistry.js      # Layer type registration
+│   ├── AxisQuantityUnitRegistry.js # Unit label + scale-type definitions
+│   ├── ColorscaleRegistry.js     # GLSL colorscale registration + dispatch builder
+│   ├── MatplotlibColorscales.js  # All matplotlib colorscales pre-registered
+│   ├── AxisLink.js               # Cross-plot axis linking
+│   ├── Colorbar.js               # Colorbar plot (extends Plot)
+│   ├── ColorbarLayer.js          # Triangle-strip quad layer type for colorbars
+│   └── Float.js                  # Draggable floating colorbar widget
 ├── example/
 │   ├── main.js               # Example usage
 │   └── index.html            # Demo page
@@ -35,8 +44,6 @@ gladly/
     ├── API.md                # User-facing documentation
     └── ARCHITECTURE.md       # This file
 ```
-
-**Total Source:** ~250 lines (excluding examples and build config)
 
 ---
 
@@ -48,8 +55,10 @@ gladly/
 Plot (main orchestrator)
   ├── regl (WebGL context)
   ├── D3 (selection, scales, axes, zoom)
-  ├── AxisRegistry (created internally)
+  ├── AxisRegistry (created internally — spatial axes)
   │   └── D3 scales (linear/log)
+  ├── ColorAxisRegistry (created internally — color axes)
+  ├── FilterAxisRegistry (created internally — filter axes)
   ├── LayerTypeRegistry (global)
   │   └── LayerType instances (by name)
   └── Layer[] (data layers, created automatically)
@@ -154,22 +163,29 @@ this.units = {}   // { axisName: unitString }
 **Key Properties:**
 ```javascript
 {
-  name: string,                    // Type identifier
-  axisQuantityUnits: {x, y},       // Axis units: {x: string|null, y: string|null}
-  vert: string,                    // GLSL vertex shader
-  frag: string,                    // GLSL fragment shader
-  attributes: object,              // Attribute accessors
-  schema: function,                // Returns JSON Schema
-  createLayer: function,           // Factory for Layer instances
-  getAxisQuantityUnits: function   // Optional: Dynamic unit resolution
+  name: string,                      // Type identifier
+  axisQuantityUnits: {x, y},         // Axis units: {x: string|null, y: string|null}
+  colorAxisQuantityKinds: object,    // Color slot declarations: { [slot]: string|null }
+  filterAxisQuantityKinds: object,   // Filter slot declarations: { [slot]: string|null }
+  vert: string,                      // GLSL vertex shader
+  frag: string,                      // GLSL fragment shader
+  schema: function,                  // Returns JSON Schema
+  createLayer: function,             // Factory for Layer instances
+  getAxisQuantityUnits: function,    // Optional: Dynamic spatial unit resolution
+  getColorAxisQuantityKinds: function, // Optional: Dynamic color kind resolution
+  getFilterAxisQuantityKinds: function // Optional: Dynamic filter kind resolution
 }
 ```
 
 **Methods:**
 
-**createDrawCommand(regl):**
+**createDrawCommand(regl, layer):**
 - Compiles shaders into regl draw command
 - Adds uniforms: `xDomain`, `yDomain`, `count`
+- Adds `colorscale_<slot>` + `color_range_<slot>` uniforms for each color slot
+- Adds `filter_range_<slot>` uniforms (vec4) for each filter slot
+- Injects `map_color()` GLSL helper when color axes are present
+- Injects `filter_in_range()` GLSL helper when filter axes are present
 - Returns function that can be called to render
 
 **schema():**
@@ -244,9 +260,9 @@ Extracts data properties from data object and creates Layer instance with `attri
 - Specify which axes to use
 
 **Validation Rules:**
-- `data.x` must be Float32Array
-- `data.y` must be Float32Array
-- `data.v` must be Float32Array (if provided)
+- All `attributes` values must be Float32Array
+- All `colorAxes` slot `data` values must be Float32Array with a `quantityKind` string
+- All `filterAxes` slot `data` values must be Float32Array with a `quantityKind` string
 - Throws TypeError on validation failure
 
 **Why Float32Array?**
@@ -271,10 +287,12 @@ Extracts data properties from data object and creates Layer instance with `attri
 
 **Key Properties:**
 ```javascript
-this.regl          // WebGL context
-this.svg           // D3 selection of SVG overlay
-this.layers = []   // Array of Layer instances
-this.axisRegistry  // AxisRegistry instance (created internally)
+this.regl                // WebGL context
+this.svg                 // D3 selection of SVG overlay
+this.layers = []         // Array of Layer instances
+this.axisRegistry        // AxisRegistry instance (spatial axes)
+this.colorAxisRegistry   // ColorAxisRegistry instance (color axes)
+this.filterAxisRegistry  // FilterAxisRegistry instance (filter axes)
 ```
 
 **Constructor Parameters:**
@@ -310,20 +328,23 @@ container        // HTMLElement - parent container
 **_processLayers(layersConfig, data):** (internal)
 1. For each layer spec `{ layerTypeName: parameters }`:
 2. Lookup LayerType from registry
-3. Call `layerType.createLayer(parameters, data)`
-4. Register axes with AxisRegistry
-5. Create draw command
-6. Store layer
+3. Call `layerType.createLayer(parameters, data)` — resolves spatial, color, and filter axis quantity kinds
+4. Register spatial axes with AxisRegistry
+5. Register color axes with ColorAxisRegistry
+6. Register filter axes with FilterAxisRegistry
+7. Create draw command
+8. Store layer
 
 **_setDomains(axesOverrides):** (internal)
-1. For each axis, collect data from all layers using that axis
-2. Calculate min/max from Float32Array data
-3. Apply calculated domain or use override from `axes` parameter
+1. For each spatial axis, collect data from all layers using that axis; calculate min/max; apply override or auto-calculated domain
+2. For each filter axis, apply `min`/`max` from config if present; open bounds (null) are the default — no filtering
+3. For each color axis, scan all layer data arrays sharing that quantity kind; calculate min/max; apply override or auto-calculated range
 
 **render():** (internal)
 1. Clear canvas to white
-2. Execute all draw commands (GPU rendering)
-3. Call renderAxes()
+2. For each layer, assemble props: xDomain, yDomain, viewport, count, color axis uniforms, filter axis uniforms
+3. Execute all draw commands (GPU rendering)
+4. Call renderAxes()
 
 **renderAxes():** (internal)
 1. For each axis in registry:
@@ -390,14 +411,17 @@ container        // HTMLElement - parent container
    │   │       ├─> AxisRegistry.ensureAxis(layer.xAxis, layer.xAxisQuantityUnit)
    │   │       │   └─> Create D3 scale if doesn't exist
    │   │       ├─> AxisRegistry.ensureAxis(layer.yAxis, layer.yAxisQuantityUnit)
-   │   │       ├─> LayerType.createDrawCommand(regl)
-   │   │       │   └─> Compile shaders, create GPU draw function
+   │   │       ├─> ColorAxisRegistry.ensureColorAxis(quantityKind) per color slot
+   │   │       ├─> FilterAxisRegistry.ensureFilterAxis(quantityKind) per filter slot
+   │   │       ├─> LayerType.createDrawCommand(regl, layer)
+   │   │       │   ├─> Compile shaders (with injected color/filter GLSL helpers)
+   │   │       │   └─> Create GPU draw function
    │   │       └─> Store layer and draw command
    │   │
    │   ├─> Plot._setDomains(config.axes)
-   │   │   ├─> For each axis, collect all data points
-   │   │   ├─> Calculate min/max from data
-   │   │   └─> Apply calculated domain or override from `config.axes` param
+   │   │   ├─> For each spatial axis: collect data, calculate min/max, apply override or auto-domain
+   │   │   ├─> For each filter axis: apply min/max from config if present; default = open bounds
+   │   │   └─> For each color axis: scan layer data, calculate min/max, apply override or auto-range
    │   │
    │   ├─> Plot.initZoom()
    │   │   └─> Set up zoom/pan interactions
@@ -426,14 +450,14 @@ plot.render()
   │   └─> Fill canvas with white
   │
   ├─> For each draw command:
-  │   ├─> Get current xDomain from scale
-  │   ├─> Get current yDomain from scale
+  │   ├─> Get current xDomain from spatial scale
+  │   ├─> Get current yDomain from spatial scale
+  │   ├─> Get colorscale index + range for each color slot
+  │   ├─> Get filter range vec4 for each filter slot
   │   ├─> Call drawCommand({
-  │   │     data: layer.data,
-  │   │     xDomain: [min, max],
-  │   │     yDomain: [min, max],
-  │   │     viewport: { x, y, width, height },
-  │   │     count: data.x.length
+  │   │     xDomain, yDomain, viewport, count,
+  │   │     colorscale_<slot>, color_range_<slot>,  // per color slot
+  │   │     filter_range_<slot>                      // per filter slot (vec4)
   │   │   })
   │   │   │
   │   │   └─> GPU Execution:

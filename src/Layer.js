@@ -1,5 +1,5 @@
 export class Layer {
-  constructor({ type, attributes, uniforms, xAxis="xaxis_bottom", yAxis="yaxis_left", xAxisQuantityUnit, yAxisQuantityUnit, colorAxes = {}, vertexCount = null }) {
+  constructor({ type, attributes, uniforms, xAxis="xaxis_bottom", yAxis="yaxis_left", xAxisQuantityUnit, yAxisQuantityUnit, colorAxes = {}, filterAxes = {}, vertexCount = null }) {
     // Validate that all attributes are typed arrays
     for (const [key, value] of Object.entries(attributes)) {
       if (!(value instanceof Float32Array)) {
@@ -17,6 +17,16 @@ export class Layer {
       }
     }
 
+    // Validate filterAxes: each entry must be { quantityKind: string, data: Float32Array }
+    for (const [slot, entry] of Object.entries(filterAxes)) {
+      if (!(entry.data instanceof Float32Array)) {
+        throw new Error(`Filter axis slot '${slot}' data must be Float32Array`)
+      }
+      if (typeof entry.quantityKind !== 'string') {
+        throw new Error(`Filter axis slot '${slot}' must have a quantityKind string`)
+      }
+    }
+
     this.type = type
     this.attributes = attributes
     this.uniforms = uniforms
@@ -26,6 +36,8 @@ export class Layer {
     this.yAxisQuantityUnit = yAxisQuantityUnit
     // colorAxes: { [slotName]: { quantityKind: string, data: Float32Array } }
     this.colorAxes = colorAxes
+    // filterAxes: { [slotName]: { quantityKind: string, data: Float32Array } }
+    this.filterAxes = filterAxes
     this.vertexCount = vertexCount
   }
 }

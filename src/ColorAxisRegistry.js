@@ -39,6 +39,10 @@ export class ColorAxisRegistry {
     return getColorscaleIndex(colorscale)
   }
 
+  hasAxis(quantityKind) {
+    return this._axes.has(quantityKind)
+  }
+
   getQuantityKinds() {
     return Array.from(this._axes.keys())
   }

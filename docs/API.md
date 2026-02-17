@@ -56,6 +56,7 @@ A **LayerType** defines how data is visualized. Each LayerType specifies:
 
 - **X-axis and Y-axis quantity units** - Each spatial axis has a quantity unit (e.g., "meters", "volts", "log10")
 - **Color axis quantity kinds** - Named slots mapping a data dimension to a color scale (e.g., slot `v` → quantity kind `"temperature"`)
+- **Filter axis quantity kinds** - Named slots mapping a data dimension to a linkable range filter (e.g., slot `z` → quantity kind `"depth"`)
 - **GLSL shaders** - Vertex and fragment shaders that define how data is rendered on the GPU
 - **Data attributes** - Which fields from your data are passed to the shaders
 - **Schema** - JSON Schema definition for layer parameters
@@ -70,6 +71,7 @@ Each layer has:
 - **Data** - Type-specific data in typed arrays (always `Float32Array`)
 - **Axis assignment** - Which spatial axes to use (e.g., "xaxis_bottom", "yaxis_left")
 - **Color axes** - Named slots mapping data arrays to color scales via quantity kinds
+- **Filter axes** - Named slots mapping data arrays to range filters via quantity kinds
 
 ### Data Format
 
@@ -483,6 +485,177 @@ Use `registerColorscale(name, glslFn)` to add custom colorscales.
 
 ---
 
+## Filter Axes
+
+Filter axes let a layer declare a named, linkable range that the shader uses to `discard` out-of-range points. They work in parallel to spatial and color axes: each filter axis has a **quantity kind** (a string identifier) and an optional **range** [min, max] where either or both bounds may be absent (open interval). The range is passed to the shader as a `vec4` uniform; no visual axis is drawn.
+
+### Concepts
+
+| Term | Description |
+|------|-------------|
+| **Slot** | A named position in the layer (e.g., `"z"`). The slot name determines the GLSL uniform name (`filter_range_z`). |
+| **Quantity kind** | A string identifier for the filter axis (e.g., `"depth"`, `"time"`). Multiple layers can share the same quantity kind, automatically sharing a common range. Filter axes with the same quantity kind can be linked between plots. |
+| **Open bound** | A missing `min` or `max` in the config means that bound is not enforced. |
+
+### How the Plot Handles Filter Axes
+
+1. **Registration**: When processing layers, the Plot registers each filter axis quantity kind with the `FilterAxisRegistry`.
+2. **Config override**: The `config.axes` object can set either or both bounds for any quantity kind. Both bounds are optional:
+   ```javascript
+   axes: {
+     depth: { min: 10, max: 500 }  // closed
+     depth: { min: 10 }            // open upper bound
+     depth: { max: 500 }           // open lower bound
+   }
+   ```
+3. **Default**: Open bounds — no filtering until config specifies a range.
+4. **Rendering**: The Plot passes `filter_range_<slot>` (vec4) as a uniform to the shader.
+
+### Declaring Filter Axes in a LayerType
+
+Use `filterAxisQuantityKinds` to declare which slots a layer type uses. Set the value to `null` for dynamic resolution:
+
+```javascript
+filterAxisQuantityKinds: { z: null }   // slot "z", quantity kind resolved per-layer
+```
+
+Provide `getFilterAxisQuantityKinds` to resolve null slots:
+
+```javascript
+getFilterAxisQuantityKinds: function(parameters, data) {
+  return { z: parameters.zData }   // use the data property name as quantity kind
+}
+```
+
+### Providing Filter Axis Data in createLayer
+
+The `createLayer` factory returns a `filterAxes` map. The `data` array is not used for auto-domain (filter axes default to open bounds), but is stored in the layer for reference:
+
+```javascript
+createLayer: function(parameters, data) {
+  return {
+    attributes: { ... },
+    uniforms: {},
+    xAxis, yAxis,
+    filterAxes: {
+      z: {
+        quantityKind: parameters.zData,  // links to a shared filter axis
+        data: data[parameters.zData]     // Float32Array — the per-point values to test
+      }
+    }
+  }
+}
+```
+
+### GLSL Integration
+
+When a layer has one or more filter axes, `createDrawCommand` automatically:
+1. Adds a `filter_range_<slot>` vec4 uniform for each slot
+2. Injects the `filter_in_range(vec4, float)` GLSL helper function
+
+Use `filter_in_range` in your vertex or fragment shader to discard points:
+
+```glsl
+precision mediump float;
+uniform vec4 filter_range_z;  // [min, max, hasMin, hasMax]
+attribute float z;
+// ...
+
+void main() {
+  if (!filter_in_range(filter_range_z, z)) {
+    // Move point out of clip space (vertex shader discard equivalent)
+    gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+    return;
+  }
+  // ... normal position calculation
+}
+```
+
+Or in a fragment shader (if z is passed as a varying):
+
+```glsl
+if (!filter_in_range(filter_range_z, z_value)) discard;
+```
+
+### With Color and Filter Axes
+
+A layer type can combine color and filter axes:
+
+```javascript
+const filteredScatterType = new LayerType({
+  name: "filtered_scatter",
+  axisQuantityUnits: { x: null, y: null },
+  colorAxisQuantityKinds: { v: null },
+  filterAxisQuantityKinds: { z: null },
+
+  vert: `
+    precision mediump float;
+    attribute float x, y, z, v;
+    uniform vec2 xDomain, yDomain;
+    uniform vec4 filter_range_z;
+    varying float value;
+
+    void main() {
+      if (!filter_in_range(filter_range_z, z)) {
+        gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+        return;
+      }
+      float nx = (x - xDomain.x)/(xDomain.y - xDomain.x);
+      float ny = (y - yDomain.x)/(yDomain.y - yDomain.x);
+      gl_Position = vec4(nx*2.0-1.0, ny*2.0-1.0, 0, 1);
+      gl_PointSize = 4.0;
+      value = v;
+    }
+  `,
+
+  frag: `
+    precision mediump float;
+    uniform int colorscale_v;
+    uniform vec2 color_range_v;
+    varying float value;
+
+    void main() {
+      gl_FragColor = map_color(colorscale_v, color_range_v, value);
+    }
+  `,
+
+  getAxisQuantityUnits: (p) => ({ x: p.xData, y: p.yData }),
+  getColorAxisQuantityKinds: (p) => ({ v: p.vData }),
+  getFilterAxisQuantityKinds: (p) => ({ z: p.zData }),
+
+  schema: () => ({ /* ... */ }),
+
+  createLayer: function(parameters, data) {
+    const { xData, yData, vData, zData, xAxis = "xaxis_bottom", yAxis = "yaxis_left" } = parameters
+    return {
+      attributes: { x: data[xData], y: data[yData], v: data[vData], z: data[zData] },
+      uniforms: {},
+      xAxis, yAxis,
+      colorAxes: { v: { quantityKind: vData, data: data[vData], colorscale: "viridis" } },
+      filterAxes: { z: { quantityKind: zData, data: data[zData] } }
+    }
+  }
+})
+```
+
+**Usage:**
+```javascript
+plot.update({
+  data: { x, y, v, depth },
+  config: {
+    layers: [
+      { filtered_scatter: { xData: "x", yData: "y", vData: "v", zData: "depth" } }
+    ],
+    axes: {
+      v: { min: 0, max: 1, colorscale: "plasma" },
+      depth: { min: 100, max: 800 }  // only show points where 100 ≤ depth ≤ 800
+    }
+  }
+})
+```
+
+---
+
 ## Installation
 
 ```bash
@@ -564,12 +737,17 @@ config: {
     yaxis_left: { min: 0, max: 50 },
     yaxis_right: { min: 0, max: 50 },
     // Color axes: key is the quantity kind used by the layer's color slot
-    temperature: { min: 0, max: 100, colorscale: "plasma" }
+    temperature: { min: 0, max: 100, colorscale: "plasma" },
+    // Filter axes: key is the quantity kind used by the layer's filter slot
+    // Both min and max are optional — omit either for an open bound
+    depth: { min: 10 },        // only lower bound: discard points with depth < 10
+    depth: { max: 500 },       // only upper bound: discard points with depth > 500
+    depth: { min: 10, max: 500 } // closed range
   }
 }
 ```
 
-Omitted axes will have domains auto-calculated from data. Color axis keys are the quantity kind strings declared by layer types (e.g., the value of `vData` in the built-in scatter layer type).
+Omitted spatial axes will have domains auto-calculated from data. Color axis keys are the quantity kind strings declared by layer types (e.g., the value of `vData` in the built-in scatter layer type). Filter axes default to fully open bounds (no filtering) if not specified in config.
 
 #### `forceUpdate()`
 
@@ -653,7 +831,7 @@ Represents a data layer to be visualized. Layers are typically created automatic
 
 **Constructor:**
 ```javascript
-new Layer({ type, attributes, uniforms, xAxis, yAxis, xAxisQuantityUnit, yAxisQuantityUnit, colorAxes })
+new Layer({ type, attributes, uniforms, xAxis, yAxis, xAxisQuantityUnit, yAxisQuantityUnit, colorAxes, filterAxes })
 ```
 
 | Parameter | Type | Default | Description |
@@ -666,6 +844,7 @@ new Layer({ type, attributes, uniforms, xAxis, yAxis, xAxisQuantityUnit, yAxisQu
 | `xAxisQuantityUnit` | string | required | Resolved x-axis quantity unit |
 | `yAxisQuantityUnit` | string | required | Resolved y-axis quantity unit |
 | `colorAxes` | object | `{}` | Map of slot names to color axis entries (see below) |
+| `filterAxes` | object | `{}` | Map of slot names to filter axis entries (see below) |
 
 **Color Axes Entry Format:**
 
@@ -676,6 +855,17 @@ Each key in `colorAxes` is a slot name (matching a GLSL uniform suffix, e.g., `"
   quantityKind: "temperature",  // string identifying the color axis (becomes the axes config key)
   data: Float32Array,           // data values to be color-mapped
   colorscale: "plasma"          // optional: preferred colorscale name
+}
+```
+
+**Filter Axes Entry Format:**
+
+Each key in `filterAxes` is a slot name (matching a GLSL uniform suffix, e.g., `"z"`). The value is:
+
+```javascript
+{
+  quantityKind: "depth",  // string identifying the filter axis (becomes the axes config key)
+  data: Float32Array      // per-point data values used to evaluate the filter
 }
 ```
 
@@ -700,7 +890,7 @@ Defines how a layer is rendered using custom GLSL shaders.
 
 **Constructor:**
 ```javascript
-new LayerType({ name, axisQuantityUnits, colorAxisQuantityKinds, vert, frag, schema, createLayer, getAxisQuantityUnits, getColorAxisQuantityKinds })
+new LayerType({ name, axisQuantityUnits, colorAxisQuantityKinds, filterAxisQuantityKinds, vert, frag, schema, createLayer, getAxisQuantityUnits, getColorAxisQuantityKinds, getFilterAxisQuantityKinds })
 ```
 
 | Parameter | Type | Description |
@@ -708,14 +898,16 @@ new LayerType({ name, axisQuantityUnits, colorAxisQuantityKinds, vert, frag, sch
 | `name` | string | Type name (e.g., "scatter") |
 | `axisQuantityUnits` | object | Spatial axis quantity units: `{x: string\|null, y: string\|null}`. Use `null` for dynamic resolution. |
 | `colorAxisQuantityKinds` | object | Color axis slot declarations: `{ [slotName]: string\|null }`. Use `null` for dynamic resolution via `getColorAxisQuantityKinds`. Defaults to `{}` (no color axes). |
+| `filterAxisQuantityKinds` | object | Filter axis slot declarations: `{ [slotName]: string\|null }`. Use `null` for dynamic resolution via `getFilterAxisQuantityKinds`. Defaults to `{}` (no filter axes). |
 | `vert` | string | GLSL vertex shader code |
 | `frag` | string | GLSL fragment shader code |
 | `schema` | function | Function returning JSON Schema for parameters |
 | `createLayer` | function | Function to create Layer config from parameters and data |
 | `getAxisQuantityUnits` | function | Optional: `(parameters, data) => {x: string, y: string}` for dynamic spatial unit resolution |
 | `getColorAxisQuantityKinds` | function | Optional: `(parameters, data) => { [slotName]: string }` for dynamic color axis quantity kind resolution |
+| `getFilterAxisQuantityKinds` | function | Optional: `(parameters, data) => { [slotName]: string }` for dynamic filter axis quantity kind resolution |
 
-**Note:** Attributes and uniforms are now defined dynamically by the Layer instance created by `createLayer`, not statically in LayerType. The `createDrawCommand` method inspects the layer's `attributes` and `uniforms` objects to build the WebGL configuration.
+**Note:** Attributes and uniforms are defined dynamically by the Layer instance created by `createLayer`. The `createDrawCommand` method inspects the layer's `attributes`, `uniforms`, `colorAxes`, and `filterAxes` objects to build the WebGL configuration.
 
 **Shader Uniforms (automatically provided):**
 - `xDomain` (vec2): [min, max] of x-axis domain
@@ -723,35 +915,35 @@ new LayerType({ name, axisQuantityUnits, colorAxisQuantityKinds, vert, frag, sch
 - `count` (int): Number of data points
 - `colorscale_<slot>` (int): Colorscale index for each color axis slot (e.g., `colorscale_v`)
 - `color_range_<slot>` (vec2): [min, max] range for each color axis slot (e.g., `color_range_v`)
+- `filter_range_<slot>` (vec4): `[min, max, hasMin, hasMax]` for each filter axis slot (e.g., `filter_range_z`). `hasMin`/`hasMax` are `1.0` when the bound is active and `0.0` when the bound is open.
 
-**GLSL Color Function (automatically injected when color axes are present):**
+**GLSL Functions (automatically injected when the relevant axes are present):**
 
 ```glsl
+// Injected when color axes are present:
 vec4 map_color(int cs, vec2 range, float value)
 ```
+Normalizes `value` into `[0, 1]` over `range` and returns the RGBA color from colorscale `cs`.
 
-Normalizes `value` into `[0, 1]` over `range` and returns the RGBA color from colorscale `cs`. Use this in your fragment shader to apply color mapping.
-
-**Attribute Accessor Format:**
-```javascript
-attributes: {
-  x: { buffer: (context, props) => props.data.x },
-  y: { buffer: (context, props) => props.data.y },
-  v: { buffer: (context, props) => props.data.v }
-}
+```glsl
+// Injected when filter axes are present:
+bool filter_in_range(vec4 range, float value)
 ```
+Returns `false` (point should be discarded) if `value` falls outside any active bound in `range`. Use with `discard` in vertex or fragment shaders.
 
 **Methods:**
 
 | Method | Description |
 |--------|-------------|
-| `createDrawCommand(regl, layer)` | Compiles shaders into a regl draw command; injects color GLSL automatically if layer has color axes |
+| `createDrawCommand(regl, layer)` | Compiles shaders into a regl draw command; injects color and filter GLSL helpers automatically |
 | `schema()` | Returns JSON Schema (Draft 2020-12) for layer parameters |
 | `createLayer(parameters, data)` | Creates a Layer instance from parameters and data object |
 | `getAxisQuantityUnits(parameters, data)` | Returns `{x: string, y: string}` with dynamically resolved spatial units (only needed if some units are `null`) |
 | `resolveAxisQuantityUnits(parameters, data)` | Returns `{x: string, y: string}` with fully resolved spatial units (merges static and dynamic) |
 | `getColorAxisQuantityKinds(parameters, data)` | Returns `{ [slotName]: string }` with dynamically resolved color axis quantity kinds (only needed if some entries are `null`) |
 | `resolveColorAxisQuantityKinds(parameters, data, factoryColorAxes)` | Returns fully resolved color axes map, merging static declarations with factory-provided entries |
+| `getFilterAxisQuantityKinds(parameters, data)` | Returns `{ [slotName]: string }` with dynamically resolved filter axis quantity kinds (only needed if some entries are `null`) |
+| `resolveFilterAxisQuantityKinds(parameters, data, factoryFilterAxes)` | Returns fully resolved filter axes map, merging static declarations with factory-provided entries |
 
 ---
 
@@ -843,6 +1035,21 @@ buildColorGlsl()
 ```
 
 **Returns:** string — GLSL source including all `colorscale_<name>` functions and the `map_color(int cs, vec2 range, float value)` dispatcher. This is automatically injected by `createDrawCommand` when a layer has color axes; you only need this if building custom WebGL integrations.
+
+---
+
+### buildFilterGlsl
+
+Returns the GLSL helper function used by filter axes.
+
+**Syntax:**
+```javascript
+buildFilterGlsl()
+```
+
+**Returns:** string — GLSL source for `filter_in_range(vec4 range, float value)`. This is automatically injected by `createDrawCommand` when a layer has filter axes; you only need this if building custom WebGL integrations.
+
+The `range` vec4 encodes `[min, max, hasMin, hasMax]` where `hasMin`/`hasMax` are `1.0` when the bound is active and `0.0` for an open bound. Returns `false` when the value should be discarded.
 
 ---
 

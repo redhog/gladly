@@ -5,6 +5,7 @@ import { axisBottom, axisTop, axisLeft, axisRight } from "d3-axis"
 import { zoom, zoomIdentity } from "d3-zoom"
 import { AXES, AxisRegistry } from "./AxisRegistry.js"
 import { ColorAxisRegistry } from "./ColorAxisRegistry.js"
+import { FilterAxisRegistry } from "./FilterAxisRegistry.js"
 import { getLayerType, getRegisteredLayerTypes } from "./LayerTypeRegistry.js"
 import { getAxisQuantityUnit } from "./AxisQuantityUnitRegistry.js"
 import { getRegisteredColorscales } from "./ColorscaleRegistry.js"
@@ -39,6 +40,7 @@ export class Plot {
     this.layers = []
     this.axisRegistry = null
     this.colorAxisRegistry = null
+    this.filterAxisRegistry = null
     this._renderCallbacks = new Set()
     this._dirty = false
     this._rafId = null
@@ -130,6 +132,18 @@ export class Plot {
       }
     }
 
+    if (this.filterAxisRegistry) {
+      for (const quantityKind of this.filterAxisRegistry.getQuantityKinds()) {
+        const range = this.filterAxisRegistry.getRange(quantityKind)
+        const existing = axes[quantityKind] ?? {}
+        axes[quantityKind] = {
+          ...existing,
+          ...(range && range.min !== null ? { min: range.min } : {}),
+          ...(range && range.max !== null ? { max: range.max } : {})
+        }
+      }
+    }
+
     return { ...this.currentConfig, axes }
   }
 
@@ -144,6 +158,7 @@ export class Plot {
 
     this.axisRegistry = new AxisRegistry(this.plotWidth, this.plotHeight)
     this.colorAxisRegistry = new ColorAxisRegistry()
+    this.filterAxisRegistry = new FilterAxisRegistry()
 
     this._processLayers(layers, this.currentData)
     this._setDomains(axes)
@@ -197,22 +212,29 @@ export class Plot {
     return axisId
   }
 
-  // Unified domain getter for both spatial and color axes.
+  // Unified domain getter for spatial, color, and filter axes.
   getAxisDomain(axisId) {
     if (AXES.includes(axisId)) {
       const scale = this.axisRegistry?.getScale(axisId)
       return scale ? scale.domain() : null
     }
-    return this.colorAxisRegistry?.getRange(axisId) ?? null
+    if (this.colorAxisRegistry?.hasAxis(axisId)) {
+      return this.colorAxisRegistry.getRange(axisId)
+    }
+    const filterRange = this.filterAxisRegistry?.getRange(axisId)
+    if (filterRange) return [filterRange.min, filterRange.max]
+    return null
   }
 
-  // Unified domain setter for both spatial and color axes.
+  // Unified domain setter for spatial, color, and filter axes.
   setAxisDomain(axisId, domain) {
     if (AXES.includes(axisId)) {
       const scale = this.axisRegistry?.getScale(axisId)
       if (scale) scale.domain(domain)
+    } else if (this.colorAxisRegistry?.hasAxis(axisId)) {
+      this.colorAxisRegistry.setRange(axisId, domain[0], domain[1])
     } else {
-      this.colorAxisRegistry?.setRange(axisId, domain[0], domain[1])
+      this.filterAxisRegistry?.setRange(axisId, domain[0], domain[1])
     }
   }
 
@@ -274,6 +296,28 @@ export class Plot {
             throw new Error(
               `Linked axes have incompatible quantity units: ` +
               `color axis '${quantityKind}' cannot link to ` +
+              `${linked.plot.container.id || 'plot'}.${linked.axis} (${linkedUnit})`
+            )
+          }
+        }
+      }
+
+      // Validate filter axis links
+      for (const [slot, { quantityKind }] of Object.entries(layer.filterAxes)) {
+        const links = this.axisLinks.get(quantityKind)
+        if (!links || links.size === 0) continue
+
+        for (const link of links) {
+          const linked = link.getLinkedAxis(this, quantityKind)
+          if (!linked) continue
+
+          const linkedUnit = linked.plot.getAxisQuantityKind(linked.axis)
+          if (!linkedUnit) continue
+
+          if (quantityKind !== linkedUnit) {
+            throw new Error(
+              `Linked axes have incompatible quantity units: ` +
+              `filter axis '${quantityKind}' cannot link to ` +
               `${linked.plot.container.id || 'plot'}.${linked.axis} (${linkedUnit})`
             )
           }
@@ -414,6 +458,12 @@ export class Plot {
         this._validateAxisLinks(quantityKind)
       }
 
+      // Register filter axes
+      for (const [slot, { quantityKind }] of Object.entries(layer.filterAxes)) {
+        this.filterAxisRegistry.ensureFilterAxis(quantityKind)
+        this._validateAxisLinks(quantityKind)
+      }
+
       layer.draw = layer.type.createDrawCommand(this.regl, layer)
 
       this.layers.push(layer)
@@ -462,6 +512,16 @@ export class Plot {
         if (domain) {
           scale.domain(domain)
         }
+      }
+    }
+
+    // Apply filter axis ranges from config (default: open bounds — no filtering)
+    for (const quantityKind of this.filterAxisRegistry.getQuantityKinds()) {
+      if (axesOverrides[quantityKind]) {
+        const override = axesOverrides[quantityKind]
+        const min = override.min !== undefined ? override.min : null
+        const max = override.max !== undefined ? override.max : null
+        this.filterAxisRegistry.setRange(quantityKind, min, max)
       }
     }
 
@@ -712,6 +772,11 @@ export class Plot {
         props[`colorscale_${slot}`] = this.colorAxisRegistry.getColorscaleIndex(quantityKind)
         const range = this.colorAxisRegistry.getRange(quantityKind)
         props[`color_range_${slot}`] = range ?? [0, 1]
+      }
+
+      // Add filter axis uniforms (vec4: [min, max, hasMin, hasMax])
+      for (const [slot, { quantityKind }] of Object.entries(layer.filterAxes)) {
+        props[`filter_range_${slot}`] = this.filterAxisRegistry.getRangeUniform(quantityKind)
       }
 
       layer.draw(props)
