@@ -2,7 +2,7 @@
  * Generate sample data for demonstration
  */
 
-const N = 500
+const N = 1_000_000
 
 // First sine curve: meters (0-10) vs volts (0-5)
 const x1 = new Float32Array(N)

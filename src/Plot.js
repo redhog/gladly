@@ -39,6 +39,8 @@ export class Plot {
     this.axisRegistry = null
     this.colorAxisRegistry = null
     this._renderCallbacks = new Set()
+    this._dirty = false
+    this._rafId = null
 
     // Axis links (persists across updates); any axis ID (spatial or color) is allowed
     this.axisLinks = new Map()
@@ -308,7 +310,7 @@ export class Plot {
         if (!linked) continue
 
         linked.plot.setAxisDomain(linked.axis, newDomain)
-        linked.plot.render()
+        linked.plot.scheduleRender()
       }
     } catch (error) {
       console.error('Error propagating domain to linked axes:', error)
@@ -330,6 +332,11 @@ export class Plot {
       this.resizeObserver.disconnect()
     } else if (this._resizeHandler) {
       window.removeEventListener('resize', this._resizeHandler)
+    }
+
+    if (this._rafId !== null) {
+      cancelAnimationFrame(this._rafId)
+      this._rafId = null
     }
 
     if (this.regl) {
@@ -625,7 +632,21 @@ export class Plot {
     text.attr("y", yOffset)
   }
 
+  scheduleRender() {
+    this._dirty = true
+    if (this._rafId === null) {
+      this._rafId = requestAnimationFrame(() => {
+        this._rafId = null
+        if (this._dirty) {
+          this._dirty = false
+          this.render()
+        }
+      })
+    }
+  }
+
   render() {
+    this._dirty = false
     this.regl.clear({ color: [1,1,1,1], depth:1 })
     const viewport = {
       x: this.margin.left,
@@ -772,7 +793,7 @@ export class Plot {
           }
         })
 
-        this.render()
+        this.scheduleRender()
       })
       .on("end", () => {
         currentRegion = null
