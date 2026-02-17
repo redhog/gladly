@@ -1,4 +1,4 @@
-import { Plot, registerLayerType } from "../src/index.js"
+import { Plot, registerLayerType, linkAxes } from "../src/index.js"
 import { } from "../src/ScatterLayer.js"
 import { JSONEditor } from '@json-editor/json-editor'
 import { } from "./layer-types/ScatterMVLayer.js"
@@ -8,6 +8,9 @@ import { data, initialPlot1Config, initialPlot2Config } from "./data/sampleData.
 // Create both plots
 const plot1 = new Plot(document.getElementById('plot1'))
 const plot2 = new Plot(document.getElementById('plot2'))
+
+// Link the x-axes: plot1's xaxis_bottom to plot2's xaxis_top
+const axisLink = linkAxes(plot1, "xaxis_bottom", plot2, "xaxis_bottom")
 
 // Track which plot is currently being edited
 let activePlot = 'plot1'

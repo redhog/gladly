@@ -6,7 +6,7 @@ import { LayerType, registerLayerType } from "../../src/index.js"
  */
 export const ScatterSALayer = new LayerType({
   name: "scatter-sa",
-  axisQuantityUnits: {x: "m/s", y: "ampere"},
+  axisQuantityUnits: {x: "meters", y: "ampere"},
   colorAxisQuantityKinds: { v: null },
   vert: `
     precision mediump float;
