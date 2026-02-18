@@ -625,6 +625,56 @@ export class Plot {
         }
       }
     }
+
+    // Validate that log-scale axes have strictly positive domains/ranges.
+    for (const axis of AXES) {
+      if (!this.axisRegistry.isLogScale(axis)) continue
+      const [dMin, dMax] = this.axisRegistry.getScale(axis).domain()
+      if ((isFinite(dMin) && dMin <= 0) || (isFinite(dMax) && dMax <= 0)) {
+        throw new Error(
+          `Axis '${axis}' uses log scale but has non-positive domain [${dMin}, ${dMax}]. ` +
+          `All data values and min/max must be > 0 for log scale.`
+        )
+      }
+    }
+
+    for (const quantityKind of this.colorAxisRegistry.getQuantityKinds()) {
+      if (this._getScaleTypeFloat(quantityKind) <= 0.5) continue
+      const range = this.colorAxisRegistry.getRange(quantityKind)
+      if (!range) continue
+      if (range[0] <= 0 || range[1] <= 0) {
+        throw new Error(
+          `Color axis '${quantityKind}' uses log scale but has non-positive range [${range[0]}, ${range[1]}]. ` +
+          `All data values and min/max must be > 0 for log scale.`
+        )
+      }
+    }
+
+    for (const quantityKind of this.filterAxisRegistry.getQuantityKinds()) {
+      if (this._getScaleTypeFloat(quantityKind) <= 0.5) continue
+      const extent = this.filterAxisRegistry.getDataExtent(quantityKind)
+      if (extent && extent[0] <= 0) {
+        throw new Error(
+          `Filter axis '${quantityKind}' uses log scale but data minimum is ${extent[0]}. ` +
+          `All data values must be > 0 for log scale.`
+        )
+      }
+      const filterRange = this.filterAxisRegistry.getRange(quantityKind)
+      if (filterRange) {
+        if (filterRange.min !== null && filterRange.min <= 0) {
+          throw new Error(
+            `Filter axis '${quantityKind}' uses log scale but min is ${filterRange.min}. ` +
+            `min must be > 0 for log scale.`
+          )
+        }
+        if (filterRange.max !== null && filterRange.max <= 0) {
+          throw new Error(
+            `Filter axis '${quantityKind}' uses log scale but max is ${filterRange.max}. ` +
+            `max must be > 0 for log scale.`
+          )
+        }
+      }
+    }
   }
 
   static schema(data) {
@@ -869,11 +919,9 @@ export class Plot {
     for (const layer of this.layers) {
       const xIsLog = layer.xAxis ? this.axisRegistry.isLogScale(layer.xAxis) : false
       const yIsLog = layer.yAxis ? this.axisRegistry.isLogScale(layer.yAxis) : false
-      const rawXDomain = layer.xAxis ? this.axisRegistry.getScale(layer.xAxis).domain() : [0, 1]
-      const rawYDomain = layer.yAxis ? this.axisRegistry.getScale(layer.yAxis).domain() : [0, 1]
       const props = {
-        xDomain: xIsLog ? [Math.log(rawXDomain[0]), Math.log(rawXDomain[1])] : rawXDomain,
-        yDomain: yIsLog ? [Math.log(rawYDomain[0]), Math.log(rawYDomain[1])] : rawYDomain,
+        xDomain: layer.xAxis ? this.axisRegistry.getScale(layer.xAxis).domain() : [0, 1],
+        yDomain: layer.yAxis ? this.axisRegistry.getScale(layer.yAxis).domain() : [0, 1],
         xScaleType: xIsLog ? 1.0 : 0.0,
         yScaleType: yIsLog ? 1.0 : 0.0,
         viewport: viewport,
@@ -884,11 +932,8 @@ export class Plot {
       for (const qk of layer.colorAxes) {
         props[`colorscale_${qk}`] = this.colorAxisRegistry.getColorscaleIndex(qk)
         const range = this.colorAxisRegistry.getRange(qk)
-        const colorIsLog = this._getScaleTypeFloat(qk) > 0.5
-        props[`color_range_${qk}`] = range
-          ? (colorIsLog ? [Math.log(range[0]), Math.log(range[1])] : range)
-          : [0, 1]
-        props[`color_scale_type_${qk}`] = colorIsLog ? 1.0 : 0.0
+        props[`color_range_${qk}`] = range ?? [0, 1]
+        props[`color_scale_type_${qk}`] = this._getScaleTypeFloat(qk)
       }
 
       // Add filter axis uniforms (vec4: [min, max, hasMin, hasMax]), keyed by quantity kind

@@ -29,6 +29,8 @@ export const ScatterMVLayer = new LayerType({
     attribute float incidence_angle_rad;
     uniform vec2 xDomain;
     uniform vec2 yDomain;
+    uniform float xScaleType;
+    uniform float yScaleType;
     uniform vec4 filter_range_incidence_angle_rad;
     varying float value;
     void main() {
@@ -36,8 +38,8 @@ export const ScatterMVLayer = new LayerType({
         gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
         return;
       }
-      float nx = (x - xDomain.x)/(xDomain.y-xDomain.x);
-      float ny = (y - yDomain.x)/(yDomain.y-yDomain.x);
+      float nx = normalize_axis(x, xDomain, xScaleType);
+      float ny = normalize_axis(y, yDomain, yScaleType);
       gl_Position = vec4(nx*2.0-1.0, ny*2.0-1.0, 0, 1);
       gl_PointSize = 5.0;
       value = reflectance_au;
@@ -47,9 +49,10 @@ export const ScatterMVLayer = new LayerType({
     precision mediump float;
     uniform int colorscale_reflectance_au;
     uniform vec2 color_range_reflectance_au;
+    uniform float color_scale_type_reflectance_au;
     varying float value;
     void main() {
-      gl_FragColor = map_color(colorscale_reflectance_au, color_range_reflectance_au, value);
+      gl_FragColor = map_color_s(colorscale_reflectance_au, color_range_reflectance_au, value, color_scale_type_reflectance_au);
     }
   `,
   schema: () => ({

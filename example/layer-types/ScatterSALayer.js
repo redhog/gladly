@@ -29,6 +29,8 @@ export const ScatterSALayer = new LayerType({
     attribute float velocity_ms;
     uniform vec2 xDomain;
     uniform vec2 yDomain;
+    uniform float xScaleType;
+    uniform float yScaleType;
     uniform vec4 filter_range_velocity_ms;
     varying float value;
     void main() {
@@ -36,8 +38,8 @@ export const ScatterSALayer = new LayerType({
         gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
         return;
       }
-      float nx = (x - xDomain.x)/(xDomain.y-xDomain.x);
-      float ny = (y - yDomain.x)/(yDomain.y-yDomain.x);
+      float nx = normalize_axis(x, xDomain, xScaleType);
+      float ny = normalize_axis(y, yDomain, yScaleType);
       gl_Position = vec4(nx*2.0-1.0, ny*2.0-1.0, 0, 1);
       gl_PointSize = 5.0;
       value = temperature_K;
@@ -47,9 +49,10 @@ export const ScatterSALayer = new LayerType({
     precision mediump float;
     uniform int colorscale_temperature_K;
     uniform vec2 color_range_temperature_K;
+    uniform float color_scale_type_temperature_K;
     varying float value;
     void main() {
-      gl_FragColor = map_color(colorscale_temperature_K, color_range_temperature_K, value);
+      gl_FragColor = map_color_s(colorscale_temperature_K, color_range_temperature_K, value, color_scale_type_temperature_K);
     }
   `,
   schema: () => ({

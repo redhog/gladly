@@ -124,6 +124,8 @@ export class Filterbar extends Plot {
           if (this._maxInput) this._maxInput.checked = range.max === null
         }
       }
+      const scaleType = this._targetPlot._getScaleTypeFloat(this._filterAxisName) > 0.5 ? "log" : "linear"
+      this.axisRegistry.setScaleType(this._spatialAxis, scaleType)
     }
     super.render()
   }

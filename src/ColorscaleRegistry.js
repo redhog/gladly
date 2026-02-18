@@ -38,5 +38,12 @@ export function buildColorGlsl() {
   parts.push('  return vec4(0.5, 0.5, 0.5, 1.0);')
   parts.push('}')
 
+  parts.push('vec4 map_color_s(int cs, vec2 range, float v, float scaleType) {')
+  parts.push('  float vt = scaleType > 0.5 ? log(v) : v;')
+  parts.push('  float r0 = scaleType > 0.5 ? log(range.x) : range.x;')
+  parts.push('  float r1 = scaleType > 0.5 ? log(range.y) : range.y;')
+  parts.push('  return map_color(cs, vec2(r0, r1), vt);')
+  parts.push('}')
+
   return parts.join('\n')
 }

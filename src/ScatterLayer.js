@@ -27,10 +27,8 @@ export const scatterLayerType = new LayerType({
     uniform float yScaleType;
     varying float value;
     void main() {
-      float xVal = xScaleType > 0.5 ? log(x) : x;
-      float yVal = yScaleType > 0.5 ? log(y) : y;
-      float nx = (xVal - xDomain.x) / (xDomain.y - xDomain.x);
-      float ny = (yVal - yDomain.x) / (yDomain.y - yDomain.x);
+      float nx = normalize_axis(x, xDomain, xScaleType);
+      float ny = normalize_axis(y, yDomain, yScaleType);
       gl_Position = vec4(nx*2.0-1.0, ny*2.0-1.0, 0, 1);
       gl_PointSize = 4.0;
       value = %%color0%%;
@@ -43,8 +41,7 @@ export const scatterLayerType = new LayerType({
     uniform float color_scale_type_%%color0%%;
     varying float value;
     void main() {
-      float v = color_scale_type_%%color0%% > 0.5 ? log(value) : value;
-      gl_FragColor = map_color(colorscale_%%color0%%, color_range_%%color0%%, v);
+      gl_FragColor = map_color_s(colorscale_%%color0%%, color_range_%%color0%%, value, color_scale_type_%%color0%%);
     }
   `,
   schema: (data) => {

@@ -2,6 +2,15 @@ import { Layer } from "./Layer.js"
 import { buildColorGlsl } from "./ColorscaleRegistry.js"
 import { buildFilterGlsl } from "./FilterAxisRegistry.js"
 
+function buildSpatialGlsl() {
+  return `float normalize_axis(float v, vec2 domain, float scaleType) {
+  float vt = scaleType > 0.5 ? log(v) : v;
+  float d0 = scaleType > 0.5 ? log(domain.x) : domain.x;
+  float d1 = scaleType > 0.5 ? log(domain.y) : domain.y;
+  return (vt - d0) / (d1 - d0);
+}`
+}
+
 export class LayerType {
   constructor({
     name,
@@ -77,10 +86,11 @@ export class LayerType {
     }
 
     // Inject GLSL helpers before the layer shader body.
+    const spatialGlsl = buildSpatialGlsl()
     const colorGlsl = layer.colorAxes.length > 0 ? buildColorGlsl() : ''
     const filterGlsl = layer.filterAxes.length > 0 ? buildFilterGlsl() : ''
-    const injectGlsl = (src) => {
-      const injected = [colorGlsl, filterGlsl].filter(Boolean).join('\n')
+    const injectInto = (src, helpers) => {
+      const injected = helpers.filter(Boolean).join('\n')
       if (!injected) return src
       const precisionRe = /^\s*precision\s+\S+\s+\S+\s*;\s*$/mg
       const precisions = src.match(precisionRe) ?? []
@@ -89,8 +99,8 @@ export class LayerType {
     }
 
     return regl({
-      vert: injectGlsl(vert),
-      frag: injectGlsl(frag),
+      vert: injectInto(vert, [spatialGlsl, colorGlsl, filterGlsl]),
+      frag: injectInto(frag, [colorGlsl, filterGlsl]),
       attributes,
       uniforms,
       viewport: regl.prop("viewport"),
