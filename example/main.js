@@ -1,4 +1,4 @@
-import { Plot, registerLayerType, registerAxisQuantityKind } from "../src/index.js"
+import { Plot, registerLayerType, registerAxisQuantityKind, linkAxes } from "../src/index.js"
 import { } from "../src/ScatterLayer.js"
 import { } from "../src/FilterbarFloat.js"
 import { JSONEditor } from '@json-editor/json-editor'
@@ -19,6 +19,8 @@ registerAxisQuantityKind("line_index",           { label: "Channel",            
 // Create both plots
 const plot1 = new Plot(document.getElementById('plot1'))
 const plot2 = new Plot(document.getElementById('plot2'))
+
+linkAxes(plot1, 'xaxis_bottom', plot2, 'xaxis_top')
 
 // Track which plot is currently being edited
 let activePlot = 'plot1'
