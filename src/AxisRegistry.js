@@ -15,14 +15,14 @@ export class AxisRegistry {
     })
   }
 
-  ensureAxis(axisName, axisQuantityKind) {
+  ensureAxis(axisName, axisQuantityKind, scaleOverride) {
     if (!AXES.includes(axisName)) throw `Unknown axis ${axisName}`
     if (this.axisQuantityKinds[axisName] && this.axisQuantityKinds[axisName] !== axisQuantityKind)
       throw `Axis quantity kind mismatch on axis ${axisName}: ${this.axisQuantityKinds[axisName]} vs ${axisQuantityKind}`
 
     if (!this.scales[axisName]) {
       const quantityKindDef = getAxisQuantityKind(axisQuantityKind)
-      const scaleType = quantityKindDef.scale
+      const scaleType = scaleOverride ?? quantityKindDef.scale
       this.scales[axisName] = scaleType === "log"
         ? d3.scaleLog().range(axisName.includes("y") ? [this.height,0] : [0,this.width])
         : d3.scaleLinear().range(axisName.includes("y") ? [this.height,0] : [0,this.width])

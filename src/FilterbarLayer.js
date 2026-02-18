@@ -3,8 +3,17 @@ import { registerLayerType } from "./LayerTypeRegistry.js"
 
 export const filterbarLayerType = new LayerType({
   name: "filterbar",
-  axisQuantityKinds: { x: null, y: null },
   primitive: "points",
+
+  getAxisConfig: function(parameters) {
+    const { filterAxis, orientation = "horizontal" } = parameters
+    return {
+      xAxis: orientation === "horizontal" ? "xaxis_bottom" : null,
+      xAxisQuantityKind: orientation === "horizontal" ? filterAxis : undefined,
+      yAxis: orientation === "vertical" ? "yaxis_left" : null,
+      yAxisQuantityKind: orientation === "vertical" ? filterAxis : undefined,
+    }
+  },
 
   // Nothing is rendered — vertexCount is always 0.
   // These minimal shaders satisfy the WebGL compiler but never execute.
@@ -29,27 +38,11 @@ export const filterbarLayerType = new LayerType({
     required: ["filterAxis"]
   }),
 
-  getAxisQuantityKinds: function(parameters) {
-    const { filterAxis, orientation = "horizontal" } = parameters
-    // The axis that runs along the filter range gets the filterAxis quantity kind as its unit,
-    // so that Plot renders the correct label. The unused direction gets a placeholder that is
-    // never registered because that axis is set to null in createLayer.
+  createLayer: function() {
     return {
-      x: orientation === "horizontal" ? filterAxis : "meters",
-      y: orientation === "vertical"   ? filterAxis : "meters"
-    }
-  },
-
-  createLayer: function(parameters) {
-    const { filterAxis, orientation = "horizontal" } = parameters
-    return {
-      attributes:  {},
-      uniforms:    {},
-      xAxis:       orientation === "horizontal" ? "xaxis_bottom" : null,
-      yAxis:       orientation === "vertical"   ? "yaxis_left"   : null,
+      attributes: {},
+      uniforms:   {},
       vertexCount: 0,
-      colorAxes:   {},
-      filterAxes:  {}
     }
   }
 })

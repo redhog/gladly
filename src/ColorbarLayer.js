@@ -7,8 +7,18 @@ const quadCy = new Float32Array([-1, -1, 1, 1])
 
 export const colorbarLayerType = new LayerType({
   name: "colorbar",
-  axisQuantityKinds: { x: null, y: null },
   primitive: "triangle strip",
+
+  getAxisConfig: function(parameters) {
+    const { colorAxis, orientation = "horizontal" } = parameters
+    return {
+      xAxis: orientation === "horizontal" ? "xaxis_bottom" : null,
+      xAxisQuantityKind: orientation === "horizontal" ? colorAxis : undefined,
+      yAxis: orientation === "vertical" ? "yaxis_left" : null,
+      yAxisQuantityKind: orientation === "vertical" ? colorAxis : undefined,
+      colorAxisQuantityKinds: [colorAxis],
+    }
+  },
 
   vert: `
     precision mediump float;
@@ -24,12 +34,12 @@ export const colorbarLayerType = new LayerType({
 
   frag: `
     precision mediump float;
-    uniform int colorscale_v;
-    uniform vec2 color_range_v;
+    uniform int colorscale_%%color0%%;
+    uniform vec2 color_range_%%color0%%;
     varying float tval;
     void main() {
-      float value = color_range_v.x + tval * (color_range_v.y - color_range_v.x);
-      gl_FragColor = map_color(colorscale_v, color_range_v, value);
+      float value = color_range_%%color0%%.x + tval * (color_range_%%color0%%.y - color_range_%%color0%%.x);
+      gl_FragColor = map_color(colorscale_%%color0%%, color_range_%%color0%%, value);
     }
   `,
 
@@ -43,34 +53,12 @@ export const colorbarLayerType = new LayerType({
     required: ["colorAxis"]
   }),
 
-  getAxisQuantityKinds: function(parameters) {
-    const { colorAxis, orientation = "horizontal" } = parameters
-    // The axis that runs along the color range gets the colorAxis quantity kind.
-    // The unused direction gets a placeholder unit ("meters") that is never registered
-    // because that axis is set to null in createLayer.
-    return {
-      x: orientation === "horizontal" ? colorAxis : "meters",
-      y: orientation === "vertical"   ? colorAxis : "meters"
-    }
-  },
-
-  getColorAxisQuantityKinds: function(parameters) {
-    return [parameters.colorAxis]
-  },
-
   createLayer: function(parameters) {
-    const { colorAxis, orientation = "horizontal" } = parameters
+    const { orientation = "horizontal" } = parameters
     return {
       attributes: { cx: quadCx, cy: quadCy },
       uniforms: { horizontal: orientation === "horizontal" ? 1 : 0 },
-      xAxis: orientation === "horizontal" ? "xaxis_bottom" : null,
-      yAxis: orientation === "vertical"   ? "yaxis_left"   : null,
       vertexCount: 4,
-      colorAxes: {
-        // data [0,1] is a dummy for schema purposes; the actual range is always
-        // synced from the target plot's color axis at render time by Colorbar.
-        v: { quantityKind: colorAxis, data: new Float32Array([0, 1]), colorscale: "viridis" }
-      }
     }
   }
 })

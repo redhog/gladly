@@ -129,7 +129,9 @@ export class Plot {
         const scale = this.axisRegistry.getScale(axisId)
         if (scale) {
           const [min, max] = scale.domain()
-          axes[axisId] = { ...(axes[axisId] ?? {}), min, max }
+          const qk = this.axisRegistry.axisQuantityKinds[axisId]
+          const qkDef = qk ? getAxisQuantityKind(qk) : {}
+          axes[axisId] = { ...qkDef, ...(axes[axisId] ?? {}), min, max }
         }
       }
     }
@@ -137,13 +139,13 @@ export class Plot {
     if (this.colorAxisRegistry) {
       for (const quantityKind of this.colorAxisRegistry.getQuantityKinds()) {
         const range = this.colorAxisRegistry.getRange(quantityKind)
-        const colorscale = this.colorAxisRegistry.getColorscale(quantityKind)
+        const qkDef = getAxisQuantityKind(quantityKind)
         const existing = axes[quantityKind] ?? {}
         axes[quantityKind] = {
           colorbar: "none",
+          ...qkDef,
           ...existing,
           ...(range ? { min: range[0], max: range[1] } : {}),
-          ...(!existing.colorscale && colorscale ? { colorscale } : {})
         }
       }
     }
@@ -151,9 +153,11 @@ export class Plot {
     if (this.filterAxisRegistry) {
       for (const quantityKind of this.filterAxisRegistry.getQuantityKinds()) {
         const range = this.filterAxisRegistry.getRange(quantityKind)
+        const qkDef = getAxisQuantityKind(quantityKind)
         const existing = axes[quantityKind] ?? {}
         axes[quantityKind] = {
           filterbar: "none",
+          ...qkDef,
           ...existing,
           ...(range && range.min !== null ? { min: range.min } : {}),
           ...(range && range.max !== null ? { max: range.max } : {})
@@ -298,7 +302,7 @@ export class Plot {
       }
 
       // Validate color axis links
-      for (const [slot, { quantityKind }] of Object.entries(layer.colorAxes)) {
+      for (const quantityKind of layer.colorAxes) {
         const links = this.axisLinks.get(quantityKind)
         if (!links || links.size === 0) continue
 
@@ -320,7 +324,7 @@ export class Plot {
       }
 
       // Validate filter axis links
-      for (const [slot, { quantityKind }] of Object.entries(layer.filterAxes)) {
+      for (const quantityKind of layer.filterAxes) {
         const links = this.axisLinks.get(quantityKind)
         if (!links || links.size === 0) continue
 
@@ -490,21 +494,23 @@ export class Plot {
 
       const layer = layerType.createLayer(parameters, data)
 
-      // Register spatial axes (null means no axis for that direction)
-      if (layer.xAxis) this.axisRegistry.ensureAxis(layer.xAxis, layer.xAxisQuantityKind)
-      if (layer.yAxis) this.axisRegistry.ensureAxis(layer.yAxis, layer.yAxisQuantityKind)
+      // Register spatial axes (null means no axis for that direction).
+      // Pass any scale override from config (e.g. "log") so the D3 scale is created correctly.
+      const axesConfig = this.currentConfig?.axes ?? {}
+      if (layer.xAxis) this.axisRegistry.ensureAxis(layer.xAxis, layer.xAxisQuantityKind, axesConfig[layer.xAxis]?.scale)
+      if (layer.yAxis) this.axisRegistry.ensureAxis(layer.yAxis, layer.yAxisQuantityKind, axesConfig[layer.yAxis]?.scale)
 
       if (layer.xAxis) this._validateAxisLinks(layer.xAxis)
       if (layer.yAxis) this._validateAxisLinks(layer.yAxis)
 
-      // Register color axes (pass optional layer-type default colorscale)
-      for (const [slot, { quantityKind, colorscale }] of Object.entries(layer.colorAxes)) {
-        this.colorAxisRegistry.ensureColorAxis(quantityKind, colorscale ?? null)
+      // Register color axes (colorscale comes from config or quantity kind registry, not from here)
+      for (const quantityKind of layer.colorAxes) {
+        this.colorAxisRegistry.ensureColorAxis(quantityKind)
         this._validateAxisLinks(quantityKind)
       }
 
       // Register filter axes
-      for (const [slot, { quantityKind }] of Object.entries(layer.filterAxes)) {
+      for (const quantityKind of layer.filterAxes) {
         this.filterAxisRegistry.ensureFilterAxis(quantityKind)
         this._validateAxisLinks(quantityKind)
       }
@@ -561,12 +567,15 @@ export class Plot {
     }
 
     // Compute data extent for each filter axis and store it (used by Filterbar for display).
+    // Data comes from the attribute named by the quantity kind. If absent, auto-range is skipped.
     // Also apply any range overrides from config; default is fully open bounds (no filtering).
     for (const quantityKind of this.filterAxisRegistry.getQuantityKinds()) {
       let extMin = Infinity, extMax = -Infinity
       for (const layer of this.layers) {
-        for (const [, { quantityKind: qk, data }] of Object.entries(layer.filterAxes)) {
+        for (const qk of layer.filterAxes) {
           if (qk !== quantityKind) continue
+          const data = layer.attributes[qk]
+          if (!data) continue
           for (let i = 0; i < data.length; i++) {
             if (data[i] < extMin) extMin = data[i]
             if (data[i] > extMax) extMax = data[i]
@@ -585,18 +594,21 @@ export class Plot {
       }
     }
 
-    // Auto-calculate color axis domains
+    // Auto-calculate color axis domains.
+    // Data comes from the attribute named by the quantity kind. If absent, auto-range is skipped
+    // (e.g. ColorbarLayer, whose range is always synced externally from the target plot).
     for (const quantityKind of this.colorAxisRegistry.getQuantityKinds()) {
       let min = Infinity
       let max = -Infinity
 
       for (const layer of this.layers) {
-        for (const [slot, { quantityKind: qk, data }] of Object.entries(layer.colorAxes)) {
-          if (qk === quantityKind) {
-            for (let i = 0; i < data.length; i++) {
-              if (data[i] < min) min = data[i]
-              if (data[i] > max) max = data[i]
-            }
+        for (const qk of layer.colorAxes) {
+          if (qk !== quantityKind) continue
+          const data = layer.attributes[qk]
+          if (!data) continue
+          for (let i = 0; i < data.length; i++) {
+            if (data[i] < min) min = data[i]
+            if (data[i] > max) max = data[i]
           }
         }
       }
@@ -646,46 +658,48 @@ export class Plot {
               type: "object",
               properties: {
                 min: { type: "number" },
-                max: { type: "number" }
-              },
-              required: ["min", "max"],
-              additionalProperties: false
+                max: { type: "number" },
+                label: { type: "string" },
+                scale: { type: "string", enum: ["linear", "log"] }
+              }
             },
             xaxis_top: {
               type: "object",
               properties: {
                 min: { type: "number" },
-                max: { type: "number" }
-              },
-              required: ["min", "max"],
-              additionalProperties: false
+                max: { type: "number" },
+                label: { type: "string" },
+                scale: { type: "string", enum: ["linear", "log"] }
+              }
             },
             yaxis_left: {
               type: "object",
               properties: {
                 min: { type: "number" },
-                max: { type: "number" }
-              },
-              required: ["min", "max"],
-              additionalProperties: false
+                max: { type: "number" },
+                label: { type: "string" },
+                scale: { type: "string", enum: ["linear", "log"] }
+              }
             },
             yaxis_right: {
               type: "object",
               properties: {
                 min: { type: "number" },
-                max: { type: "number" }
-              },
-              required: ["min", "max"],
-              additionalProperties: false
+                max: { type: "number" },
+                label: { type: "string" },
+                scale: { type: "string", enum: ["linear", "log"] }
+              }
             }
           },
           additionalProperties: {
-            // Color axes: { min, max, colorscale?, colorbar? }
-            // Filter axes: { min?, max?, filterbar? }  (bounds optional for open intervals)
+            // Color/filter/quantity-kind axes.
+            // All fields from the quantity kind registration are valid here and override the registration.
             type: "object",
             properties: {
               min: { type: "number" },
               max: { type: "number" },
+              label: { type: "string" },
+              scale: { type: "string", enum: ["linear", "log"] },
               colorscale: {
                 type: "string",
                 enum: [...getRegisteredColorscales().keys()]
@@ -770,7 +784,8 @@ export class Plot {
     const axisQuantityKind = this.axisRegistry.axisQuantityKinds[axisName]
     if (!axisQuantityKind) return
 
-    const unitLabel = getAxisQuantityKind(axisQuantityKind).label
+    const unitLabel = this.currentConfig?.axes?.[axisQuantityKind]?.label
+      ?? getAxisQuantityKind(axisQuantityKind).label
     const isVertical = axisName.includes("y")
     const padding = 5
 
@@ -853,16 +868,16 @@ export class Plot {
         count: layer.vertexCount ?? layer.attributes.x?.length ?? 0
       }
 
-      // Add color axis uniforms
-      for (const [slot, { quantityKind }] of Object.entries(layer.colorAxes)) {
-        props[`colorscale_${slot}`] = this.colorAxisRegistry.getColorscaleIndex(quantityKind)
-        const range = this.colorAxisRegistry.getRange(quantityKind)
-        props[`color_range_${slot}`] = range ?? [0, 1]
+      // Add color axis uniforms, keyed by quantity kind
+      for (const qk of layer.colorAxes) {
+        props[`colorscale_${qk}`] = this.colorAxisRegistry.getColorscaleIndex(qk)
+        const range = this.colorAxisRegistry.getRange(qk)
+        props[`color_range_${qk}`] = range ?? [0, 1]
       }
 
-      // Add filter axis uniforms (vec4: [min, max, hasMin, hasMax])
-      for (const [slot, { quantityKind }] of Object.entries(layer.filterAxes)) {
-        props[`filter_range_${slot}`] = this.filterAxisRegistry.getRangeUniform(quantityKind)
+      // Add filter axis uniforms (vec4: [min, max, hasMin, hasMax]), keyed by quantity kind
+      for (const qk of layer.filterAxes) {
+        props[`filter_range_${qk}`] = this.filterAxisRegistry.getRangeUniform(qk)
       }
 
       layer.draw(props)

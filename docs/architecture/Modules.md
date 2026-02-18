@@ -46,36 +46,42 @@ Detailed breakdown of each source module. For the high-level picture see [ARCHIT
 ```javascript
 {
   name: string,
-  axisQuantityKinds: { x: string|null, y: string|null },
-  colorAxisQuantityKinds: string[],   // static quantity kinds (omit when all dynamic)
-  filterAxisQuantityKinds: string[],  // static quantity kinds (omit when all dynamic)
-  vert: string,        // GLSL vertex shader
-  frag: string,        // GLSL fragment shader
+  // Optional static axis declarations (readable without parameters/data — for introspection)
+  xAxis: string|undefined,               // default x-axis position
+  xAxisQuantityKind: string|undefined,
+  yAxis: string|undefined,               // default y-axis position
+  yAxisQuantityKind: string|undefined,
+  colorAxisQuantityKinds: string[],      // static quantity kinds for color axes
+  filterAxisQuantityKinds: string[],     // static quantity kinds for filter axes
+  vert: string,        // GLSL vertex shader (may contain %%colorN%%/%%filterN%% placeholders)
+  frag: string,        // GLSL fragment shader (same)
   schema: (data) => JSONSchema,
-  createLayer: (parameters, data) => layerConfig,
-  getAxisQuantityKinds: (parameters, data) => ({x, y}),        // optional
-  getColorAxisQuantityKinds: (parameters, data) => string[],   // optional
-  getFilterAxisQuantityKinds: (parameters, data) => string[]   // optional
+  createLayer: (parameters, data) => { attributes, uniforms, vertexCount? },
+  getAxisConfig: (parameters, data) => axisConfig,  // optional dynamic resolver
 }
 ```
 
 **`createDrawCommand(regl, layer)`**
+- Substitutes `%%colorN%%`/`%%filterN%%` placeholders in shader text with quantity kind strings
 - Compiles shaders into a regl draw command
 - Adds standard uniforms: `xDomain`, `yDomain`, `count`
-- Adds `colorscale_<slot>` + `color_range_<slot>` for each color slot
-- Adds `filter_range_<slot>` (vec4) for each filter slot
+- Adds `colorscale_<quantityKind>` + `color_range_<quantityKind>` for each color axis
+- Adds `filter_range_<quantityKind>` (vec4) for each filter axis
 - Injects `map_color()` GLSL helper when color axes are present
 - Injects `filter_in_range()` GLSL helper when filter axes are present
 - Dynamically builds `attributes` and `uniforms` maps from the layer instance
 
 **`createLayer(parameters, data)`**
-- Calls the user-supplied factory to get a layer config object
-- Resolves spatial axis quantity kinds via `resolveAxisQuantityKinds()`
-- Resolves color axis quantity kinds via `resolveColorAxisQuantityKinds()`
-- Resolves filter axis quantity kinds via `resolveFilterAxisQuantityKinds()`
-- Constructs and returns a ready-to-render layer
+- Calls the user-supplied factory to get `{ attributes, uniforms, vertexCount? }`
+- Calls `resolveAxisConfig()` to merge static declarations with `getAxisConfig()` output
+- Constructs and returns a ready-to-render Layer
 
-**`schema()`** — Returns JSON Schema (Draft 2020-12) for layer parameters.
+**`resolveAxisConfig(parameters, data)`**
+- Starts with static declarations as defaults
+- Calls `getAxisConfig(parameters, data)` if present; dynamic non-`undefined` values override statics
+- Returns fully resolved `{ xAxis, xAxisQuantityKind, yAxis, yAxisQuantityKind, colorAxisQuantityKinds, filterAxisQuantityKinds }`
+
+**`schema(data)`** — Returns JSON Schema (Draft 2020-12) for layer parameters.
 
 ---
 
@@ -87,8 +93,8 @@ Detailed breakdown of each source module. For the high-level picture see [ARCHIT
 
 **Constructor validation:**
 - All `attributes` values must be `Float32Array` — throws `TypeError` otherwise
-- All `colorAxes[slot].data` values must be `Float32Array` with a `quantityKind` string
-- All `filterAxes[slot].data` values must be `Float32Array` with a `quantityKind` string
+- `colorAxes` must be `string[]` — each element is a quantity kind
+- `filterAxes` must be `string[]` — each element is a quantity kind
 
 **Why Float32Array?**
 - Direct GPU memory mapping — no conversion overhead
@@ -103,12 +109,13 @@ Detailed breakdown of each source module. For the high-level picture see [ARCHIT
 
 **Configuration:**
 - Spatial quantity kinds: dynamic (`x` ← `xData` name, `y` ← `yData` name)
-- Color slot `v`, quantity kind ← `vData` name; default colorscale `"viridis"`
+- Color axis quantity kind ← `vData` name; colorscale from quantity kind registry
 - Point size: 4.0 px
+- Uses `%%color0%%` shader placeholder for the dynamic color axis quantity kind
 
-**Vertex shader:** Normalises `(x, y)` from data coordinates to clip space `[-1, 1]` using `xDomain`/`yDomain` uniforms.
+**Vertex shader:** Normalises `(x, y)` from data coordinates to clip space `[-1, 1]` using `xDomain`/`yDomain` uniforms; passes the color attribute (`vData`) as a varying.
 
-**Fragment shader:** Calls `map_color(colorscale_v, color_range_v, value)` to produce RGBA.
+**Fragment shader:** Calls `map_color(colorscale_<vData>, color_range_<vData>, value)` to produce RGBA.
 
 **Schema parameters:** `xData`, `yData`, `vData` (required); `xAxis`, `yAxis` (optional).
 
@@ -141,9 +148,9 @@ this._renderCallbacks    // Set<function> — called after each render()
 4. Calls `layerType.createDrawCommand(regl, layer)` and stores the result
 
 **`_setDomains(axesOverrides)`**
-- Spatial: collects attribute data per axis, computes min/max range, applies config override
-- Color: scans all layer `colorAxes[slot].data` per quantity kind, computes auto range, applies config override
-- Filter: applies config `min`/`max` if present; defaults to open bounds
+- Spatial: collects `attributes.x`/`attributes.y` data per axis, computes min/max range, applies config override
+- Color: scans all layers; for each color axis quantity kind reads `layer.attributes[quantityKind]` for auto-range (skipped when attribute absent, e.g. ColorbarLayer); applies config override
+- Filter: same pattern for filter axes; applies config `min`/`max` if present, defaults to open bounds
 
 **`render()`** — Clears canvas; assembles props (current ranges, colorscale indices, filter ranges); calls all draw commands; calls `renderAxes()`; fires `_renderCallbacks`.
 

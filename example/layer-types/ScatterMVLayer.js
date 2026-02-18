@@ -6,21 +6,33 @@ import { LayerType, registerLayerType } from "../../src/index.js"
  */
 export const ScatterMVLayer = new LayerType({
   name: "scatter-mv",
-  axisQuantityKinds: {x: "distance_m", y: "voltage_V"},
+  // Static declarations for schema/introspection (no parameters needed to read these)
+  xAxis: "xaxis_bottom",
+  xAxisQuantityKind: "distance_m",
+  yAxis: "yaxis_left",
+  yAxisQuantityKind: "voltage_V",
   colorAxisQuantityKinds: ["reflectance_au"],
   filterAxisQuantityKinds: ["incidence_angle_rad"],
+
+  getAxisConfig: function(parameters) {
+    return {
+      xAxis: parameters.xAxis,
+      yAxis: parameters.yAxis,
+    }
+  },
+
   vert: `
     precision mediump float;
     attribute float x;
     attribute float y;
-    attribute float v;
-    attribute float f;
+    attribute float reflectance_au;
+    attribute float incidence_angle_rad;
     uniform vec2 xDomain;
     uniform vec2 yDomain;
-    uniform vec4 filter_range_f;
+    uniform vec4 filter_range_incidence_angle_rad;
     varying float value;
     void main() {
-      if (!filter_in_range(filter_range_f, f)) {
+      if (!filter_in_range(filter_range_incidence_angle_rad, incidence_angle_rad)) {
         gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
         return;
       }
@@ -28,26 +40,26 @@ export const ScatterMVLayer = new LayerType({
       float ny = (y - yDomain.x)/(yDomain.y-yDomain.x);
       gl_Position = vec4(nx*2.0-1.0, ny*2.0-1.0, 0, 1);
       gl_PointSize = 5.0;
-      value = v;
+      value = reflectance_au;
     }
   `,
   frag: `
     precision mediump float;
-    uniform int colorscale_v;
-    uniform vec2 color_range_v;
+    uniform int colorscale_reflectance_au;
+    uniform vec2 color_range_reflectance_au;
     varying float value;
     void main() {
-      gl_FragColor = map_color(colorscale_v, color_range_v, value);
+      gl_FragColor = map_color(colorscale_reflectance_au, color_range_reflectance_au, value);
     }
   `,
   schema: () => ({
     type: "object",
     title: "Scatter (Distance/Voltage)",
     properties: {
-      xData: { type: "string", title: "X Data Property", description: "Property name for x coordinates" },
-      yData: { type: "string", title: "Y Data Property", description: "Property name for y coordinates" },
-      vData: { type: "string", title: "Color Data Property", description: "Property name for color values" },
-      fData: { type: "string", title: "Filter Data Property", description: "Property name for filter values (tan(x) by default)" },
+      xData: { type: "string", title: "X Data Property", description: "Property name for x coordinates (distance_m)" },
+      yData: { type: "string", title: "Y Data Property", description: "Property name for y coordinates (voltage_V)" },
+      vData: { type: "string", title: "Color Data Property", description: "Property name for color values (reflectance_au)" },
+      fData: { type: "string", title: "Filter Data Property", description: "Property name for filter values (incidence_angle_rad)" },
       xAxis: {
         type: "string",
         title: "X Axis",
@@ -64,16 +76,15 @@ export const ScatterMVLayer = new LayerType({
     required: ["xData", "yData", "vData", "fData"]
   }),
   createLayer: function(parameters, data) {
-    const { xData, yData, vData, fData, xAxis = "xaxis_bottom", yAxis = "yaxis_left" } = parameters
-    const v = data[vData]
-    const f = data[fData]
+    const { xData, yData, vData, fData } = parameters
     return {
-      attributes: { x: data[xData], y: data[yData], v, f },
+      attributes: {
+        x: data[xData],
+        y: data[yData],
+        reflectance_au: data[vData],
+        incidence_angle_rad: data[fData],
+      },
       uniforms: {},
-      xAxis,
-      yAxis,
-      colorAxes: { v: { quantityKind: "reflectance_au", data: v, colorscale: "plasma" } },
-      filterAxes: { f: { quantityKind: "incidence_angle_rad", data: f } }
     }
   }
 })

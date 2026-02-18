@@ -4,12 +4,23 @@ import { registerLayerType } from "./LayerTypeRegistry.js"
 
 export const scatterLayerType = new LayerType({
   name: "scatter",
-  axisQuantityKinds: {x: null, y: null},
+
+  getAxisConfig: function(parameters) {
+    const { xData, yData, vData, xAxis, yAxis } = parameters
+    return {
+      xAxis,
+      xAxisQuantityKind: xData,
+      yAxis,
+      yAxisQuantityKind: yData,
+      colorAxisQuantityKinds: [vData],
+    }
+  },
+
   vert: `
     precision mediump float;
     attribute float x;
     attribute float y;
-    attribute float v;
+    attribute float %%color0%%;
     uniform vec2 xDomain;
     uniform vec2 yDomain;
     varying float value;
@@ -18,16 +29,16 @@ export const scatterLayerType = new LayerType({
       float ny = (y - yDomain.x)/(yDomain.y-yDomain.x);
       gl_Position = vec4(nx*2.0-1.0, ny*2.0-1.0, 0, 1);
       gl_PointSize = 4.0;
-      value = v;
+      value = %%color0%%;
     }
   `,
   frag: `
     precision mediump float;
-    uniform int colorscale_v;
-    uniform vec2 color_range_v;
+    uniform int colorscale_%%color0%%;
+    uniform vec2 color_range_%%color0%%;
     varying float value;
     void main() {
-      gl_FragColor = map_color(colorscale_v, color_range_v, value);
+      gl_FragColor = map_color(colorscale_%%color0%%, color_range_%%color0%%, value);
     }
   `,
   schema: (data) => {
@@ -49,7 +60,7 @@ export const scatterLayerType = new LayerType({
         vData: {
           type: "string",
           enum: dataProperties,
-          description: "Property name in data object for color values"
+          description: "Property name in data object for color values; also used as the color axis quantity kind"
         },
         xAxis: {
           type: "string",
@@ -67,15 +78,8 @@ export const scatterLayerType = new LayerType({
       required: ["xData", "yData", "vData"]
     }
   },
-  getAxisQuantityKinds: function(parameters, data) {
-    const { xData, yData } = parameters
-    return { x: xData, y: yData }
-  },
-  getColorAxisQuantityKinds: function(parameters, data) {
-    return [parameters.vData]
-  },
   createLayer: function(parameters, data) {
-    const { xData, yData, vData, xAxis = "xaxis_bottom", yAxis = "yaxis_left" } = parameters
+    const { xData, yData, vData } = parameters
 
     const x = data[xData]
     const y = data[yData]
@@ -86,12 +90,8 @@ export const scatterLayerType = new LayerType({
     if (!v) throw new Error(`Data property '${vData}' not found in data object`)
 
     return {
-      attributes: { x, y, v },
+      attributes: { x, y, [vData]: v },
       uniforms: {},
-      xAxis,
-      yAxis,
-      // slot 'v' maps to the quantity kind named by vData, backed by the v data array
-      colorAxes: { v: { quantityKind: vData, data: v, colorscale: "viridis" } }
     }
   }
 })

@@ -6,21 +6,33 @@ import { LayerType, registerLayerType } from "../../src/index.js"
  */
 export const ScatterSALayer = new LayerType({
   name: "scatter-sa",
-  axisQuantityKinds: {x: "distance_m", y: "current_A"},
+  // Static declarations for schema/introspection (no parameters needed to read these)
+  xAxis: "xaxis_bottom",
+  xAxisQuantityKind: "distance_m",
+  yAxis: "yaxis_left",
+  yAxisQuantityKind: "current_A",
   colorAxisQuantityKinds: ["temperature_K"],
   filterAxisQuantityKinds: ["velocity_ms"],
+
+  getAxisConfig: function(parameters) {
+    return {
+      xAxis: parameters.xAxis,
+      yAxis: parameters.yAxis,
+    }
+  },
+
   vert: `
     precision mediump float;
     attribute float x;
     attribute float y;
-    attribute float v;
-    attribute float f;
+    attribute float temperature_K;
+    attribute float velocity_ms;
     uniform vec2 xDomain;
     uniform vec2 yDomain;
-    uniform vec4 filter_range_f;
+    uniform vec4 filter_range_velocity_ms;
     varying float value;
     void main() {
-      if (!filter_in_range(filter_range_f, f)) {
+      if (!filter_in_range(filter_range_velocity_ms, velocity_ms)) {
         gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
         return;
       }
@@ -28,26 +40,26 @@ export const ScatterSALayer = new LayerType({
       float ny = (y - yDomain.x)/(yDomain.y-yDomain.x);
       gl_Position = vec4(nx*2.0-1.0, ny*2.0-1.0, 0, 1);
       gl_PointSize = 5.0;
-      value = v;
+      value = temperature_K;
     }
   `,
   frag: `
     precision mediump float;
-    uniform int colorscale_v;
-    uniform vec2 color_range_v;
+    uniform int colorscale_temperature_K;
+    uniform vec2 color_range_temperature_K;
     varying float value;
     void main() {
-      gl_FragColor = map_color(colorscale_v, color_range_v, value);
+      gl_FragColor = map_color(colorscale_temperature_K, color_range_temperature_K, value);
     }
   `,
   schema: () => ({
     type: "object",
     title: "Scatter (Distance/Current)",
     properties: {
-      xData: { type: "string", title: "X Data Property", description: "Property name for x coordinates" },
-      yData: { type: "string", title: "Y Data Property", description: "Property name for y coordinates" },
-      vData: { type: "string", title: "Color Data Property", description: "Property name for color values" },
-      fData: { type: "string", title: "Filter Data Property", description: "Property name for filter values (tan(x*0.1) by default)" },
+      xData: { type: "string", title: "X Data Property", description: "Property name for x coordinates (distance_m)" },
+      yData: { type: "string", title: "Y Data Property", description: "Property name for y coordinates (current_A)" },
+      vData: { type: "string", title: "Color Data Property", description: "Property name for color values (temperature_K)" },
+      fData: { type: "string", title: "Filter Data Property", description: "Property name for filter values (velocity_ms)" },
       xAxis: {
         type: "string",
         title: "X Axis",
@@ -64,16 +76,15 @@ export const ScatterSALayer = new LayerType({
     required: ["xData", "yData", "vData", "fData"]
   }),
   createLayer: function(parameters, data) {
-    const { xData, yData, vData, fData, xAxis = "xaxis_bottom", yAxis = "yaxis_left" } = parameters
-    const v = data[vData]
-    const f = data[fData]
+    const { xData, yData, vData, fData } = parameters
     return {
-      attributes: { x: data[xData], y: data[yData], v, f },
+      attributes: {
+        x: data[xData],
+        y: data[yData],
+        temperature_K: data[vData],
+        velocity_ms: data[fData],
+      },
       uniforms: {},
-      xAxis,
-      yAxis,
-      colorAxes: { v: { quantityKind: "temperature_K", data: v, colorscale: "coolwarm" } },
-      filterAxes: { f: { quantityKind: "velocity_ms", data: f } }
     }
   }
 })
