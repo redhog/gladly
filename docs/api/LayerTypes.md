@@ -87,6 +87,9 @@ const heatDotsType = new LayerType({
 
   // Declare color slot "v"; null = quantity kind resolved per-layer
   colorAxisQuantityKinds: { v: null },
+  getColorAxisQuantityKinds: function(parameters) {
+    return { v: parameters.vData }
+  },
 
   vert: `
     precision mediump float;
@@ -127,10 +130,6 @@ const heatDotsType = new LayerType({
     },
     required: ["xData", "yData", "vData"]
   }),
-
-  getColorAxisQuantityKinds: function(parameters) {
-    return { v: parameters.vData }
-  },
 
   createLayer: function(parameters, data) {
     const { xData, yData, vData, xAxis = "xaxis_bottom", yAxis = "yaxis_left" } = parameters
@@ -179,6 +178,9 @@ const filteredDotsType = new LayerType({
   name: "filtered_dots",
   axisQuantityKinds: { x: "meters", y: "meters" },
   filterAxisQuantityKinds: { z: null },
+  getFilterAxisQuantityKinds: function(parameters) {
+    return { z: parameters.zData }
+  },
 
   vert: `
     precision mediump float;
@@ -205,10 +207,6 @@ const filteredDotsType = new LayerType({
   `,
 
   schema: () => ({ /* ... */ }),
-
-  getFilterAxisQuantityKinds: function(parameters) {
-    return { z: parameters.zData }
-  },
 
   createLayer: function(parameters, data) {
     const { xData, yData, zData, xAxis = "xaxis_bottom", yAxis = "yaxis_left" } = parameters
@@ -248,8 +246,11 @@ plot.update({
 const filteredScatterType = new LayerType({
   name: "filtered_scatter",
   axisQuantityKinds: { x: null, y: null },
+  getAxisQuantityKinds:        (p) => ({ x: p.xData, y: p.yData }),
   colorAxisQuantityKinds: { v: null },
+  getColorAxisQuantityKinds:   (p) => ({ v: p.vData }),
   filterAxisQuantityKinds: { z: null },
+  getFilterAxisQuantityKinds:  (p) => ({ z: p.zData }),
 
   vert: `
     precision mediump float;
@@ -281,10 +282,6 @@ const filteredScatterType = new LayerType({
       gl_FragColor = map_color(colorscale_v, color_range_v, value);
     }
   `,
-
-  getAxisQuantityKinds:        (p) => ({ x: p.xData, y: p.yData }),
-  getColorAxisQuantityKinds:   (p) => ({ v: p.vData }),
-  getFilterAxisQuantityKinds:  (p) => ({ z: p.zData }),
 
   schema: () => ({ /* ... */ }),
 
@@ -425,24 +422,26 @@ if (!filter_in_range(filter_range_z, z_value)) discard;
 ### `LayerType` Constructor
 
 ```javascript
-new LayerType({ name, axisQuantityKinds, colorAxisQuantityKinds, filterAxisQuantityKinds,
-                vert, frag, schema, createLayer,
-                getAxisQuantityKinds, getColorAxisQuantityKinds, getFilterAxisQuantityKinds })
+new LayerType({ name,
+                axisQuantityKinds, getAxisQuantityKinds,
+                colorAxisQuantityKinds, getColorAxisQuantityKinds,
+                filterAxisQuantityKinds, getFilterAxisQuantityKinds,
+                vert, frag, schema, createLayer })
 ```
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `name` | string | Type identifier (e.g. `"scatter"`) |
 | `axisQuantityKinds` | `{x, y}` | Spatial axis quantity kinds. Use `null` for dynamic resolution. |
+| `getAxisQuantityKinds` | function | `(parameters, data) => {x, y}` — required when any quantity kind is `null` |
 | `colorAxisQuantityKinds` | object | `{ [slot]: string\|null }`. Defaults to `{}`. |
+| `getColorAxisQuantityKinds` | function | `(parameters, data) => { [slot]: string }` — required when any kind is `null` |
 | `filterAxisQuantityKinds` | object | `{ [slot]: string\|null }`. Defaults to `{}`. |
+| `getFilterAxisQuantityKinds` | function | `(parameters, data) => { [slot]: string }` — required when any kind is `null` |
 | `vert` | string | GLSL vertex shader |
 | `frag` | string | GLSL fragment shader |
 | `schema` | function | `() => JSONSchema` |
 | `createLayer` | function | `(parameters, data) => layerConfig` — see [createLayer Return Value](#createlayer-return-value) |
-| `getAxisQuantityKinds` | function | `(parameters, data) => {x, y}` — required when any quantity kind is `null` |
-| `getColorAxisQuantityKinds` | function | `(parameters, data) => { [slot]: string }` — required when any kind is `null` |
-| `getFilterAxisQuantityKinds` | function | `(parameters, data) => { [slot]: string }` — required when any kind is `null` |
 
 **Automatically provided shader uniforms:**
 
