@@ -46,7 +46,7 @@ const redDotsType = new LayerType({
     }
   `,
 
-  schema: () => ({
+  schema: (data) => ({
     $schema: "https://json-schema.org/draft/2020-12/schema",
     type: "object",
     properties: {
@@ -118,7 +118,7 @@ const heatDotsType = new LayerType({
     }
   `,
 
-  schema: () => ({
+  schema: (data) => ({
     $schema: "https://json-schema.org/draft/2020-12/schema",
     type: "object",
     properties: {
@@ -206,7 +206,7 @@ const filteredDotsType = new LayerType({
     void main() { gl_FragColor = vec4(0.0, 0.5, 1.0, 1.0); }
   `,
 
-  schema: () => ({ /* ... */ }),
+  schema: (data) => ({ /* ... */ }),
 
   createLayer: function(parameters, data) {
     const { xData, yData, zData, xAxis = "xaxis_bottom", yAxis = "yaxis_left" } = parameters
@@ -283,7 +283,7 @@ const filteredScatterType = new LayerType({
     }
   `,
 
-  schema: () => ({ /* ... */ }),
+  schema: (data) => ({ /* ... */ }),
 
   createLayer: function(parameters, data) {
     const { xData, yData, vData, zData, xAxis = "xaxis_bottom", yAxis = "yaxis_left" } = parameters
@@ -314,7 +314,7 @@ const dynamicScatterType = new LayerType({
     return { x: xKind, y: null }   // y already static; return null to skip override
   },
 
-  schema: () => ({
+  schema: (data) => ({
     type: "object",
     properties: {
       xData: { type: "string" },

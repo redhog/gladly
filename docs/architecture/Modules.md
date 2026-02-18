@@ -51,11 +51,11 @@ Detailed breakdown of each source module. For the high-level picture see [ARCHIT
   filterAxisQuantityKinds: { [slot]: string|null },
   vert: string,        // GLSL vertex shader
   frag: string,        // GLSL fragment shader
-  schema: function,
-  createLayer: function,
-  getAxisQuantityKinds: function,        // optional
-  getColorAxisQuantityKinds: function,   // optional
-  getFilterAxisQuantityKinds: function   // optional
+  schema: (data) => JSONSchema,
+  createLayer: (parameters, data) => layerConfig,
+  getAxisQuantityKinds: (parameters, data) => ({x, y}),        // optional
+  getColorAxisQuantityKinds: (parameters, data) => ({[slot]: string}),   // optional
+  getFilterAxisQuantityKinds: (parameters, data) => ({[slot]: string})   // optional
 }
 ```
 
