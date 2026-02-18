@@ -80,7 +80,7 @@ export const ScatterSALayer = new LayerType({
   }),
   createLayer: function(parameters, data) {
     const { xData, yData, vData, fData } = parameters
-    return {
+    return [{
       attributes: {
         x: data[xData],
         y: data[yData],
@@ -88,7 +88,7 @@ export const ScatterSALayer = new LayerType({
         velocity_ms: data[fData],
       },
       uniforms: {},
-    }
+    }]
   }
 })
 

@@ -268,11 +268,11 @@ export class Plot {
 
       const [layerTypeName, parameters] = entries[0]
       const layerType = getLayerType(layerTypeName)
-      const layer = layerType.createLayer(parameters, data)
+      const ac = layerType.resolveAxisConfig(parameters, data)
 
       for (const [axisName, kind] of [
-        [layer.xAxis, layer.xAxisQuantityKind],
-        [layer.yAxis, layer.yAxisQuantityKind]
+        [ac.xAxis, ac.xAxisQuantityKind],
+        [ac.yAxis, ac.yAxisQuantityKind]
       ]) {
         if (!axisName || !kind) continue
 
@@ -302,7 +302,7 @@ export class Plot {
       }
 
       // Validate color axis links
-      for (const quantityKind of layer.colorAxes) {
+      for (const quantityKind of ac.colorAxisQuantityKinds) {
         const links = this.axisLinks.get(quantityKind)
         if (!links || links.size === 0) continue
 
@@ -324,7 +324,7 @@ export class Plot {
       }
 
       // Validate filter axis links
-      for (const quantityKind of layer.filterAxes) {
+      for (const quantityKind of ac.filterAxisQuantityKinds) {
         const links = this.axisLinks.get(quantityKind)
         if (!links || links.size === 0) continue
 
@@ -492,32 +492,35 @@ export class Plot {
       const [layerTypeName, parameters] = entries[0]
       const layerType = getLayerType(layerTypeName)
 
-      const layer = layerType.createLayer(parameters, data)
+      // Resolve axis config once per layer spec for registration (independent of draw call count).
+      const ac = layerType.resolveAxisConfig(parameters, data)
+      const axesConfig = this.currentConfig?.axes ?? {}
 
       // Register spatial axes (null means no axis for that direction).
       // Pass any scale override from config (e.g. "log") so the D3 scale is created correctly.
-      const axesConfig = this.currentConfig?.axes ?? {}
-      if (layer.xAxis) this.axisRegistry.ensureAxis(layer.xAxis, layer.xAxisQuantityKind, axesConfig[layer.xAxis]?.scale ?? axesConfig[layer.xAxisQuantityKind]?.scale)
-      if (layer.yAxis) this.axisRegistry.ensureAxis(layer.yAxis, layer.yAxisQuantityKind, axesConfig[layer.yAxis]?.scale ?? axesConfig[layer.yAxisQuantityKind]?.scale)
+      if (ac.xAxis) this.axisRegistry.ensureAxis(ac.xAxis, ac.xAxisQuantityKind, axesConfig[ac.xAxis]?.scale ?? axesConfig[ac.xAxisQuantityKind]?.scale)
+      if (ac.yAxis) this.axisRegistry.ensureAxis(ac.yAxis, ac.yAxisQuantityKind, axesConfig[ac.yAxis]?.scale ?? axesConfig[ac.yAxisQuantityKind]?.scale)
 
-      if (layer.xAxis) this._validateAxisLinks(layer.xAxis)
-      if (layer.yAxis) this._validateAxisLinks(layer.yAxis)
+      if (ac.xAxis) this._validateAxisLinks(ac.xAxis)
+      if (ac.yAxis) this._validateAxisLinks(ac.yAxis)
 
       // Register color axes (colorscale comes from config or quantity kind registry, not from here)
-      for (const quantityKind of layer.colorAxes) {
+      for (const quantityKind of ac.colorAxisQuantityKinds) {
         this.colorAxisRegistry.ensureColorAxis(quantityKind)
         this._validateAxisLinks(quantityKind)
       }
 
       // Register filter axes
-      for (const quantityKind of layer.filterAxes) {
+      for (const quantityKind of ac.filterAxisQuantityKinds) {
         this.filterAxisRegistry.ensureFilterAxis(quantityKind)
         this._validateAxisLinks(quantityKind)
       }
 
-      layer.draw = layer.type.createDrawCommand(this.regl, layer)
-
-      this.layers.push(layer)
+      // Create one draw command per GPU config returned by the layer type.
+      for (const layer of layerType.createLayer(parameters, data)) {
+        layer.draw = layer.type.createDrawCommand(this.regl, layer)
+        this.layers.push(layer)
+      }
     }
   }
 

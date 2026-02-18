@@ -92,7 +92,7 @@ export const scatterLayerType = new LayerType({
     if (!y) throw new Error(`Data property '${yData}' not found in data object`)
     if (!v) throw new Error(`Data property '${vData}' not found in data object`)
 
-    return {
+    return [{
       attributes: { x, y, [vData]: v },
       uniforms: {},
       nameMap: {
@@ -101,7 +101,7 @@ export const scatterLayerType = new LayerType({
         [`color_range_${vData}`]: 'color_range',
         [`color_scale_type_${vData}`]: 'color_scale_type',
       },
-    }
+    }]
   }
 })
 registerLayerType("scatter", scatterLayerType)

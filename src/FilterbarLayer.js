@@ -39,11 +39,11 @@ export const filterbarLayerType = new LayerType({
   }),
 
   createLayer: function() {
-    return {
+    return [{
       attributes: {},
       uniforms:   {},
       vertexCount: 0,
-    }
+    }]
   }
 })
 

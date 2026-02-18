@@ -58,7 +58,7 @@ export const colorbarLayerType = new LayerType({
 
   createLayer: function(parameters) {
     const { colorAxis, orientation = "horizontal" } = parameters
-    return {
+    return [{
       attributes: { cx: quadCx, cy: quadCy },
       uniforms: { horizontal: orientation === "horizontal" ? 1 : 0 },
       vertexCount: 4,
@@ -67,7 +67,7 @@ export const colorbarLayerType = new LayerType({
         [`color_range_${colorAxis}`]: 'color_range',
         [`color_scale_type_${colorAxis}`]: 'color_scale_type',
       },
-    }
+    }]
   }
 })
 

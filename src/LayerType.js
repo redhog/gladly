@@ -130,10 +130,10 @@ export class LayerType {
     if (!this._createLayer) {
       throw new Error(`LayerType '${this.name}' does not implement createLayer()`)
     }
-    const gpuConfig = this._createLayer.call(this, parameters, data)
+    const gpuConfigs = this._createLayer.call(this, parameters, data)
     const axisConfig = this.resolveAxisConfig(parameters, data)
 
-    return new Layer({
+    return gpuConfigs.map(gpuConfig => new Layer({
       type: this,
       attributes: gpuConfig.attributes ?? {},
       uniforms: gpuConfig.uniforms ?? {},
@@ -145,6 +145,6 @@ export class LayerType {
       yAxisQuantityKind: axisConfig.yAxisQuantityKind,
       colorAxes: axisConfig.colorAxisQuantityKinds,
       filterAxes: axisConfig.filterAxisQuantityKinds,
-    })
+    }))
   }
 }
