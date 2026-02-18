@@ -31,8 +31,15 @@ export class Colorbar extends Plot {
     targetPlot._renderCallbacks.add(this._syncCallback)
   }
 
+  _getScaleTypeFloat(quantityKind) {
+    if (quantityKind === this._colorAxisName && this._targetPlot) {
+      return this._targetPlot._getScaleTypeFloat(quantityKind)
+    }
+    return super._getScaleTypeFloat(quantityKind)
+  }
+
   render() {
-    // Always pull the current range and colorscale from the target plot so the
+    // Always pull the current range, colorscale, and scale type from the target plot so the
     // colorbar stays in sync even after config changes or resizes.
     if (this.colorAxisRegistry && this.axisRegistry && this._targetPlot) {
       const range = this._targetPlot.getAxisDomain(this._colorAxisName)
@@ -42,6 +49,8 @@ export class Colorbar extends Plot {
       }
       const colorscale = this._targetPlot.colorAxisRegistry?.getColorscale(this._colorAxisName)
       if (colorscale) this.colorAxisRegistry.ensureColorAxis(this._colorAxisName, colorscale)
+      const scaleType = this._targetPlot._getScaleTypeFloat(this._colorAxisName) > 0.5 ? "log" : "linear"
+      this.axisRegistry.setScaleType(this._spatialAxis, scaleType)
     }
     super.render()
   }

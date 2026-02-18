@@ -56,20 +56,24 @@ export class LayerType {
     const uniforms = {
       xDomain: regl.prop("xDomain"),
       yDomain: regl.prop("yDomain"),
+      xScaleType: regl.prop("xScaleType"),
+      yScaleType: regl.prop("yScaleType"),
       ...Object.fromEntries(
         Object.entries(layer.uniforms).map(([key, value]) => [key, value])
       )
     }
 
-    // Add per-color-axis uniforms (colorscale index + range), keyed by quantity kind
+    // Add per-color-axis uniforms (colorscale index + range + scale type), keyed by quantity kind
     for (const qk of layer.colorAxes) {
       uniforms[`colorscale_${qk}`] = regl.prop(`colorscale_${qk}`)
       uniforms[`color_range_${qk}`] = regl.prop(`color_range_${qk}`)
+      uniforms[`color_scale_type_${qk}`] = regl.prop(`color_scale_type_${qk}`)
     }
 
-    // Add per-filter-axis uniforms (vec4: [min, max, hasMin, hasMax]), keyed by quantity kind
+    // Add per-filter-axis uniforms (vec4: [min, max, hasMin, hasMax] + scale type), keyed by quantity kind
     for (const qk of layer.filterAxes) {
       uniforms[`filter_range_${qk}`] = regl.prop(`filter_range_${qk}`)
+      uniforms[`filter_scale_type_${qk}`] = regl.prop(`filter_scale_type_${qk}`)
     }
 
     // Inject GLSL helpers before the layer shader body.

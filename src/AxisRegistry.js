@@ -32,4 +32,23 @@ export class AxisRegistry {
   }
 
   getScale(axisName) { return this.scales[axisName] }
+
+  isLogScale(axisName) {
+    const scale = this.scales[axisName]
+    return !!scale && typeof scale.base === 'function'
+  }
+
+  setScaleType(axisName, scaleType) {
+    const scale = this.scales[axisName]
+    if (!scale) return
+    const currentIsLog = typeof scale.base === 'function'
+    const wantLog = scaleType === "log"
+    if (currentIsLog === wantLog) return
+    const currentDomain = scale.domain()
+    const newScale = wantLog
+      ? d3.scaleLog().range(axisName.includes("y") ? [this.height, 0] : [0, this.width])
+      : d3.scaleLinear().range(axisName.includes("y") ? [this.height, 0] : [0, this.width])
+    newScale.domain(currentDomain)
+    this.scales[axisName] = newScale
+  }
 }

@@ -497,8 +497,8 @@ export class Plot {
       // Register spatial axes (null means no axis for that direction).
       // Pass any scale override from config (e.g. "log") so the D3 scale is created correctly.
       const axesConfig = this.currentConfig?.axes ?? {}
-      if (layer.xAxis) this.axisRegistry.ensureAxis(layer.xAxis, layer.xAxisQuantityKind, axesConfig[layer.xAxis]?.scale)
-      if (layer.yAxis) this.axisRegistry.ensureAxis(layer.yAxis, layer.yAxisQuantityKind, axesConfig[layer.yAxis]?.scale)
+      if (layer.xAxis) this.axisRegistry.ensureAxis(layer.xAxis, layer.xAxisQuantityKind, axesConfig[layer.xAxis]?.scale ?? axesConfig[layer.xAxisQuantityKind]?.scale)
+      if (layer.yAxis) this.axisRegistry.ensureAxis(layer.yAxis, layer.yAxisQuantityKind, axesConfig[layer.yAxis]?.scale ?? axesConfig[layer.yAxisQuantityKind]?.scale)
 
       if (layer.xAxis) this._validateAxisLinks(layer.xAxis)
       if (layer.yAxis) this._validateAxisLinks(layer.yAxis)
@@ -838,6 +838,12 @@ export class Plot {
     text.attr("y", yOffset)
   }
 
+  _getScaleTypeFloat(quantityKind) {
+    const configScale = this.currentConfig?.axes?.[quantityKind]?.scale
+    const defScale = getAxisQuantityKind(quantityKind).scale
+    return (configScale ?? defScale) === "log" ? 1.0 : 0.0
+  }
+
   scheduleRender() {
     this._dirty = true
     if (this._rafId === null) {
@@ -861,9 +867,15 @@ export class Plot {
       height: this.plotHeight
     }
     for (const layer of this.layers) {
+      const xIsLog = layer.xAxis ? this.axisRegistry.isLogScale(layer.xAxis) : false
+      const yIsLog = layer.yAxis ? this.axisRegistry.isLogScale(layer.yAxis) : false
+      const rawXDomain = layer.xAxis ? this.axisRegistry.getScale(layer.xAxis).domain() : [0, 1]
+      const rawYDomain = layer.yAxis ? this.axisRegistry.getScale(layer.yAxis).domain() : [0, 1]
       const props = {
-        xDomain: layer.xAxis ? this.axisRegistry.getScale(layer.xAxis).domain() : [0, 1],
-        yDomain: layer.yAxis ? this.axisRegistry.getScale(layer.yAxis).domain() : [0, 1],
+        xDomain: xIsLog ? [Math.log(rawXDomain[0]), Math.log(rawXDomain[1])] : rawXDomain,
+        yDomain: yIsLog ? [Math.log(rawYDomain[0]), Math.log(rawYDomain[1])] : rawYDomain,
+        xScaleType: xIsLog ? 1.0 : 0.0,
+        yScaleType: yIsLog ? 1.0 : 0.0,
         viewport: viewport,
         count: layer.vertexCount ?? layer.attributes.x?.length ?? 0
       }
@@ -872,12 +884,17 @@ export class Plot {
       for (const qk of layer.colorAxes) {
         props[`colorscale_${qk}`] = this.colorAxisRegistry.getColorscaleIndex(qk)
         const range = this.colorAxisRegistry.getRange(qk)
-        props[`color_range_${qk}`] = range ?? [0, 1]
+        const colorIsLog = this._getScaleTypeFloat(qk) > 0.5
+        props[`color_range_${qk}`] = range
+          ? (colorIsLog ? [Math.log(range[0]), Math.log(range[1])] : range)
+          : [0, 1]
+        props[`color_scale_type_${qk}`] = colorIsLog ? 1.0 : 0.0
       }
 
       // Add filter axis uniforms (vec4: [min, max, hasMin, hasMax]), keyed by quantity kind
       for (const qk of layer.filterAxes) {
         props[`filter_range_${qk}`] = this.filterAxisRegistry.getRangeUniform(qk)
+        props[`filter_scale_type_${qk}`] = this._getScaleTypeFloat(qk)
       }
 
       layer.draw(props)
@@ -944,13 +961,16 @@ export class Plot {
 
               const pixelSize = isY ? this.plotHeight : this.plotWidth
               const [d0, d1] = currentDomain
-              const domainWidth = d1 - d0
+              const isLog = this.axisRegistry.isLogScale(axis)
+              const t0 = isLog ? Math.log(d0) : d0
+              const t1 = isLog ? Math.log(d1) : d1
+              const tDomainWidth = t1 - t0
               const fraction = mousePixel / pixelSize
 
               if (isY) {
-                gestureStartDataPos[axis] = d1 - fraction * domainWidth
+                gestureStartDataPos[axis] = t1 - fraction * tDomainWidth
               } else {
-                gestureStartDataPos[axis] = d0 + fraction * domainWidth
+                gestureStartDataPos[axis] = t0 + fraction * tDomainWidth
               }
             }
           })
@@ -972,30 +992,36 @@ export class Plot {
           if (scale && gestureStartDomains[axis] && gestureStartDataPos[axis] !== undefined) {
             const isY = axis.includes("y")
             const [d0, d1] = gestureStartDomains[axis]
-            const domainWidth = d1 - d0
+            const isLog = this.axisRegistry.isLogScale(axis)
+            const t0 = isLog ? Math.log(d0) : d0
+            const t1 = isLog ? Math.log(d1) : d1
+            const tDomainWidth = t1 - t0
 
             const pixelSize = isY ? this.plotHeight : this.plotWidth
             const pixelDelta = isY ? deltaY : deltaX
             const zoomScale = deltaK
             const mousePixelPos = gestureStartMousePos[axis]
-            const targetDataPos = gestureStartDataPos[axis]
+            const targetDataPos = gestureStartDataPos[axis]  // stored in transform space
 
-            const newDomainWidth = domainWidth / zoomScale
+            const newTDomainWidth = tDomainWidth / zoomScale
 
-            const panDomainDelta = isWheel ? 0 : (isY
-              ? pixelDelta * domainWidth / pixelSize / zoomScale
-              : -pixelDelta * domainWidth / pixelSize / zoomScale)
+            const panTDomainDelta = isWheel ? 0 : (isY
+              ? pixelDelta * tDomainWidth / pixelSize / zoomScale
+              : -pixelDelta * tDomainWidth / pixelSize / zoomScale)
 
             const fraction = mousePixelPos / pixelSize
-            let center
+            let tCenter
 
             if (isY) {
-              center = (targetDataPos + panDomainDelta) + (fraction - 0.5) * newDomainWidth
+              tCenter = (targetDataPos + panTDomainDelta) + (fraction - 0.5) * newTDomainWidth
             } else {
-              center = (targetDataPos + panDomainDelta) + (0.5 - fraction) * newDomainWidth
+              tCenter = (targetDataPos + panTDomainDelta) + (0.5 - fraction) * newTDomainWidth
             }
 
-            const newDomain = [center - newDomainWidth / 2, center + newDomainWidth / 2]
+            const newTDomain = [tCenter - newTDomainWidth / 2, tCenter + newTDomainWidth / 2]
+            const newDomain = isLog
+              ? [Math.exp(newTDomain[0]), Math.exp(newTDomain[1])]
+              : newTDomain
             scale.domain(newDomain)
 
             if (event.sourceEvent) {
