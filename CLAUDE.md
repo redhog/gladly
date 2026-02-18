@@ -97,7 +97,8 @@ npm start
    - Present a clear plan of what changes are needed
    - Ask for clarification if requirements are unclear
    - Wait for explicit go-ahead before proceeding with modifications
-4. **No backwards compatibility** - This is an early-stage project. When making changes:
+4. **Documentation function signatures must be complete** - When writing or updating docs, always show the full function signature including all parameters, even if a specific example does not use all of them. Never abbreviate to `function(parameters)` when the actual signature is `function(parameters, data)`.
+5. **No backwards compatibility** - This is an early-stage project. When making changes:
    - Do NOT add backwards compatibility shims, deprecated exports, or compatibility proxies
    - Make breaking changes cleanly without preserving old APIs
    - Update all code to use new patterns immediately
