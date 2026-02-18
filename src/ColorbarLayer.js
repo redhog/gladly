@@ -8,7 +8,6 @@ const quadCy = new Float32Array([-1, -1, 1, 1])
 export const colorbarLayerType = new LayerType({
   name: "colorbar",
   axisQuantityKinds: { x: null, y: null },
-  colorAxisQuantityKinds: { v: null },
   primitive: "triangle strip",
 
   vert: `
@@ -56,7 +55,7 @@ export const colorbarLayerType = new LayerType({
   },
 
   getColorAxisQuantityKinds: function(parameters) {
-    return { v: parameters.colorAxis }
+    return [parameters.colorAxis]
   },
 
   createLayer: function(parameters) {

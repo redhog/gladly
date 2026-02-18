@@ -7,12 +7,10 @@ export class LayerType {
     this.name = name
     this.axisQuantityKinds = axisQuantityKinds
     this.primitive = primitive ?? "points"
-    // colorAxisQuantityKinds: { [slotName]: quantityKind | null }
-    // null means the quantity kind is resolved dynamically via getColorAxisQuantityKinds()
-    this.colorAxisQuantityKinds = colorAxisQuantityKinds ?? {}
-    // filterAxisQuantityKinds: { [slotName]: quantityKind | null }
-    // null means the quantity kind is resolved dynamically via getFilterAxisQuantityKinds()
-    this.filterAxisQuantityKinds = filterAxisQuantityKinds ?? {}
+    // colorAxisQuantityKinds: string[] — static quantity kinds for color slots (omit when dynamic)
+    this.colorAxisQuantityKinds = colorAxisQuantityKinds ?? []
+    // filterAxisQuantityKinds: string[] — static quantity kinds for filter slots (omit when dynamic)
+    this.filterAxisQuantityKinds = filterAxisQuantityKinds ?? []
     this.vert = vert
     this.frag = frag
 
@@ -153,68 +151,17 @@ export class LayerType {
     return resolved
   }
 
-  // Resolve color axis quantity kinds: fills in any null slots dynamically.
-  // factoryColorAxes is the colorAxes object returned by _createLayer (slot -> { quantityKind, data }).
-  // If a slot's quantity kind was already set by the factory, that takes precedence.
-  // Otherwise falls back to this.colorAxisQuantityKinds (static) or getColorAxisQuantityKinds() (dynamic).
+  // Resolve color axis quantity kinds.
+  // The factory's colorAxes object (slot -> { quantityKind, data }) is the source of truth;
+  // colorAxisQuantityKinds and getColorAxisQuantityKinds are declarative hints only.
   resolveColorAxisQuantityKinds(parameters, data, factoryColorAxes) {
-    const resolved = {}
-    const staticDecl = this.colorAxisQuantityKinds
-
-    // Merge static declaration with factory-provided colorAxes
-    const allSlots = new Set([
-      ...Object.keys(staticDecl),
-      ...Object.keys(factoryColorAxes)
-    ])
-
-    if (allSlots.size === 0) return {}
-
-    // Check if any static slot is null (needs dynamic resolution)
-    const needsDynamic = Object.values(staticDecl).some(v => v === null)
-    const dynamic = needsDynamic ? this.getColorAxisQuantityKinds(parameters, data) : {}
-
-    for (const slot of allSlots) {
-      const factoryEntry = factoryColorAxes[slot]
-      if (factoryEntry) {
-        // Factory provided the full entry (quantityKind + data)
-        resolved[slot] = factoryEntry
-      } else if (staticDecl[slot] !== null && staticDecl[slot] !== undefined) {
-        // Static declaration has a concrete kind but no data from factory — skip (no data)
-        // This case shouldn't normally occur; factory should provide data for all declared slots
-      } else {
-        // Null slot — must be resolved dynamically (but no data provided by factory either)
-        // Dynamic resolution should be handled by the factory providing colorAxes
-      }
-    }
-
-    return resolved
+    return { ...factoryColorAxes }
   }
 
-  // Resolve filter axis quantity kinds: fills in any null slots dynamically.
-  // factoryFilterAxes is the filterAxes object returned by _createLayer (slot -> { quantityKind, data }).
-  // If a slot's quantity kind was already set by the factory, that takes precedence.
-  // Otherwise falls back to this.filterAxisQuantityKinds (static) or getFilterAxisQuantityKinds() (dynamic).
+  // Resolve filter axis quantity kinds.
+  // The factory's filterAxes object (slot -> { quantityKind, data }) is the source of truth;
+  // filterAxisQuantityKinds and getFilterAxisQuantityKinds are declarative hints only.
   resolveFilterAxisQuantityKinds(parameters, data, factoryFilterAxes) {
-    const resolved = {}
-    const staticDecl = this.filterAxisQuantityKinds
-
-    const allSlots = new Set([
-      ...Object.keys(staticDecl),
-      ...Object.keys(factoryFilterAxes)
-    ])
-
-    if (allSlots.size === 0) return {}
-
-    const needsDynamic = Object.values(staticDecl).some(v => v === null)
-    const dynamic = needsDynamic ? this.getFilterAxisQuantityKinds(parameters, data) : {}
-
-    for (const slot of allSlots) {
-      const factoryEntry = factoryFilterAxes[slot]
-      if (factoryEntry) {
-        resolved[slot] = factoryEntry
-      }
-    }
-
-    return resolved
+    return { ...factoryFilterAxes }
   }
 }

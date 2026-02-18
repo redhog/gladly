@@ -76,7 +76,7 @@ registerLayerType("red_dots", redDotsType)
 
 ## With Color Axes
 
-Color axes map a per-point numeric value to a color via a colorscale. Declare the slot in `colorAxisQuantityKinds` and provide `getColorAxisQuantityKinds` to resolve the quantity kind dynamically:
+Color axes map a per-point numeric value to a color via a colorscale. Provide `getColorAxisQuantityKinds` to declare the quantity kind dynamically from parameters:
 
 ```javascript
 import { LayerType, registerLayerType, AXES } from './src/index.js'
@@ -85,10 +85,8 @@ const heatDotsType = new LayerType({
   name: "heat_dots",
   axisQuantityKinds: { x: "meters", y: "volts" },
 
-  // Declare color slot "v"; null = quantity kind resolved per-layer
-  colorAxisQuantityKinds: { v: null },
   getColorAxisQuantityKinds: function(parameters, data) {
-    return { v: parameters.vData }
+    return [parameters.vData]
   },
 
   vert: `
@@ -171,15 +169,14 @@ plot.update({
 
 ## With Filter Axes
 
-Filter axes discard points whose value falls outside a range. Declare the slot in `filterAxisQuantityKinds`:
+Filter axes discard points whose value falls outside a range. Provide `getFilterAxisQuantityKinds` to declare the quantity kind dynamically:
 
 ```javascript
 const filteredDotsType = new LayerType({
   name: "filtered_dots",
   axisQuantityKinds: { x: "meters", y: "meters" },
-  filterAxisQuantityKinds: { z: null },
   getFilterAxisQuantityKinds: function(parameters, data) {
-    return { z: parameters.zData }
+    return [parameters.zData]
   },
 
   vert: `
@@ -246,11 +243,9 @@ plot.update({
 const filteredScatterType = new LayerType({
   name: "filtered_scatter",
   axisQuantityKinds: { x: null, y: null },
-  getAxisQuantityKinds:        (parameters, data) => ({ x: parameters.xData, y: parameters.yData }),
-  colorAxisQuantityKinds: { v: null },
-  getColorAxisQuantityKinds:   (parameters, data) => ({ v: parameters.vData }),
-  filterAxisQuantityKinds: { z: null },
-  getFilterAxisQuantityKinds:  (parameters, data) => ({ z: parameters.zData }),
+  getAxisQuantityKinds:       (parameters, data) => ({ x: parameters.xData, y: parameters.yData }),
+  getColorAxisQuantityKinds:  (parameters, data) => [parameters.vData],
+  getFilterAxisQuantityKinds: (parameters, data) => [parameters.zData],
 
   vert: `
     precision mediump float;
@@ -434,10 +429,10 @@ new LayerType({ name,
 | `name` | string | Type identifier (e.g. `"scatter"`) |
 | `axisQuantityKinds` | `{x, y}` | Spatial axis quantity kinds. Use `null` for dynamic resolution. |
 | `getAxisQuantityKinds` | function | `(parameters, data) => {x, y}` — required when any quantity kind is `null` |
-| `colorAxisQuantityKinds` | object | `{ [slot]: string\|null }`. Defaults to `{}`. |
-| `getColorAxisQuantityKinds` | function | `(parameters, data) => { [slot]: string }` — required when any kind is `null` |
-| `filterAxisQuantityKinds` | object | `{ [slot]: string\|null }`. Defaults to `{}`. |
-| `getFilterAxisQuantityKinds` | function | `(parameters, data) => { [slot]: string }` — required when any kind is `null` |
+| `colorAxisQuantityKinds` | string[] | Static quantity kinds for color slots (omit when all dynamic). Defaults to `[]`. |
+| `getColorAxisQuantityKinds` | function | `(parameters, data) => string[]` — provide when quantity kinds are resolved from parameters |
+| `filterAxisQuantityKinds` | string[] | Static quantity kinds for filter slots (omit when all dynamic). Defaults to `[]`. |
+| `getFilterAxisQuantityKinds` | function | `(parameters, data) => string[]` — provide when quantity kinds are resolved from parameters |
 | `vert` | string | GLSL vertex shader |
 | `frag` | string | GLSL fragment shader |
 | `schema` | function | `(data) => JSONSchema` |
@@ -472,8 +467,8 @@ bool filter_in_range(vec4 range, float value)
 | `schema()` | Returns JSON Schema for layer parameters |
 | `createLayer(parameters, data)` | Calls user factory, resolves axis quantity kinds, returns a ready-to-render layer |
 | `resolveAxisQuantityKinds(parameters, data)` | Returns fully resolved `{x, y}` (merges static + dynamic) |
-| `resolveColorAxisQuantityKinds(parameters, data, factoryColorAxes)` | Returns fully resolved color axes map |
-| `resolveFilterAxisQuantityKinds(parameters, data, factoryFilterAxes)` | Returns fully resolved filter axes map |
+| `resolveColorAxisQuantityKinds(parameters, data, factoryColorAxes)` | Returns `factoryColorAxes` (factory output is the source of truth) |
+| `resolveFilterAxisQuantityKinds(parameters, data, factoryFilterAxes)` | Returns `factoryFilterAxes` (factory output is the source of truth) |
 
 ---
 

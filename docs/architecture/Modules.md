@@ -47,15 +47,15 @@ Detailed breakdown of each source module. For the high-level picture see [ARCHIT
 {
   name: string,
   axisQuantityKinds: { x: string|null, y: string|null },
-  colorAxisQuantityKinds: { [slot]: string|null },
-  filterAxisQuantityKinds: { [slot]: string|null },
+  colorAxisQuantityKinds: string[],   // static quantity kinds (omit when all dynamic)
+  filterAxisQuantityKinds: string[],  // static quantity kinds (omit when all dynamic)
   vert: string,        // GLSL vertex shader
   frag: string,        // GLSL fragment shader
   schema: (data) => JSONSchema,
   createLayer: (parameters, data) => layerConfig,
   getAxisQuantityKinds: (parameters, data) => ({x, y}),        // optional
-  getColorAxisQuantityKinds: (parameters, data) => ({[slot]: string}),   // optional
-  getFilterAxisQuantityKinds: (parameters, data) => ({[slot]: string})   // optional
+  getColorAxisQuantityKinds: (parameters, data) => string[],   // optional
+  getFilterAxisQuantityKinds: (parameters, data) => string[]   // optional
 }
 ```
 
