@@ -12,7 +12,7 @@
 
   "scripts": {
     "dev": "parcel serve example/index.html --open",
-    "build:example": "parcel build example/index.html example/linked-axes-demo.html --dist-dir dist-example --public-url ./",
+    "build:example": "parcel build example/index.html --dist-dir dist-example --public-url ./",
     "preview": "npm run build:example && npx serve dist-example"
   },
 
