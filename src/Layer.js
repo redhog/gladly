@@ -1,5 +1,5 @@
 export class Layer {
-  constructor({ type, attributes, uniforms, nameMap = {}, domains = {}, xAxis = "xaxis_bottom", yAxis = "yaxis_left", xAxisQuantityKind, yAxisQuantityKind, colorAxes = [], filterAxes = [], vertexCount = null }) {
+  constructor({ type, attributes, uniforms, nameMap = {}, domains = {}, lineWidth = 1, xAxis = "xaxis_bottom", yAxis = "yaxis_left", xAxisQuantityKind, yAxisQuantityKind, colorAxes = [], filterAxes = [], vertexCount = null }) {
     // Validate that all attributes are typed arrays
     for (const [key, value] of Object.entries(attributes)) {
       if (!(value instanceof Float32Array)) {
@@ -26,6 +26,7 @@ export class Layer {
     this.uniforms = uniforms
     this.nameMap = nameMap
     this.domains = domains
+    this.lineWidth = lineWidth
     this.xAxis = xAxis
     this.yAxis = yAxis
     this.xAxisQuantityKind = xAxisQuantityKind

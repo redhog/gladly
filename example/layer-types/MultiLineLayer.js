@@ -137,6 +137,7 @@ export const multiLineLayerType = new LayerType({
         attributes: { x: xs, y: ys, line_index: lineIdx, bad_segment: badSeg },
         uniforms: { bad_color: badColor },
         domains: { line_index: [idx, idx] },
+        lineWidth: 2,
         nameMap: {
           colorscale_line_index:       'colorscale',
           color_range_line_index:      'color_range',

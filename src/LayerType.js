@@ -92,6 +92,7 @@ export class LayerType {
       uniforms,
       viewport: regl.prop("viewport"),
       primitive: this.primitive,
+      lineWidth: layer.lineWidth,
       count: regl.prop("count")
     })
   }
@@ -139,6 +140,7 @@ export class LayerType {
       uniforms: gpuConfig.uniforms ?? {},
       nameMap: gpuConfig.nameMap ?? {},
       domains: gpuConfig.domains ?? {},
+      lineWidth: gpuConfig.lineWidth ?? 1,
       vertexCount: gpuConfig.vertexCount ?? null,
       xAxis: axisConfig.xAxis,
       yAxis: axisConfig.yAxis,
