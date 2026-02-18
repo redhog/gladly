@@ -4,7 +4,7 @@ import { registerLayerType } from "./LayerTypeRegistry.js"
 
 export const scatterLayerType = new LayerType({
   name: "scatter",
-  axisQuantityUnits: {x: null, y: null},
+  axisQuantityKinds: {x: null, y: null},
   colorAxisQuantityKinds: { v: null },
   vert: `
     precision mediump float;
@@ -68,7 +68,7 @@ export const scatterLayerType = new LayerType({
       required: ["xData", "yData", "vData"]
     }
   },
-  getAxisQuantityUnits: function(parameters, data) {
+  getAxisQuantityKinds: function(parameters, data) {
     const { xData, yData } = parameters
     return { x: xData, y: yData }
   },

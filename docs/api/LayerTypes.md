@@ -24,7 +24,7 @@ import { LayerType, registerLayerType, AXES } from './src/index.js'
 
 const redDotsType = new LayerType({
   name: "red_dots",
-  axisQuantityUnits: { x: "meters", y: "volts" },
+  axisQuantityKinds: { x: "meters", y: "volts" },
 
   vert: `
     precision mediump float;
@@ -83,7 +83,7 @@ import { LayerType, registerLayerType, AXES } from './src/index.js'
 
 const heatDotsType = new LayerType({
   name: "heat_dots",
-  axisQuantityUnits: { x: "meters", y: "volts" },
+  axisQuantityKinds: { x: "meters", y: "volts" },
 
   // Declare color slot "v"; null = quantity kind resolved per-layer
   colorAxisQuantityKinds: { v: null },
@@ -177,7 +177,7 @@ Filter axes discard points whose value falls outside a range. Declare the slot i
 ```javascript
 const filteredDotsType = new LayerType({
   name: "filtered_dots",
-  axisQuantityUnits: { x: "meters", y: "meters" },
+  axisQuantityKinds: { x: "meters", y: "meters" },
   filterAxisQuantityKinds: { z: null },
 
   vert: `
@@ -247,7 +247,7 @@ plot.update({
 ```javascript
 const filteredScatterType = new LayerType({
   name: "filtered_scatter",
-  axisQuantityUnits: { x: null, y: null },
+  axisQuantityKinds: { x: null, y: null },
   colorAxisQuantityKinds: { v: null },
   filterAxisQuantityKinds: { z: null },
 
@@ -282,7 +282,7 @@ const filteredScatterType = new LayerType({
     }
   `,
 
-  getAxisQuantityUnits:        (p) => ({ x: p.xData, y: p.yData }),
+  getAxisQuantityKinds:        (p) => ({ x: p.xData, y: p.yData }),
   getColorAxisQuantityKinds:   (p) => ({ v: p.vData }),
   getFilterAxisQuantityKinds:  (p) => ({ z: p.zData }),
 
@@ -305,14 +305,14 @@ const filteredScatterType = new LayerType({
 
 ## Dynamic Spatial Axis Quantity Kinds
 
-Set an axis quantity kind to `null` in `axisQuantityUnits` and provide `getAxisQuantityUnits` to resolve it at runtime from parameters or data:
+Set an axis quantity kind to `null` in `axisQuantityKinds` and provide `getAxisQuantityKinds` to resolve it at runtime from parameters or data:
 
 ```javascript
 const dynamicScatterType = new LayerType({
   name: "dynamic_scatter",
-  axisQuantityUnits: { x: null, y: "meters" },  // x resolved dynamically
+  axisQuantityKinds: { x: null, y: "meters" },  // x resolved dynamically
 
-  getAxisQuantityUnits: function(parameters, data) {
+  getAxisQuantityKinds: function(parameters, data) {
     const xKind = parameters.xUnit || "meters"
     return { x: xKind, y: null }   // y already static; return null to skip override
   },
@@ -425,22 +425,22 @@ if (!filter_in_range(filter_range_z, z_value)) discard;
 ### `LayerType` Constructor
 
 ```javascript
-new LayerType({ name, axisQuantityUnits, colorAxisQuantityKinds, filterAxisQuantityKinds,
+new LayerType({ name, axisQuantityKinds, colorAxisQuantityKinds, filterAxisQuantityKinds,
                 vert, frag, schema, createLayer,
-                getAxisQuantityUnits, getColorAxisQuantityKinds, getFilterAxisQuantityKinds })
+                getAxisQuantityKinds, getColorAxisQuantityKinds, getFilterAxisQuantityKinds })
 ```
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `name` | string | Type identifier (e.g. `"scatter"`) |
-| `axisQuantityUnits` | `{x, y}` | Spatial axis quantity kinds. Use `null` for dynamic resolution. |
+| `axisQuantityKinds` | `{x, y}` | Spatial axis quantity kinds. Use `null` for dynamic resolution. |
 | `colorAxisQuantityKinds` | object | `{ [slot]: string\|null }`. Defaults to `{}`. |
 | `filterAxisQuantityKinds` | object | `{ [slot]: string\|null }`. Defaults to `{}`. |
 | `vert` | string | GLSL vertex shader |
 | `frag` | string | GLSL fragment shader |
 | `schema` | function | `() => JSONSchema` |
 | `createLayer` | function | `(parameters, data) => layerConfig` — see [createLayer Return Value](#createlayer-return-value) |
-| `getAxisQuantityUnits` | function | `(parameters, data) => {x, y}` — required when any quantity kind is `null` |
+| `getAxisQuantityKinds` | function | `(parameters, data) => {x, y}` — required when any quantity kind is `null` |
 | `getColorAxisQuantityKinds` | function | `(parameters, data) => { [slot]: string }` — required when any kind is `null` |
 | `getFilterAxisQuantityKinds` | function | `(parameters, data) => { [slot]: string }` — required when any kind is `null` |
 
@@ -472,7 +472,7 @@ bool filter_in_range(vec4 range, float value)
 | `createDrawCommand(regl, layer)` | Compiles shaders and returns a regl draw function |
 | `schema()` | Returns JSON Schema for layer parameters |
 | `createLayer(parameters, data)` | Calls user factory, resolves axis quantity kinds, returns a ready-to-render layer |
-| `resolveAxisQuantityUnits(parameters, data)` | Returns fully resolved `{x, y}` (merges static + dynamic) |
+| `resolveAxisQuantityKinds(parameters, data)` | Returns fully resolved `{x, y}` (merges static + dynamic) |
 | `resolveColorAxisQuantityKinds(parameters, data, factoryColorAxes)` | Returns fully resolved color axes map |
 | `resolveFilterAxisQuantityKinds(parameters, data, factoryFilterAxes)` | Returns fully resolved filter axes map |
 

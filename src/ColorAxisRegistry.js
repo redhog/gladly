@@ -1,4 +1,4 @@
-import { getAxisQuantityUnit } from './AxisQuantityUnitRegistry.js'
+import { getAxisQuantityKind } from './AxisQuantityKindRegistry.js'
 import { getColorscaleIndex } from './ColorscaleRegistry.js'
 
 export class ColorAxisRegistry {
@@ -29,7 +29,7 @@ export class ColorAxisRegistry {
     const entry = this._axes.get(quantityKind)
     if (!entry) return null
     if (entry.colorscaleOverride) return entry.colorscaleOverride
-    const unitDef = getAxisQuantityUnit(quantityKind)
+    const unitDef = getAxisQuantityKind(quantityKind)
     return unitDef.colorscale ?? null
   }
 

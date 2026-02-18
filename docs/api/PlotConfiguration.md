@@ -182,13 +182,13 @@ import { Plot, LayerType, registerLayerType } from './src/index.js'
 
 const tempType = new LayerType({
   name: "temperature",
-  axisQuantityUnits: { x: "meters", y: "volts" },
+  axisQuantityKinds: { x: "meters", y: "volts" },
   // ... shaders, schema, createLayer
 })
 
 const pressureType = new LayerType({
   name: "pressure",
-  axisQuantityUnits: { x: "meters", y: "log10" },
+  axisQuantityKinds: { x: "meters", y: "log10" },
   // ... shaders, schema, createLayer
 })
 

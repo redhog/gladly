@@ -3,7 +3,7 @@ import { registerLayerType } from "./LayerTypeRegistry.js"
 
 export const filterbarLayerType = new LayerType({
   name: "filterbar",
-  axisQuantityUnits: { x: null, y: null },
+  axisQuantityKinds: { x: null, y: null },
   primitive: "points",
 
   // Nothing is rendered — vertexCount is always 0.
@@ -29,7 +29,7 @@ export const filterbarLayerType = new LayerType({
     required: ["filterAxis"]
   }),
 
-  getAxisQuantityUnits: function(parameters) {
+  getAxisQuantityKinds: function(parameters) {
     const { filterAxis, orientation = "horizontal" } = parameters
     // The axis that runs along the filter range gets the filterAxis quantity kind as its unit,
     // so that Plot renders the correct label. The unused direction gets a placeholder that is

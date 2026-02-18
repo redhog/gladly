@@ -7,7 +7,7 @@ const quadCy = new Float32Array([-1, -1, 1, 1])
 
 export const colorbarLayerType = new LayerType({
   name: "colorbar",
-  axisQuantityUnits: { x: null, y: null },
+  axisQuantityKinds: { x: null, y: null },
   colorAxisQuantityKinds: { v: null },
   primitive: "triangle strip",
 
@@ -44,7 +44,7 @@ export const colorbarLayerType = new LayerType({
     required: ["colorAxis"]
   }),
 
-  getAxisQuantityUnits: function(parameters) {
+  getAxisQuantityKinds: function(parameters) {
     const { colorAxis, orientation = "horizontal" } = parameters
     // The axis that runs along the color range gets the colorAxis quantity kind.
     // The unused direction gets a placeholder unit ("meters") that is never registered

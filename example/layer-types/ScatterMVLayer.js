@@ -6,7 +6,7 @@ import { LayerType, registerLayerType } from "../../src/index.js"
  */
 export const ScatterMVLayer = new LayerType({
   name: "scatter-mv",
-  axisQuantityUnits: {x: "distance_m", y: "voltage_V"},
+  axisQuantityKinds: {x: "distance_m", y: "voltage_V"},
   colorAxisQuantityKinds: { v: "reflectance_au" },
   filterAxisQuantityKinds: { f: "incidence_angle_rad" },
   vert: `

@@ -1,5 +1,5 @@
 export class Layer {
-  constructor({ type, attributes, uniforms, xAxis="xaxis_bottom", yAxis="yaxis_left", xAxisQuantityUnit, yAxisQuantityUnit, colorAxes = {}, filterAxes = {}, vertexCount = null }) {
+  constructor({ type, attributes, uniforms, xAxis="xaxis_bottom", yAxis="yaxis_left", xAxisQuantityKind, yAxisQuantityKind, colorAxes = {}, filterAxes = {}, vertexCount = null }) {
     // Validate that all attributes are typed arrays
     for (const [key, value] of Object.entries(attributes)) {
       if (!(value instanceof Float32Array)) {
@@ -32,8 +32,8 @@ export class Layer {
     this.uniforms = uniforms
     this.xAxis = xAxis
     this.yAxis = yAxis
-    this.xAxisQuantityUnit = xAxisQuantityUnit
-    this.yAxisQuantityUnit = yAxisQuantityUnit
+    this.xAxisQuantityKind = xAxisQuantityKind
+    this.yAxisQuantityKind = yAxisQuantityKind
     // colorAxes: { [slotName]: { quantityKind: string, data: Float32Array } }
     this.colorAxes = colorAxes
     // filterAxes: { [slotName]: { quantityKind: string, data: Float32Array } }

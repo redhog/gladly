@@ -48,14 +48,14 @@ Plot._initialize()
   │       │
   │       ├─> layerType.createLayer(parameters, data)
   │       │   ├─> User createLayer: extract Float32Arrays, return config object
-  │       │   ├─> resolveAxisQuantityUnits()  — merge static + getAxisQuantityUnits()
+  │       │   ├─> resolveAxisQuantityKinds()  — merge static + getAxisQuantityKinds()
   │       │   ├─> resolveColorAxisQuantityKinds()
   │       │   ├─> resolveFilterAxisQuantityKinds()
   │       │   └─> Construct Layer instance (validates Float32Arrays)
   │       │
-  │       ├─> AxisRegistry.ensureAxis(layer.xAxis, layer.xAxisQuantityUnit)
+  │       ├─> AxisRegistry.ensureAxis(layer.xAxis, layer.xAxisQuantityKind)
   │       │   └─> Create D3 scale if new; throw if quantity kind conflicts
-  │       ├─> AxisRegistry.ensureAxis(layer.yAxis, layer.yAxisQuantityUnit)
+  │       ├─> AxisRegistry.ensureAxis(layer.yAxis, layer.yAxisQuantityKind)
   │       │
   │       ├─> ColorAxisRegistry.ensureColorAxis(quantityKind) — per color slot
   │       ├─> FilterAxisRegistry.ensureFilterAxis(quantityKind) — per filter slot

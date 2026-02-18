@@ -3,9 +3,9 @@ import { buildColorGlsl } from "./ColorscaleRegistry.js"
 import { buildFilterGlsl } from "./FilterAxisRegistry.js"
 
 export class LayerType {
-  constructor({ name, axisQuantityUnits, colorAxisQuantityKinds, filterAxisQuantityKinds, primitive, vert, frag, schema, createLayer, getAxisQuantityUnits, getColorAxisQuantityKinds, getFilterAxisQuantityKinds }) {
+  constructor({ name, axisQuantityKinds, colorAxisQuantityKinds, filterAxisQuantityKinds, primitive, vert, frag, schema, createLayer, getAxisQuantityKinds, getColorAxisQuantityKinds, getFilterAxisQuantityKinds }) {
     this.name = name
-    this.axisQuantityUnits = axisQuantityUnits
+    this.axisQuantityKinds = axisQuantityKinds
     this.primitive = primitive ?? "points"
     // colorAxisQuantityKinds: { [slotName]: quantityKind | null }
     // null means the quantity kind is resolved dynamically via getColorAxisQuantityKinds()
@@ -22,8 +22,8 @@ export class LayerType {
     if (createLayer) {
       this._createLayer = createLayer
     }
-    if (getAxisQuantityUnits) {
-      this._getAxisQuantityUnits = getAxisQuantityUnits
+    if (getAxisQuantityKinds) {
+      this._getAxisQuantityKinds = getAxisQuantityKinds
     }
     if (getColorAxisQuantityKinds) {
       this._getColorAxisQuantityKinds = getColorAxisQuantityKinds
@@ -95,14 +95,14 @@ export class LayerType {
   createLayer(parameters, data) {
     if (this._createLayer) {
       const config = this._createLayer.call(this, parameters, data)
-      const resolvedSpatial = this.resolveAxisQuantityUnits(parameters, data)
+      const resolvedSpatial = this.resolveAxisQuantityKinds(parameters, data)
       const resolvedColor = this.resolveColorAxisQuantityKinds(parameters, data, config.colorAxes ?? {})
       const resolvedFilter = this.resolveFilterAxisQuantityKinds(parameters, data, config.filterAxes ?? {})
       return new Layer({
         type: this,
         ...config,
-        xAxisQuantityUnit: resolvedSpatial.x,
-        yAxisQuantityUnit: resolvedSpatial.y,
+        xAxisQuantityKind: resolvedSpatial.x,
+        yAxisQuantityKind: resolvedSpatial.y,
         colorAxes: resolvedColor,
         filterAxes: resolvedFilter
       })
@@ -110,11 +110,11 @@ export class LayerType {
     throw new Error(`LayerType '${this.name}' does not implement createLayer()`)
   }
 
-  getAxisQuantityUnits(parameters, data) {
-    if (this._getAxisQuantityUnits) {
-      return this._getAxisQuantityUnits.call(this, parameters, data)
+  getAxisQuantityKinds(parameters, data) {
+    if (this._getAxisQuantityKinds) {
+      return this._getAxisQuantityKinds.call(this, parameters, data)
     }
-    throw new Error(`LayerType '${this.name}' does not implement getAxisQuantityUnits()`)
+    throw new Error(`LayerType '${this.name}' does not implement getAxisQuantityKinds()`)
   }
 
   getColorAxisQuantityKinds(parameters, data) {
@@ -131,20 +131,20 @@ export class LayerType {
     throw new Error(`LayerType '${this.name}' does not implement getFilterAxisQuantityKinds()`)
   }
 
-  resolveAxisQuantityUnits(parameters, data) {
-    let resolved = { ...this.axisQuantityUnits }
+  resolveAxisQuantityKinds(parameters, data) {
+    let resolved = { ...this.axisQuantityKinds }
 
     if (resolved.x === null || resolved.y === null) {
-      const dynamic = this.getAxisQuantityUnits(parameters, data)
+      const dynamic = this.getAxisQuantityKinds(parameters, data)
       if (resolved.x === null) {
         if (dynamic.x === null || dynamic.x === undefined) {
-          throw new Error(`LayerType '${this.name}' failed to resolve x axis quantity unit`)
+          throw new Error(`LayerType '${this.name}' failed to resolve x axis quantity kind`)
         }
         resolved.x = dynamic.x
       }
       if (resolved.y === null) {
         if (dynamic.y === null || dynamic.y === undefined) {
-          throw new Error(`LayerType '${this.name}' failed to resolve y axis quantity unit`)
+          throw new Error(`LayerType '${this.name}' failed to resolve y axis quantity kind`)
         }
         resolved.y = dynamic.y
       }

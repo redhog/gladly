@@ -1,6 +1,6 @@
 const registry = new Map()
 
-export function registerAxisQuantityUnit(name, definition) {
+export function registerAxisQuantityKind(name, definition) {
   if (registry.has(name)) {
     // Merge new properties into existing definition
     const existing = registry.get(name)
@@ -10,7 +10,7 @@ export function registerAxisQuantityUnit(name, definition) {
   }
 }
 
-export function getAxisQuantityUnit(name) {
+export function getAxisQuantityKind(name) {
   if (!registry.has(name)) {
     // Return a temporary default definition without registering it
     return { label: name, scale: "linear" }
@@ -18,6 +18,6 @@ export function getAxisQuantityUnit(name) {
   return registry.get(name)
 }
 
-export function getRegisteredAxisQuantityUnits() {
+export function getRegisteredAxisQuantityKinds() {
   return Array.from(registry.keys())
 }

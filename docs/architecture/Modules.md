@@ -46,14 +46,14 @@ Detailed breakdown of each source module. For the high-level picture see [ARCHIT
 ```javascript
 {
   name: string,
-  axisQuantityUnits: { x: string|null, y: string|null },
+  axisQuantityKinds: { x: string|null, y: string|null },
   colorAxisQuantityKinds: { [slot]: string|null },
   filterAxisQuantityKinds: { [slot]: string|null },
   vert: string,        // GLSL vertex shader
   frag: string,        // GLSL fragment shader
   schema: function,
   createLayer: function,
-  getAxisQuantityUnits: function,        // optional
+  getAxisQuantityKinds: function,        // optional
   getColorAxisQuantityKinds: function,   // optional
   getFilterAxisQuantityKinds: function   // optional
 }
@@ -70,7 +70,7 @@ Detailed breakdown of each source module. For the high-level picture see [ARCHIT
 
 **`createLayer(parameters, data)`**
 - Calls the user-supplied factory to get a layer config object
-- Resolves spatial axis quantity kinds via `resolveAxisQuantityUnits()`
+- Resolves spatial axis quantity kinds via `resolveAxisQuantityKinds()`
 - Resolves color axis quantity kinds via `resolveColorAxisQuantityKinds()`
 - Resolves filter axis quantity kinds via `resolveFilterAxisQuantityKinds()`
 - Constructs and returns a ready-to-render layer

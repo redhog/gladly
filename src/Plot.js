@@ -7,7 +7,7 @@ import { AXES, AxisRegistry } from "./AxisRegistry.js"
 import { ColorAxisRegistry } from "./ColorAxisRegistry.js"
 import { FilterAxisRegistry } from "./FilterAxisRegistry.js"
 import { getLayerType, getRegisteredLayerTypes } from "./LayerTypeRegistry.js"
-import { getAxisQuantityUnit } from "./AxisQuantityUnitRegistry.js"
+import { getAxisQuantityKind } from "./AxisQuantityKindRegistry.js"
 import { getRegisteredColorscales } from "./ColorscaleRegistry.js"
 
 function formatTick(v) {
@@ -224,7 +224,7 @@ export class Plot {
   // For color axes, the axis ID IS the quantity kind.
   getAxisQuantityKind(axisId) {
     if (AXES.includes(axisId)) {
-      return this.axisRegistry ? this.axisRegistry.axisQuantityUnits[axisId] : null
+      return this.axisRegistry ? this.axisRegistry.axisQuantityKinds[axisId] : null
     }
     return axisId
   }
@@ -256,7 +256,7 @@ export class Plot {
   }
 
   _preValidateAxisLinks(layersConfig, data) {
-    const pendingUnits = {}
+    const pendingKinds = {}
 
     for (const layerSpec of layersConfig) {
       const entries = Object.entries(layerSpec)
@@ -266,16 +266,16 @@ export class Plot {
       const layerType = getLayerType(layerTypeName)
       const layer = layerType.createLayer(parameters, data)
 
-      for (const [axisName, unit] of [
-        [layer.xAxis, layer.xAxisQuantityUnit],
-        [layer.yAxis, layer.yAxisQuantityUnit]
+      for (const [axisName, kind] of [
+        [layer.xAxis, layer.xAxisQuantityKind],
+        [layer.yAxis, layer.yAxisQuantityKind]
       ]) {
-        if (!axisName || !unit) continue
+        if (!axisName || !kind) continue
 
-        if (pendingUnits[axisName] && pendingUnits[axisName] !== unit) {
-          throw new Error(`Axis unit conflict on ${axisName}: ${pendingUnits[axisName]} vs ${unit}`)
+        if (pendingKinds[axisName] && pendingKinds[axisName] !== kind) {
+          throw new Error(`Axis kind conflict on ${axisName}: ${pendingKinds[axisName]} vs ${kind}`)
         }
-        pendingUnits[axisName] = unit
+        pendingKinds[axisName] = kind
 
         const links = this.axisLinks.get(axisName)
         if (!links || links.size === 0) continue
@@ -284,14 +284,14 @@ export class Plot {
           const linked = link.getLinkedAxis(this, axisName)
           if (!linked) continue
 
-          const linkedUnit = linked.plot.getAxisQuantityKind(linked.axis)
-          if (!linkedUnit) continue
+          const linkedKind = linked.plot.getAxisQuantityKind(linked.axis)
+          if (!linkedKind) continue
 
-          if (unit !== linkedUnit) {
+          if (kind !== linkedKind) {
             throw new Error(
-              `Linked axes have incompatible quantity units: ` +
-              `${axisName} (${unit}) cannot link to ` +
-              `${linked.plot.container.id || 'plot'}.${linked.axis} (${linkedUnit})`
+              `Linked axes have incompatible quantity kinds: ` +
+              `${axisName} (${kind}) cannot link to ` +
+              `${linked.plot.container.id || 'plot'}.${linked.axis} (${linkedKind})`
             )
           }
         }
@@ -306,14 +306,14 @@ export class Plot {
           const linked = link.getLinkedAxis(this, quantityKind)
           if (!linked) continue
 
-          const linkedUnit = linked.plot.getAxisQuantityKind(linked.axis)
-          if (!linkedUnit) continue
+          const linkedKind = linked.plot.getAxisQuantityKind(linked.axis)
+          if (!linkedKind) continue
 
-          if (quantityKind !== linkedUnit) {
+          if (quantityKind !== linkedKind) {
             throw new Error(
-              `Linked axes have incompatible quantity units: ` +
+              `Linked axes have incompatible quantity kinds: ` +
               `color axis '${quantityKind}' cannot link to ` +
-              `${linked.plot.container.id || 'plot'}.${linked.axis} (${linkedUnit})`
+              `${linked.plot.container.id || 'plot'}.${linked.axis} (${linkedKind})`
             )
           }
         }
@@ -328,14 +328,14 @@ export class Plot {
           const linked = link.getLinkedAxis(this, quantityKind)
           if (!linked) continue
 
-          const linkedUnit = linked.plot.getAxisQuantityKind(linked.axis)
-          if (!linkedUnit) continue
+          const linkedKind = linked.plot.getAxisQuantityKind(linked.axis)
+          if (!linkedKind) continue
 
-          if (quantityKind !== linkedUnit) {
+          if (quantityKind !== linkedKind) {
             throw new Error(
-              `Linked axes have incompatible quantity units: ` +
+              `Linked axes have incompatible quantity kinds: ` +
               `filter axis '${quantityKind}' cannot link to ` +
-              `${linked.plot.container.id || 'plot'}.${linked.axis} (${linkedUnit})`
+              `${linked.plot.container.id || 'plot'}.${linked.axis} (${linkedKind})`
             )
           }
         }
@@ -347,21 +347,21 @@ export class Plot {
     const links = this.axisLinks.get(axisId)
     if (!links || links.size === 0) return
 
-    const thisUnit = this.getAxisQuantityKind(axisId)
-    if (!thisUnit) return
+    const thisKind = this.getAxisQuantityKind(axisId)
+    if (!thisKind) return
 
     for (const link of links) {
       const linked = link.getLinkedAxis(this, axisId)
       if (!linked) continue
 
-      const linkedUnit = linked.plot.getAxisQuantityKind(linked.axis)
-      if (!linkedUnit) continue
+      const linkedKind = linked.plot.getAxisQuantityKind(linked.axis)
+      if (!linkedKind) continue
 
-      if (thisUnit !== linkedUnit) {
+      if (thisKind !== linkedKind) {
         throw new Error(
-          `Linked axes have incompatible quantity units: ` +
-          `${axisId} (${thisUnit}) cannot link to ` +
-          `${linked.plot.container.id || 'plot'}.${linked.axis} (${linkedUnit})`
+          `Linked axes have incompatible quantity kinds: ` +
+          `${axisId} (${thisKind}) cannot link to ` +
+          `${linked.plot.container.id || 'plot'}.${linked.axis} (${linkedKind})`
         )
       }
     }
@@ -491,8 +491,8 @@ export class Plot {
       const layer = layerType.createLayer(parameters, data)
 
       // Register spatial axes (null means no axis for that direction)
-      if (layer.xAxis) this.axisRegistry.ensureAxis(layer.xAxis, layer.xAxisQuantityUnit)
-      if (layer.yAxis) this.axisRegistry.ensureAxis(layer.yAxis, layer.yAxisQuantityUnit)
+      if (layer.xAxis) this.axisRegistry.ensureAxis(layer.xAxis, layer.xAxisQuantityKind)
+      if (layer.yAxis) this.axisRegistry.ensureAxis(layer.yAxis, layer.yAxisQuantityKind)
 
       if (layer.xAxis) this._validateAxisLinks(layer.xAxis)
       if (layer.yAxis) this._validateAxisLinks(layer.yAxis)
@@ -767,10 +767,10 @@ export class Plot {
   }
 
   updateAxisLabel(axisGroup, axisName, centerPos, availableMargin) {
-    const axisQuantityUnit = this.axisRegistry.axisQuantityUnits[axisName]
-    if (!axisQuantityUnit) return
+    const axisQuantityKind = this.axisRegistry.axisQuantityKinds[axisName]
+    if (!axisQuantityKind) return
 
-    const unitLabel = getAxisQuantityUnit(axisQuantityUnit).label
+    const unitLabel = getAxisQuantityKind(axisQuantityKind).label
     const isVertical = axisName.includes("y")
     const padding = 5
 
