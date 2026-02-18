@@ -1,4 +1,10 @@
 import { Plot, registerLayerType, linkAxes, registerAxisQuantityKind } from "../src/index.js"
+import { } from "../src/ScatterLayer.js"
+import { } from "../src/FilterbarFloat.js"
+import { JSONEditor } from '@json-editor/json-editor'
+import { } from "./layer-types/ScatterMVLayer.js"
+import { } from "./layer-types/ScatterSALayer.js"
+import { data, initialPlot1Config, initialPlot2Config } from "./data/sampleData.js"
 
 registerAxisQuantityKind("voltage_V",            { label: "Voltage (V)",           scale: "linear", colorscale: "viridis"   })
 registerAxisQuantityKind("distance_m",           { label: "Distance (m)",          scale: "linear", colorscale: "plasma"    })
@@ -7,12 +13,6 @@ registerAxisQuantityKind("reflectance_au",       { label: "Reflectance (a.u.)", 
 registerAxisQuantityKind("incidence_angle_rad",  { label: "Incidence angle (rad)", scale: "linear", colorscale: "Spectral"  })
 registerAxisQuantityKind("temperature_K",        { label: "Temperature (K)",       scale: "linear", colorscale: "coolwarm"  })
 registerAxisQuantityKind("velocity_ms",          { label: "Velocity (m/s)",        scale: "linear", colorscale: "Blues"     })
-import { } from "../src/ScatterLayer.js"
-import { } from "../src/FilterbarFloat.js"
-import { JSONEditor } from '@json-editor/json-editor'
-import { } from "./layer-types/ScatterMVLayer.js"
-import { } from "./layer-types/ScatterSALayer.js"
-import { data, initialPlot1Config, initialPlot2Config } from "./data/sampleData.js"
 
 // Create both plots
 const plot1 = new Plot(document.getElementById('plot1'))
@@ -113,32 +113,6 @@ function switchToPlot(plotId) {
   // Clear validation errors
   document.getElementById('validation-errors').innerHTML = ''
 }
-
-// Inject "?" tooltip triggers next to labels for description paragraphs
-function processDescriptions(root) {
-  root.querySelectorAll('p.je-form-input-label[id$="-description"]').forEach(p => {
-    if (p.dataset.processed) return
-    p.dataset.processed = '1'
-    const text = p.textContent.trim()
-    if (!text) return
-    const inputId = p.id.replace(/-description$/, '')
-    const label = root.querySelector(`label[for="${CSS.escape(inputId)}"]`)
-    if (!label) return
-    const trigger = document.createElement('span')
-    trigger.className = 'je-description-trigger'
-    trigger.textContent = '?'
-    const popup = document.createElement('span')
-    popup.className = 'je-description-popup'
-    popup.textContent = text
-    trigger.appendChild(popup)
-    label.appendChild(trigger)
-  })
-}
-
-const editorContainer = document.getElementById('editor-container')
-new MutationObserver(() => processDescriptions(editorContainer))
-  .observe(editorContainer, { childList: true, subtree: true })
-processDescriptions(editorContainer)
 
 // Add event listeners for plot switching buttons
 document.getElementById('edit-plot1-btn').addEventListener('click', () => {

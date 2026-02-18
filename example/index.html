@@ -198,6 +198,10 @@
         box-sizing: border-box;
       }
 
+      .form-control {
+        position: relative;
+      }
+
       .je-object__container,
       .je-indented-panel {
         margin-left: 0 !important;
@@ -259,6 +263,7 @@
       }
 
       .je-object__container {
+        position: relative;
         border: 1px solid #e0e0e0;
         border-radius: 4px;
         padding: 12px;
@@ -271,35 +276,16 @@
         display: none;
       }
 
-      p.je-form-input-label {
-        display: none;
-      }
-
-      .je-description-trigger {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: 15px;
-        height: 15px;
-        border-radius: 50%;
-        background: #90caf9;
-        color: #1a237e;
-        font-size: 10px;
-        font-weight: bold;
-        cursor: default;
-        margin-left: 5px;
-        position: relative;
-        user-select: none;
-        vertical-align: middle;
-        flex-shrink: 0;
-      }
-
-      .je-description-popup {
-        display: none;
+      /* Hide field and object descriptions; style as tooltip.
+         Use visibility (not display) to avoid conflict with json-editor's
+         injected `div[data-theme="html"] .je-form-input-label { display:block }`
+         rule which has higher specificity than our p.je-form-input-label rule. */
+      p.je-form-input-label,
+      .je-object__container > p {
+        visibility: hidden;
         position: absolute;
-        left: 50%;
         bottom: calc(100% + 6px);
-        transform: translateX(-50%);
+        left: 0;
         background: #fff;
         border: 1px solid #90caf9;
         border-radius: 4px;
@@ -314,8 +300,30 @@
         pointer-events: none;
       }
 
-      .je-description-trigger:hover .je-description-popup {
-        display: block;
+      /* ? badge on labels/titles that have a description */
+      label.je-form-input-label:has(~ p.je-form-input-label)::after,
+      .je-object__container:has(> p) .je-object__title::after {
+        content: '?';
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 15px;
+        height: 15px;
+        border-radius: 50%;
+        background: #90caf9;
+        color: #1a237e;
+        font-size: 10px;
+        font-weight: bold;
+        cursor: default;
+        margin-left: 5px;
+        vertical-align: middle;
+        flex-shrink: 0;
+      }
+
+      /* Show tooltip on hover */
+      label.je-form-input-label:hover ~ p.je-form-input-label,
+      .je-object__title:hover ~ p {
+        visibility: visible;
       }
 
     </style>
