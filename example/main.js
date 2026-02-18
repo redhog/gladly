@@ -1,9 +1,10 @@
-import { Plot, registerLayerType, linkAxes, registerAxisQuantityKind } from "../src/index.js"
+import { Plot, registerLayerType, registerAxisQuantityKind } from "../src/index.js"
 import { } from "../src/ScatterLayer.js"
 import { } from "../src/FilterbarFloat.js"
 import { JSONEditor } from '@json-editor/json-editor'
 import { } from "./layer-types/ScatterMVLayer.js"
 import { } from "./layer-types/ScatterSALayer.js"
+import { } from "./layer-types/MultiLineLayer.js"
 import { data, initialPlot1Config, initialPlot2Config } from "./data/sampleData.js"
 
 registerAxisQuantityKind("voltage_V",            { label: "Voltage (V)",           scale: "linear", colorscale: "viridis"   })
@@ -13,13 +14,11 @@ registerAxisQuantityKind("reflectance_au",       { label: "Reflectance (a.u.)", 
 registerAxisQuantityKind("incidence_angle_rad",  { label: "Incidence angle (rad)", scale: "linear", colorscale: "Spectral"  })
 registerAxisQuantityKind("temperature_K",        { label: "Temperature (K)",       scale: "linear", colorscale: "coolwarm"  })
 registerAxisQuantityKind("velocity_ms",          { label: "Velocity (m/s)",        scale: "linear", colorscale: "Blues"     })
+registerAxisQuantityKind("line_index",           { label: "Channel",               scale: "linear", colorscale: "Spectral"  })
 
 // Create both plots
 const plot1 = new Plot(document.getElementById('plot1'))
 const plot2 = new Plot(document.getElementById('plot2'))
-
-// Link the x-axes: plot1's xaxis_bottom to plot2's xaxis_top
-const axisLink = linkAxes(plot1, "xaxis_bottom", plot2, "xaxis_top")
 
 // Track which plot is currently being edited
 let activePlot = 'plot1'

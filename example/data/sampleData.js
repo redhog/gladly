@@ -32,20 +32,47 @@ for (let i = 0; i < N; i++) {
   f2[i] = Math.tan(xVal * 0.1)
 }
 
-// Export data object (shared across all plots)
-export const data = { x1, y1, v1, f1, x2, y2, v2, f2 }
+// Time-series dataset for multi-line demo
+// Three voltage channels over 10 seconds; quality_flag marks bad regions
+const M = 300
+const time_s      = new Float32Array(M)
+const ch1_V       = new Float32Array(M)
+const ch2_V       = new Float32Array(M)
+const ch3_V       = new Float32Array(M)
+const quality_flag = new Float32Array(M)
+for (let i = 0; i < M; i++) {
+  const t = (i / (M - 1)) * 10
+  time_s[i]       = t
+  ch1_V[i]        = Math.sin(t * 2.0) + 0.15 * (Math.random() - 0.5)
+  ch2_V[i]        = Math.cos(t * 1.3) * 0.7 + 0.15 * (Math.random() - 0.5)
+  ch3_V[i]        = 0.4 * Math.sin(t * 3.5 + 1) + 0.3 * Math.cos(t * 0.8) + 0.1 * (Math.random() - 0.5)
+  quality_flag[i] = (t >= 3 && t <= 4) || (t >= 7 && t <= 8) ? 1.0 : 0.0
+}
 
-// Export initial plot configuration for plot 1
-// f1 filter axis: only show points where -1.5 ≤ tan(x) ≤ 1.5 (hides points near asymptotes)
+// Export data object (shared across all plots)
+export const data = { x1, y1, v1, f1, x2, y2, v2, f2, time_s, ch1_V, ch2_V, ch3_V, quality_flag }
+
+// Export initial plot configuration for plot 1: multi-line time-series
+// quality_flag marks t=[3,4] and t=[7,8] as bad; those segments appear grey
 export const initialPlot1Config = {
   layers: [
-    { "scatter-mv": { xData: "x1", yData: "y1", vData: "v1", fData: "f1", xAxis: "xaxis_bottom", yAxis: "yaxis_left" } }
+    { "scatter-mv": { xData: "x1", yData: "y1", vData: "v1", fData: "f1", xAxis: "xaxis_bottom", yAxis: "yaxis_left" } },
+    { "multi-line": {
+      xData: "time_s",
+      filterData: "quality_flag",
+      cutoff: 0.5,
+      badColor: [0.7, 0.7, 0.7, 1.0],
+      xAxis: "xaxis_top",
+      yAxis: "yaxis_right",
+    } }
   ],
   axes: {
     xaxis_bottom: { min: 0, max: 10 },
     yaxis_left: { min: 0, max: 5 },
+    yaxis_right: { min: -2, max: 4 },
     reflectance_au: { min: 0, max: 1, colorbar: "vertical" },
-    incidence_angle_rad: { min: -1.5, max: 1.5, filterbar: "horizontal" }
+    incidence_angle_rad: { min: -1.5, max: 1.5, filterbar: "horizontal" },
+    line_index: { colorbar: "vertical" }
   }
 }
 

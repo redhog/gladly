@@ -607,25 +607,29 @@ export class Plot {
       for (const layer of this.layers) {
         for (const qk of layer.colorAxes) {
           if (qk !== quantityKind) continue
-          const data = layer.attributes[qk]
-          if (!data) continue
-          for (let i = 0; i < data.length; i++) {
-            if (data[i] < min) min = data[i]
-            if (data[i] > max) max = data[i]
+          // Use layer-declared domain if provided, otherwise scan the attribute array.
+          if (layer.domains[qk] !== undefined) {
+            const [dMin, dMax] = layer.domains[qk]
+            if (dMin < min) min = dMin
+            if (dMax > max) max = dMax
+          } else {
+            const data = layer.attributes[qk]
+            if (!data) continue
+            for (let i = 0; i < data.length; i++) {
+              if (data[i] < min) min = data[i]
+              if (data[i] > max) max = data[i]
+            }
           }
         }
       }
 
       if (min !== Infinity) {
-        if (axesOverrides[quantityKind]) {
-          const override = axesOverrides[quantityKind]
-          if (override.colorscale) {
-            this.colorAxisRegistry.ensureColorAxis(quantityKind, override.colorscale)
-          }
-          this.colorAxisRegistry.setRange(quantityKind, override.min, override.max)
-        } else {
-          this.colorAxisRegistry.setRange(quantityKind, min, max)
+        const override = axesOverrides[quantityKind]
+        if (override?.colorscale) {
+          this.colorAxisRegistry.ensureColorAxis(quantityKind, override.colorscale)
         }
+        // Config min/max override the auto-calculated values; absent means keep auto value.
+        this.colorAxisRegistry.setRange(quantityKind, override?.min ?? min, override?.max ?? max)
       }
     }
 

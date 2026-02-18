@@ -138,6 +138,7 @@ export class LayerType {
       attributes: gpuConfig.attributes ?? {},
       uniforms: gpuConfig.uniforms ?? {},
       nameMap: gpuConfig.nameMap ?? {},
+      domains: gpuConfig.domains ?? {},
       vertexCount: gpuConfig.vertexCount ?? null,
       xAxis: axisConfig.xAxis,
       yAxis: axisConfig.yAxis,
