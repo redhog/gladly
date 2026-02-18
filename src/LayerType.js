@@ -42,47 +42,34 @@ export class LayerType {
   }
 
   createDrawCommand(regl, layer) {
-    // Substitute quantity kind names into shader placeholders.
-    // %%color0%%, %%color1%%, ... are replaced by layer.colorAxes[0], [1], ...
-    // %%filter0%%, %%filter1%%, ... are replaced by layer.filterAxes[0], [1], ...
-    let vert = this.vert
-    let frag = this.frag
-    layer.colorAxes.forEach((qk, i) => {
-      const re = new RegExp(`%%color${i}%%`, 'g')
-      vert = vert.replace(re, qk)
-      frag = frag.replace(re, qk)
-    })
-    layer.filterAxes.forEach((qk, i) => {
-      const re = new RegExp(`%%filter${i}%%`, 'g')
-      vert = vert.replace(re, qk)
-      frag = frag.replace(re, qk)
-    })
+    const nm = layer.nameMap
+    // Rename an internal name to the shader-visible name via nameMap (identity if absent).
+    const shaderName = (internalName) => nm[internalName] ?? internalName
+    // Build a single-entry uniform object with renamed key reading from the internal prop name.
+    const u = (internalName) => ({ [shaderName(internalName)]: regl.prop(internalName) })
 
     const attributes = Object.fromEntries(
-      Object.entries(layer.attributes).map(([key, buffer]) => [key, { buffer }])
+      Object.entries(layer.attributes).map(([key, buffer]) => [shaderName(key), { buffer }])
     )
 
     const uniforms = {
-      xDomain: regl.prop("xDomain"),
-      yDomain: regl.prop("yDomain"),
-      xScaleType: regl.prop("xScaleType"),
-      yScaleType: regl.prop("yScaleType"),
+      ...u("xDomain"),
+      ...u("yDomain"),
+      ...u("xScaleType"),
+      ...u("yScaleType"),
       ...Object.fromEntries(
-        Object.entries(layer.uniforms).map(([key, value]) => [key, value])
+        Object.entries(layer.uniforms).map(([key, value]) => [shaderName(key), value])
       )
     }
 
     // Add per-color-axis uniforms (colorscale index + range + scale type), keyed by quantity kind
     for (const qk of layer.colorAxes) {
-      uniforms[`colorscale_${qk}`] = regl.prop(`colorscale_${qk}`)
-      uniforms[`color_range_${qk}`] = regl.prop(`color_range_${qk}`)
-      uniforms[`color_scale_type_${qk}`] = regl.prop(`color_scale_type_${qk}`)
+      Object.assign(uniforms, u(`colorscale_${qk}`), u(`color_range_${qk}`), u(`color_scale_type_${qk}`))
     }
 
     // Add per-filter-axis uniforms (vec4: [min, max, hasMin, hasMax] + scale type), keyed by quantity kind
     for (const qk of layer.filterAxes) {
-      uniforms[`filter_range_${qk}`] = regl.prop(`filter_range_${qk}`)
-      uniforms[`filter_scale_type_${qk}`] = regl.prop(`filter_scale_type_${qk}`)
+      Object.assign(uniforms, u(`filter_range_${qk}`), u(`filter_scale_type_${qk}`))
     }
 
     // Inject GLSL helpers before the layer shader body.
@@ -99,8 +86,8 @@ export class LayerType {
     }
 
     return regl({
-      vert: injectInto(vert, [spatialGlsl, colorGlsl, filterGlsl]),
-      frag: injectInto(frag, [colorGlsl, filterGlsl]),
+      vert: injectInto(this.vert, [spatialGlsl, colorGlsl, filterGlsl]),
+      frag: injectInto(this.frag, [colorGlsl, filterGlsl]),
       attributes,
       uniforms,
       viewport: regl.prop("viewport"),
@@ -150,6 +137,7 @@ export class LayerType {
       type: this,
       attributes: gpuConfig.attributes ?? {},
       uniforms: gpuConfig.uniforms ?? {},
+      nameMap: gpuConfig.nameMap ?? {},
       vertexCount: gpuConfig.vertexCount ?? null,
       xAxis: axisConfig.xAxis,
       yAxis: axisConfig.yAxis,

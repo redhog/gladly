@@ -20,7 +20,7 @@ export const scatterLayerType = new LayerType({
     precision mediump float;
     attribute float x;
     attribute float y;
-    attribute float %%color0%%;
+    attribute float color_data;
     uniform vec2 xDomain;
     uniform vec2 yDomain;
     uniform float xScaleType;
@@ -31,17 +31,17 @@ export const scatterLayerType = new LayerType({
       float ny = normalize_axis(y, yDomain, yScaleType);
       gl_Position = vec4(nx*2.0-1.0, ny*2.0-1.0, 0, 1);
       gl_PointSize = 4.0;
-      value = %%color0%%;
+      value = color_data;
     }
   `,
   frag: `
     precision mediump float;
-    uniform int colorscale_%%color0%%;
-    uniform vec2 color_range_%%color0%%;
-    uniform float color_scale_type_%%color0%%;
+    uniform int colorscale;
+    uniform vec2 color_range;
+    uniform float color_scale_type;
     varying float value;
     void main() {
-      gl_FragColor = map_color_s(colorscale_%%color0%%, color_range_%%color0%%, value, color_scale_type_%%color0%%);
+      gl_FragColor = map_color_s(colorscale, color_range, value, color_scale_type);
     }
   `,
   schema: (data) => {
@@ -95,6 +95,12 @@ export const scatterLayerType = new LayerType({
     return {
       attributes: { x, y, [vData]: v },
       uniforms: {},
+      nameMap: {
+        [vData]: 'color_data',
+        [`colorscale_${vData}`]: 'colorscale',
+        [`color_range_${vData}`]: 'color_range',
+        [`color_scale_type_${vData}`]: 'color_scale_type',
+      },
     }
   }
 })

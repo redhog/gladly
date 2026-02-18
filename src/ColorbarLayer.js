@@ -34,15 +34,15 @@ export const colorbarLayerType = new LayerType({
 
   frag: `
     precision mediump float;
-    uniform int colorscale_%%color0%%;
-    uniform vec2 color_range_%%color0%%;
-    uniform float color_scale_type_%%color0%%;
+    uniform int colorscale;
+    uniform vec2 color_range;
+    uniform float color_scale_type;
     varying float tval;
     void main() {
-      float r0 = color_scale_type_%%color0%% > 0.5 ? log(color_range_%%color0%%.x) : color_range_%%color0%%.x;
-      float r1 = color_scale_type_%%color0%% > 0.5 ? log(color_range_%%color0%%.y) : color_range_%%color0%%.y;
+      float r0 = color_scale_type > 0.5 ? log(color_range.x) : color_range.x;
+      float r1 = color_scale_type > 0.5 ? log(color_range.y) : color_range.y;
       float v  = r0 + tval * (r1 - r0);
-      gl_FragColor = map_color(colorscale_%%color0%%, vec2(r0, r1), v);
+      gl_FragColor = map_color(colorscale, vec2(r0, r1), v);
     }
   `,
 
@@ -57,11 +57,16 @@ export const colorbarLayerType = new LayerType({
   }),
 
   createLayer: function(parameters) {
-    const { orientation = "horizontal" } = parameters
+    const { colorAxis, orientation = "horizontal" } = parameters
     return {
       attributes: { cx: quadCx, cy: quadCy },
       uniforms: { horizontal: orientation === "horizontal" ? 1 : 0 },
       vertexCount: 4,
+      nameMap: {
+        [`colorscale_${colorAxis}`]: 'colorscale',
+        [`color_range_${colorAxis}`]: 'color_range',
+        [`color_scale_type_${colorAxis}`]: 'color_scale_type',
+      },
     }
   }
 })

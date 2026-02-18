@@ -53,8 +53,8 @@ Detailed breakdown of each source module. For the high-level picture see [ARCHIT
   yAxisQuantityKind: string|undefined,
   colorAxisQuantityKinds: string[],      // static quantity kinds for color axes
   filterAxisQuantityKinds: string[],     // static quantity kinds for filter axes
-  vert: string,        // GLSL vertex shader (may contain %%colorN%%/%%filterN%% placeholders)
-  frag: string,        // GLSL fragment shader (same)
+  vert: string,        // GLSL vertex shader
+  frag: string,        // GLSL fragment shader
   schema: (data) => JSONSchema,
   createLayer: (parameters, data) => { attributes, uniforms, vertexCount? },
   getAxisConfig: (parameters, data) => axisConfig,  // optional dynamic resolver
@@ -62,7 +62,7 @@ Detailed breakdown of each source module. For the high-level picture see [ARCHIT
 ```
 
 **`createDrawCommand(regl, layer)`**
-- Substitutes `%%colorN%%`/`%%filterN%%` placeholders in shader text with quantity kind strings
+- Applies `layer.nameMap` to rename attribute and uniform keys to shader-visible names
 - Compiles shaders into a regl draw command
 - Adds standard uniforms: `xDomain`, `yDomain`, `count`
 - Adds `colorscale_<quantityKind>` + `color_range_<quantityKind>` for each color axis
@@ -72,7 +72,7 @@ Detailed breakdown of each source module. For the high-level picture see [ARCHIT
 - Dynamically builds `attributes` and `uniforms` maps from the layer instance
 
 **`createLayer(parameters, data)`**
-- Calls the user-supplied factory to get `{ attributes, uniforms, vertexCount? }`
+- Calls the user-supplied factory to get `{ attributes, uniforms, vertexCount?, nameMap? }`
 - Calls `resolveAxisConfig()` to merge static declarations with `getAxisConfig()` output
 - Constructs and returns a ready-to-render Layer
 
@@ -111,7 +111,7 @@ Detailed breakdown of each source module. For the high-level picture see [ARCHIT
 - Spatial quantity kinds: dynamic (`x` ← `xData` name, `y` ← `yData` name)
 - Color axis quantity kind ← `vData` name; colorscale from quantity kind registry
 - Point size: 4.0 px
-- Uses `%%color0%%` shader placeholder for the dynamic color axis quantity kind
+- Uses `nameMap` to bind the dynamic color axis quantity kind to fixed shader names (`color_data`, `colorscale`, `color_range`, `color_scale_type`)
 
 **Vertex shader:** Normalises `(x, y)` from data coordinates to clip space `[-1, 1]` using `xDomain`/`yDomain` uniforms; passes the color attribute (`vData`) as a varying.
 
