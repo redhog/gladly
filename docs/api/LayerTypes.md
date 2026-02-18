@@ -87,7 +87,7 @@ const heatDotsType = new LayerType({
 
   // Declare color slot "v"; null = quantity kind resolved per-layer
   colorAxisQuantityKinds: { v: null },
-  getColorAxisQuantityKinds: function(parameters) {
+  getColorAxisQuantityKinds: function(parameters, data) {
     return { v: parameters.vData }
   },
 
@@ -178,7 +178,7 @@ const filteredDotsType = new LayerType({
   name: "filtered_dots",
   axisQuantityKinds: { x: "meters", y: "meters" },
   filterAxisQuantityKinds: { z: null },
-  getFilterAxisQuantityKinds: function(parameters) {
+  getFilterAxisQuantityKinds: function(parameters, data) {
     return { z: parameters.zData }
   },
 
@@ -246,11 +246,11 @@ plot.update({
 const filteredScatterType = new LayerType({
   name: "filtered_scatter",
   axisQuantityKinds: { x: null, y: null },
-  getAxisQuantityKinds:        (p) => ({ x: p.xData, y: p.yData }),
+  getAxisQuantityKinds:        (parameters, data) => ({ x: parameters.xData, y: parameters.yData }),
   colorAxisQuantityKinds: { v: null },
-  getColorAxisQuantityKinds:   (p) => ({ v: p.vData }),
+  getColorAxisQuantityKinds:   (parameters, data) => ({ v: parameters.vData }),
   filterAxisQuantityKinds: { z: null },
-  getFilterAxisQuantityKinds:  (p) => ({ z: p.zData }),
+  getFilterAxisQuantityKinds:  (parameters, data) => ({ z: parameters.zData }),
 
   vert: `
     precision mediump float;
@@ -440,7 +440,7 @@ new LayerType({ name,
 | `getFilterAxisQuantityKinds` | function | `(parameters, data) => { [slot]: string }` — required when any kind is `null` |
 | `vert` | string | GLSL vertex shader |
 | `frag` | string | GLSL fragment shader |
-| `schema` | function | `() => JSONSchema` |
+| `schema` | function | `(data) => JSONSchema` |
 | `createLayer` | function | `(parameters, data) => layerConfig` — see [createLayer Return Value](#createlayer-return-value) |
 
 **Automatically provided shader uniforms:**
