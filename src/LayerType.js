@@ -48,7 +48,11 @@ export class LayerType {
     const u = (internalName) => ({ [shaderName(internalName)]: regl.prop(internalName) })
 
     const attributes = Object.fromEntries(
-      Object.entries(layer.attributes).map(([key, buffer]) => [shaderName(key), { buffer }])
+      Object.entries(layer.attributes).map(([key, buffer]) => {
+        const divisor = layer.attributeDivisors[key]
+        const attrObj = divisor !== undefined ? { buffer, divisor } : { buffer }
+        return [shaderName(key), attrObj]
+      })
     )
 
     const uniforms = {
@@ -78,13 +82,17 @@ export class LayerType {
     const injectInto = (src, helpers) => {
       const injected = helpers.filter(Boolean).join('\n')
       if (!injected) return src
+      const versionRe = /^[ \t]*#version[^\n]*\n?/
+      const versionMatch = src.match(versionRe)
+      const version = versionMatch ? versionMatch[0] : ''
+      const rest = version ? src.slice(version.length) : src
       const precisionRe = /^\s*precision\s+\S+\s+\S+\s*;\s*$/mg
-      const precisions = src.match(precisionRe) ?? []
-      const body = src.replace(precisionRe, '')
-      return precisions.join('\n') + '\n' + injected + '\n' + body
+      const precisions = rest.match(precisionRe) ?? []
+      const body = rest.replace(precisionRe, '')
+      return version + precisions.join('\n') + '\n' + injected + '\n' + body
     }
 
-    return regl({
+    const drawConfig = {
       vert: injectInto(this.vert, [spatialGlsl, colorGlsl, filterGlsl]),
       frag: injectInto(this.frag, [colorGlsl, filterGlsl]),
       attributes,
@@ -93,7 +101,13 @@ export class LayerType {
       primitive: layer.primitive,
       lineWidth: layer.lineWidth,
       count: regl.prop("count")
-    })
+    }
+
+    if (layer.instanceCount !== null) {
+      drawConfig.instances = regl.prop("instances")
+    }
+
+    return regl(drawConfig)
   }
 
   schema(data) {
@@ -142,6 +156,8 @@ export class LayerType {
       lineWidth: gpuConfig.lineWidth ?? 1,
       primitive: gpuConfig.primitive ?? "points",
       vertexCount: gpuConfig.vertexCount ?? null,
+      instanceCount: gpuConfig.instanceCount ?? null,
+      attributeDivisors: gpuConfig.attributeDivisors ?? {},
       xAxis: axisConfig.xAxis,
       yAxis: axisConfig.yAxis,
       xAxisQuantityKind: axisConfig.xAxisQuantityKind,

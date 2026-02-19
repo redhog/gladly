@@ -1,5 +1,5 @@
 export class Layer {
-  constructor({ type, attributes, uniforms, nameMap = {}, domains = {}, lineWidth = 1, primitive = "points", xAxis = "xaxis_bottom", yAxis = "yaxis_left", xAxisQuantityKind, yAxisQuantityKind, colorAxes = [], filterAxes = [], vertexCount = null }) {
+  constructor({ type, attributes, uniforms, nameMap = {}, domains = {}, lineWidth = 1, primitive = "points", xAxis = "xaxis_bottom", yAxis = "yaxis_left", xAxisQuantityKind, yAxisQuantityKind, colorAxes = [], filterAxes = [], vertexCount = null, instanceCount = null, attributeDivisors = {} }) {
     // Validate that all attributes are typed arrays
     for (const [key, value] of Object.entries(attributes)) {
       if (!(value instanceof Float32Array)) {
@@ -37,5 +37,7 @@ export class Layer {
     // filterAxes: string[] — quantity kinds of filter axes; attribute named by quantityKind holds the data
     this.filterAxes = filterAxes
     this.vertexCount = vertexCount
+    this.instanceCount = instanceCount
+    this.attributeDivisors = attributeDivisors
   }
 }

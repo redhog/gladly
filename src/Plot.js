@@ -178,7 +178,7 @@ export class Plot {
   _initialize() {
     const { layers = [], axes = {} } = this.currentConfig
 
-    this.regl = reglInit({ canvas: this.canvas })
+    this.regl = reglInit({ canvas: this.canvas, extensions: ['ANGLE_instanced_arrays'] })
 
     this.layers = []
 
@@ -547,13 +547,19 @@ export class Plot {
 
       for (const layer of layersUsingAxis) {
         const isXAxis = layer.xAxis === axis
-        const dataArray = isXAxis ? layer.attributes.x : layer.attributes.y
-        if (!dataArray) continue
-
-        for (let i = 0; i < dataArray.length; i++) {
-          const val = dataArray[i]
-          if (val < min) min = val
-          if (val > max) max = val
+        const qk = isXAxis ? layer.xAxisQuantityKind : layer.yAxisQuantityKind
+        if (layer.domains[qk] !== undefined) {
+          const [dMin, dMax] = layer.domains[qk]
+          if (dMin < min) min = dMin
+          if (dMax > max) max = dMax
+        } else {
+          const dataArray = isXAxis ? layer.attributes.x : layer.attributes.y
+          if (!dataArray) continue
+          for (let i = 0; i < dataArray.length; i++) {
+            const val = dataArray[i]
+            if (val < min) min = val
+            if (val > max) max = val
+          }
         }
       }
 
@@ -584,11 +590,17 @@ export class Plot {
       for (const layer of this.layers) {
         for (const qk of layer.filterAxes) {
           if (qk !== quantityKind) continue
-          const data = layer.attributes[qk]
-          if (!data) continue
-          for (let i = 0; i < data.length; i++) {
-            if (data[i] < extMin) extMin = data[i]
-            if (data[i] > extMax) extMax = data[i]
+          if (layer.domains[qk] !== undefined) {
+            const [dMin, dMax] = layer.domains[qk]
+            if (dMin < extMin) extMin = dMin
+            if (dMax > extMax) extMax = dMax
+          } else {
+            const data = layer.attributes[qk]
+            if (!data) continue
+            for (let i = 0; i < data.length; i++) {
+              if (data[i] < extMin) extMin = data[i]
+              if (data[i] > extMax) extMax = data[i]
+            }
           }
         }
       }
@@ -940,6 +952,10 @@ export class Plot {
         yScaleType: yIsLog ? 1.0 : 0.0,
         viewport: viewport,
         count: layer.vertexCount ?? layer.attributes.x?.length ?? 0
+      }
+
+      if (layer.instanceCount !== null) {
+        props.instances = layer.instanceCount
       }
 
       // Add color axis uniforms, keyed by quantity kind

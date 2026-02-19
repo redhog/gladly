@@ -492,6 +492,130 @@ void main() {
 
 ---
 
+## Instanced Rendering
+
+Use instanced rendering when a single data point needs to emit multiple vertices (e.g. a rectangle is 6 vertices) without a CPU loop to expand the geometry.
+
+The pattern uses two types of attributes:
+- **Per-vertex** (`divisor 0`, default): advance once per vertex. Store shared vertex-local geometry (e.g. quad corner coordinates).
+- **Per-instance** (`divisor 1`): advance once per instance (data point). Store per-rect data (x, top, bottom, neighbors).
+
+The GPU executes `vertexCount` vertices × `instanceCount` instances. Each vertex shader invocation sees the current per-vertex attribute *and* the current per-instance attributes for its instance.
+
+**Neighbor arrays** can be built without explicit JS loops using `TypedArray.set()`:
+
+```javascript
+const xPrev = new Float32Array(n)
+xPrev.set(x.subarray(0, n - 1), 1)   // xPrev[1..n-1] = x[0..n-2]
+xPrev[0] = n > 1 ? 2 * x[0] - x[1] : x[0]  // mirror boundary
+
+const xNext = new Float32Array(n)
+xNext.set(x.subarray(1), 0)           // xNext[0..n-2] = x[1..n-1]
+xNext[n - 1] = n > 1 ? 2 * x[n - 1] - x[n - 2] : x[n - 1]
+```
+
+### Example: rectangle layer
+
+```javascript
+// Per-vertex quad corner coordinates (two CCW triangles: BL-BR-TR, BL-TR-TL)
+const QUAD_CX = new Float32Array([0, 1, 1, 0, 1, 0])
+const QUAD_CY = new Float32Array([0, 0, 1, 0, 1, 1])
+
+const rectLayerType = new LayerType({
+  name: "rects",
+  xAxis: "xaxis_bottom",
+  yAxis: "yaxis_left",
+
+  getAxisConfig: (params) => ({
+    xAxis: params.xAxis,
+    xAxisQuantityKind: params.xData,
+    yAxis: params.yAxis,
+    yAxisQuantityKind: params.yTopData,
+  }),
+
+  vert: `
+    precision mediump float;
+    attribute float cx;    // per-vertex: quad corner x (0 or 1)
+    attribute float cy;    // per-vertex: quad corner y (0 or 1)
+    attribute float x;     // per-instance: rect center
+    attribute float xPrev; // per-instance: previous center (mirror at boundary)
+    attribute float xNext; // per-instance: next center (mirror at boundary)
+    attribute float top;   // per-instance: top y
+    attribute float bot;   // per-instance: bottom y
+    uniform float uE;
+    uniform vec2 xDomain, yDomain;
+    uniform float xScaleType, yScaleType;
+
+    void main() {
+      float halfLeft  = (x - xPrev) / 2.0;
+      float halfRight = (xNext - x) / 2.0;
+      // Cap: if one side exceeds e, use the other side (simultaneous, using originals).
+      float hl = halfLeft  > uE ? halfRight : halfLeft;
+      float hr = halfRight > uE ? halfLeft  : halfRight;
+
+      float xPos = cx > 0.5 ? x + hr : x - hl;
+      float yPos = cy > 0.5 ? top : bot;
+
+      float nx = normalize_axis(xPos, xDomain, xScaleType);
+      float ny = normalize_axis(yPos, yDomain, yScaleType);
+      gl_Position = vec4(nx * 2.0 - 1.0, ny * 2.0 - 1.0, 0.0, 1.0);
+    }
+  `,
+
+  frag: `
+    precision mediump float;
+    void main() { gl_FragColor = vec4(0.2, 0.5, 0.8, 1.0); }
+  `,
+
+  schema: (data) => ({ /* ... */ }),
+
+  createLayer: function(params, data) {
+    const { xData, yTopData, yBottomData, e = Infinity } = params
+    const x = data[xData], top = data[yTopData], bot = data[yBottomData]
+    const n = x.length
+
+    const xPrev = new Float32Array(n)
+    xPrev.set(x.subarray(0, n - 1), 1)
+    xPrev[0] = n > 1 ? 2 * x[0] - x[1] : x[0]
+
+    const xNext = new Float32Array(n)
+    xNext.set(x.subarray(1), 0)
+    xNext[n - 1] = n > 1 ? 2 * x[n - 1] - x[n - 2] : x[n - 1]
+
+    const xMin   = x.reduce((a, v) => Math.min(a, v), Infinity)
+    const xMax   = x.reduce((a, v) => Math.max(a, v), -Infinity)
+    const topMin = top.reduce((a, v) => Math.min(a, v), Infinity)
+    const topMax = top.reduce((a, v) => Math.max(a, v), -Infinity)
+    const botMin = bot.reduce((a, v) => Math.min(a, v), Infinity)
+    const botMax = bot.reduce((a, v) => Math.max(a, v), -Infinity)
+
+    return [{
+      attributes: {
+        cx: QUAD_CX, cy: QUAD_CY,   // per-vertex
+        x, xPrev, xNext, top, bot,  // per-instance
+      },
+      attributeDivisors: { x: 1, xPrev: 1, xNext: 1, top: 1, bot: 1 },
+      uniforms: { uE: e },
+      domains: {
+        [xData]:    [xMin, xMax],
+        [yTopData]: [Math.min(topMin, botMin), Math.max(topMax, botMax)],
+      },
+      primitive: "triangles",
+      vertexCount: 6,
+      instanceCount: n,
+    }]
+  },
+})
+```
+
+**Key points:**
+- `attributeDivisors` — maps attribute names to their divisor (1 = per-instance; 0 or absent = per-vertex)
+- `vertexCount: 6` — vertices per instance (the quad)
+- `instanceCount: n` — number of instances (data points)
+- `domains` — pre-computed ranges covering multiple source arrays (both `top` and `bottom` for the y axis), so auto-range doesn't need an attribute to scan
+
+---
+
 ## API Reference
 
 ### `LayerType` Constructor
@@ -519,7 +643,7 @@ new LayerType({ name,
 | `vert` | string | GLSL vertex shader |
 | `frag` | string | GLSL fragment shader |
 | `schema` | function | `(data) => JSONSchema` |
-| `createLayer` | function | `(parameters, data) => Array<{ attributes, uniforms, primitive?, vertexCount?, nameMap? }>` — GPU data only; each element becomes one `Layer` |
+| `createLayer` | function | `(parameters, data) => Array<{ attributes, uniforms, primitive?, vertexCount?, instanceCount?, attributeDivisors?, nameMap? }>` — GPU data only; each element becomes one `Layer` |
 
 **`getAxisConfig` return shape:**
 
@@ -590,14 +714,39 @@ Each element in the array:
   // Keys are shader-visible names (or use nameMap to rename them).
   uniforms: {},
 
+  // Optional: pre-computed [min, max] domains keyed by quantity kind.
+  // When present for a quantity kind, auto-range skips scanning layer.attributes
+  // for that axis. Works for spatial axes (keyed by xAxisQuantityKind /
+  // yAxisQuantityKind), color axes, and filter axes.
+  // Useful when the layer's y-range spans multiple arrays (e.g. top + bottom),
+  // or for instanced layers where per-instance arrays don't match axis quantity kinds.
+  domains: {
+    myXQuantityKind: [xMin, xMax],
+    myYQuantityKind: [Math.min(topMin, botMin), Math.max(topMax, botMax)],
+  },
+
   // Optional: WebGL primitive type. Defaults to "points".
   // Set per element to use different primitives in different draw calls.
   // Valid values: "points", "lines", "line strip", "line loop",
   //               "triangles", "triangle strip", "triangle fan"
   primitive: "points",
 
-  // Optional: override vertex count (defaults to attributes.x.length)
+  // Optional: override vertex count (defaults to attributes.x.length).
+  // Required for instanced rendering (set to vertices per instance, e.g. 6 for a quad).
   vertexCount: null,
+
+  // Optional: number of instances for instanced rendering (ANGLE_instanced_arrays).
+  // When set, the draw call renders vertexCount vertices × instanceCount instances.
+  // Omit (or null) for non-instanced rendering.
+  instanceCount: null,
+
+  // Optional: per-attribute divisors for instanced rendering.
+  // A divisor of 1 means the attribute advances once per instance (per-instance data).
+  // A divisor of 0 (or absent) means it advances once per vertex (per-vertex data).
+  attributeDivisors: {
+    x: 1, xPrev: 1, xNext: 1, top: 1, bot: 1,  // per-instance
+    // cx, cy omitted → divisor 0 (per-vertex)
+  },
 
   // Optional: maps internal names → shader-visible names.
   // Applies to attribute keys, uniform keys, and all auto-generated uniform names
@@ -613,7 +762,7 @@ Each element in the array:
 }
 ```
 
-All `Float32Array` values are validated at layer construction time.
+All values in `attributes` must be `Float32Array` and are validated at layer construction time.
 
 ---
 
