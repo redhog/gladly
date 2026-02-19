@@ -405,6 +405,76 @@ Static declarations and `getAxisConfig` can be mixed freely. Dynamic values (non
 
 ---
 
+## Optional: Using `Data.wrap` for Multiple Data Formats
+
+> **This is entirely optional.** Nothing in the plotting framework requires it. If your layer type always receives a flat `{ column: Float32Array }` object, just read it directly. `Data.wrap` is a convenience for layer types that want to support richer data shapes.
+
+The built-in `scatter` layer calls `Data.wrap(data)` in both `createLayer` and `getAxisConfig` so that it accepts plain flat objects, per-column rich objects, and the columnar format (see [`Data`](Reference.md#data) for format details). Custom layer types can do the same.
+
+**Pattern:** replace `data[col]` with `d.getData(col)`, and derive quantity kinds from the data rather than hardcoding them:
+
+```javascript
+import { LayerType, registerLayerType, Data, AXES } from './src/index.js'
+
+const myLayerType = new LayerType({
+  name: "my_layer",
+
+  getAxisConfig: function(parameters, data) {
+    const d = Data.wrap(data)
+    const { xData, yData, vData, xAxis, yAxis } = parameters
+    return {
+      xAxis,
+      xAxisQuantityKind: d.getQuantityKind(xData) ?? xData,
+      yAxis,
+      yAxisQuantityKind: d.getQuantityKind(yData) ?? yData,
+      colorAxisQuantityKinds: [d.getQuantityKind(vData) ?? vData],
+    }
+  },
+
+  // ... vert, frag, schema ...
+
+  createLayer: function(parameters, data) {
+    const d = Data.wrap(data)
+    const { xData, yData, vData } = parameters
+
+    // Resolve the quantity kind: use data-provided kind if present, else column name
+    const vQK = d.getQuantityKind(vData) ?? vData
+
+    const x = d.getData(xData)
+    const y = d.getData(yData)
+    const v = d.getData(vData)
+
+    // Pass any pre-computed domain from the data, keyed by quantity kind
+    const domains = {}
+    const vDomain = d.getDomain(vData)
+    if (vDomain) domains[vQK] = vDomain
+
+    return [{
+      attributes: { x, y, [vQK]: v },
+      uniforms: {},
+      domains,
+      nameMap: {
+        [vQK]:                      'color_data',
+        [`colorscale_${vQK}`]:      'colorscale',
+        [`color_range_${vQK}`]:     'color_range',
+        [`color_scale_type_${vQK}`]:'color_scale_type',
+      },
+    }]
+  }
+})
+```
+
+**What this enables:**
+
+- **Simple flat objects** (`{ x: Float32Array, ... }`) continue to work exactly as before.
+- **Per-column metadata** (`{ x: { data: Float32Array, quantity_kind: "distance_m" } }`) allows the data to carry its own axis identities.
+- **Columnar format** (`{ data: {...}, quantity_kinds: {...}, domains: {...} }`) keeps arrays and metadata in separate sub-objects.
+- **Custom `Data`-compatible classes** — `Data.wrap` is a no-op for any object that already has `columns` and `getData` methods, so your own domain objects work too.
+
+When quantity kinds come from the data, the axis key in `config.axes` should use the quantity kind string rather than the column name. For example, if `vData: "myCol"` but `getQuantityKind("myCol")` returns `"temperature_K"`, the color axis is registered as `temperature_K`, so the plot config uses `axes: { temperature_K: { colorscale: "plasma" } }`.
+
+---
+
 ## Color Axes — Concepts
 
 | Term | Description |

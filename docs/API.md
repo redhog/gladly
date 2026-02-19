@@ -77,19 +77,27 @@ See [Configuring Plots](api/PlotConfiguration.md) for the full config format.
 
 ### Data Format
 
-All data values must be `Float32Array` for direct GPU memory mapping:
+The plotting framework is **agnostic about the shape of the `data` object** passed to `plot.update()`. It stores it and passes it unchanged to each layer type's `createLayer` and `getAxisConfig` functions. What those functions do with it is entirely up to the layer type author.
+
+The only firm requirement is that every value placed in the `attributes` map returned from `createLayer` must be a `Float32Array` (validated at layer construction time, since GPU buffers require typed arrays):
 
 ```javascript
-// Correct
+// Correct — flat object of Float32Arrays (simplest format)
 const data = {
   x: new Float32Array([1, 2, 3]),
   y: new Float32Array([4, 5, 6]),
   v: new Float32Array([0.1, 0.5, 0.9])
 }
 
-// Incorrect — will throw
+// Incorrect — plain arrays will throw when createLayer puts them in attributes
 const bad = { x: [1, 2, 3], y: [4, 5, 6] }
 ```
+
+#### Optional: the `Data` class
+
+For convenience, Gladly provides an optional `Data` class that normalises several common plain-object shapes — including per-column metadata (quantity kinds, pre-computed domains) and a columnar format separating arrays from their metadata — into a single consistent interface. The built-in layer types use it internally; custom layer types may adopt it voluntarily.
+
+The framework itself never calls `Data`. See [`Data`](api/Reference.md#data) in the API reference for the full interface and all supported formats.
 
 ### Config Structure
 
@@ -123,4 +131,4 @@ plot.update({
 - **[Colorbars and Filterbars](api/ColorbarsAndFilterbars.md)** — floating color/filter widgets, auto-creation via config, manual placement
 - **[Writing Layer Types](api/LayerTypes.md)** — `LayerType` constructor, shaders, color axes, filter axes, GLSL helpers, constants
 - **[Built-in Layer Types](api/BuiltInLayerTypes.md)** — `scatter`, `colorbar`, `filterbar` layer type reference
-- **[API Reference](api/Reference.md)** — `Plot`, `registerLayerType`, `getLayerType` and other public API entries
+- **[API Reference](api/Reference.md)** — `Plot`, `registerLayerType`, `getLayerType`, `Data` and other public API entries

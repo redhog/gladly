@@ -1,6 +1,7 @@
 import { LayerType } from "../../src/LayerType.js"
 import { AXES } from "../../src/AxisRegistry.js"
 import { registerLayerType } from "../../src/LayerTypeRegistry.js"
+import { Data } from "../../src/Data.js"
 
 // Per-vertex quad corner coordinates for two CCW triangles: BL-BR-TR, BL-TR-TL
 const QUAD_CX = new Float32Array([0, 1, 1, 0, 1, 0])
@@ -11,13 +12,14 @@ export const rectLayerType = new LayerType({
   xAxis: "xaxis_bottom",
   yAxis: "yaxis_left",
 
-  getAxisConfig: function(params) {
+  getAxisConfig: function(params, data) {
+    const d = Data.wrap(data)
     return {
       xAxis: params.xAxis,
-      xAxisQuantityKind: params.xData,
+      xAxisQuantityKind: d.getQuantityKind(params.xData) ?? params.xData,
       yAxis: params.yAxis,
-      yAxisQuantityKind: params.yTopData,
-      colorAxisQuantityKinds: [params.vData],
+      yAxisQuantityKind: d.getQuantityKind(params.yTopData) ?? params.yTopData,
+      colorAxisQuantityKinds: [d.getQuantityKind(params.vData) ?? params.vData],
     }
   },
 
@@ -70,7 +72,7 @@ export const rectLayerType = new LayerType({
   `,
 
   schema: (data) => {
-    const dataProperties = data ? Object.keys(data) : []
+    const dataProperties = Data.wrap(data).columns()
     return {
       $schema: "https://json-schema.org/draft/2020-12/schema",
       type: "object",
@@ -88,17 +90,22 @@ export const rectLayerType = new LayerType({
   },
 
   createLayer: function(params, data) {
+    const d = Data.wrap(data)
     const { xData, yTopData, yBottomData, vData, e = Infinity } = params
 
-    const x   = data[xData]
-    const top = data[yTopData]
-    const bot = data[yBottomData]
-    const v   = data[vData]
+    const xQK = d.getQuantityKind(xData) ?? xData
+    const yQK = d.getQuantityKind(yTopData) ?? yTopData
+    const vQK = d.getQuantityKind(vData) ?? vData
 
-    if (!x)   throw new Error(`Data property '${xData}' not found`)
-    if (!top) throw new Error(`Data property '${yTopData}' not found`)
-    if (!bot) throw new Error(`Data property '${yBottomData}' not found`)
-    if (!v)   throw new Error(`Data property '${vData}' not found`)
+    const x   = d.getData(xData)
+    const top = d.getData(yTopData)
+    const bot = d.getData(yBottomData)
+    const v   = d.getData(vData)
+
+    if (!x)   throw new Error(`Data column '${xData}' not found`)
+    if (!top) throw new Error(`Data column '${yTopData}' not found`)
+    if (!bot) throw new Error(`Data column '${yBottomData}' not found`)
+    if (!v)   throw new Error(`Data column '${vData}' not found`)
 
     const n = x.length
 
@@ -128,19 +135,19 @@ export const rectLayerType = new LayerType({
         xNext,        // per-instance (divisor 1)
         top,          // per-instance (divisor 1)
         bot,          // per-instance (divisor 1)
-        [vData]: v,   // per-instance color data, keyed by quantity kind (divisor 1)
+        [vQK]: v,     // per-instance color data, keyed by quantity kind (divisor 1)
       },
-      attributeDivisors: { x: 1, xPrev: 1, xNext: 1, top: 1, bot: 1, [vData]: 1 },
+      attributeDivisors: { x: 1, xPrev: 1, xNext: 1, top: 1, bot: 1, [vQK]: 1 },
       uniforms: { uE: e },
       nameMap: {
-        [vData]:                      'color_data',
-        [`colorscale_${vData}`]:      'colorscale',
-        [`color_range_${vData}`]:     'color_range',
-        [`color_scale_type_${vData}`]:'color_scale_type',
+        [vQK]:                        'color_data',
+        [`colorscale_${vQK}`]:        'colorscale',
+        [`color_range_${vQK}`]:       'color_range',
+        [`color_scale_type_${vQK}`]:  'color_scale_type',
       },
       domains: {
-        [xData]:    [xMin, xMax],
-        [yTopData]: [Math.min(topMin, botMin), Math.max(topMax, botMax)],
+        [xQK]: [xMin, xMax],
+        [yQK]: [Math.min(topMin, botMin), Math.max(topMax, botMax)],
       },
       primitive: "triangles",
       vertexCount: 6,

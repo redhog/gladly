@@ -18,7 +18,15 @@ const gappedX = new Float32Array(barX)
 const gapStart = Math.floor(n * 0.25)
 for (let i = gapStart; i < n; i++) gappedX[i] += 200
 
-const data = { barX: gappedX, barTop, barBottom, barColor }
+const data = {
+  data: { barX: gappedX, barTop, barBottom, barColor },
+  quantity_kinds: {
+    barX: "distance_m",
+    barTop: "voltage_V",
+    barBottom: "voltage_V",
+    barColor: "reflectance_au",
+  },
+}
 
 {
   const panel = document.createElement('div')
@@ -47,7 +55,7 @@ const plotConfig = {
     { rects: { xData: "barX", yTopData: "barTop", yBottomData: "barBottom", vData: "barColor", e: 10 } }
   ],
   axes: {
-    barColor: { colorbar: "vertical", colorscale: "viridis" }
+    reflectance_au: { colorbar: "vertical", colorscale: "viridis" }
   }
 }
 

@@ -1,18 +1,20 @@
 import { LayerType } from "./LayerType.js"
 import { AXES } from "./AxisRegistry.js"
 import { registerLayerType } from "./LayerTypeRegistry.js"
+import { Data } from "./Data.js"
 
 export const scatterLayerType = new LayerType({
   name: "scatter",
 
-  getAxisConfig: function(parameters) {
+  getAxisConfig: function(parameters, data) {
+    const d = Data.wrap(data)
     const { xData, yData, vData, xAxis, yAxis } = parameters
     return {
       xAxis,
-      xAxisQuantityKind: xData,
+      xAxisQuantityKind: d.getQuantityKind(xData) ?? xData,
       yAxis,
-      yAxisQuantityKind: yData,
-      colorAxisQuantityKinds: [vData],
+      yAxisQuantityKind: d.getQuantityKind(yData) ?? yData,
+      colorAxisQuantityKinds: [d.getQuantityKind(vData) ?? vData],
     }
   },
 
@@ -45,7 +47,7 @@ export const scatterLayerType = new LayerType({
     }
   `,
   schema: (data) => {
-    const dataProperties = data ? Object.keys(data) : []
+    const dataProperties = Data.wrap(data).columns()
     return {
       $schema: "https://json-schema.org/draft/2020-12/schema",
       type: "object",
@@ -82,24 +84,38 @@ export const scatterLayerType = new LayerType({
     }
   },
   createLayer: function(parameters, data) {
+    const d = Data.wrap(data)
     const { xData, yData, vData } = parameters
 
-    const x = data[xData]
-    const y = data[yData]
-    const v = data[vData]
+    const xQK = d.getQuantityKind(xData) ?? xData
+    const yQK = d.getQuantityKind(yData) ?? yData
+    const vQK = d.getQuantityKind(vData) ?? vData
 
-    if (!x) throw new Error(`Data property '${xData}' not found in data object`)
-    if (!y) throw new Error(`Data property '${yData}' not found in data object`)
-    if (!v) throw new Error(`Data property '${vData}' not found in data object`)
+    const x = d.getData(xData)
+    const y = d.getData(yData)
+    const v = d.getData(vData)
+
+    if (!x) throw new Error(`Data column '${xData}' not found`)
+    if (!y) throw new Error(`Data column '${yData}' not found`)
+    if (!v) throw new Error(`Data column '${vData}' not found`)
+
+    const domains = {}
+    const xDomain = d.getDomain(xData)
+    const yDomain = d.getDomain(yData)
+    const vDomain = d.getDomain(vData)
+    if (xDomain) domains[xQK] = xDomain
+    if (yDomain) domains[yQK] = yDomain
+    if (vDomain) domains[vQK] = vDomain
 
     return [{
-      attributes: { x, y, [vData]: v },
+      attributes: { x, y, [vQK]: v },
       uniforms: {},
+      domains,
       nameMap: {
-        [vData]: 'color_data',
-        [`colorscale_${vData}`]: 'colorscale',
-        [`color_range_${vData}`]: 'color_range',
-        [`color_scale_type_${vData}`]: 'color_scale_type',
+        [vQK]: 'color_data',
+        [`colorscale_${vQK}`]: 'colorscale',
+        [`color_range_${vQK}`]: 'color_range',
+        [`color_scale_type_${vQK}`]: 'color_scale_type',
       },
     }]
   }

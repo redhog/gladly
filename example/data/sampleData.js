@@ -35,10 +35,10 @@ for (let i = 0; i < N; i++) {
 // Time-series dataset for multi-line demo
 // Three voltage channels over 10 seconds; quality_flag marks bad regions
 const M = 300
-const time_s      = new Float32Array(M)
-const ch1_V       = new Float32Array(M)
-const ch2_V       = new Float32Array(M)
-const ch3_V       = new Float32Array(M)
+const time_s       = new Float32Array(M)
+const ch1_V        = new Float32Array(M)
+const ch2_V        = new Float32Array(M)
+const ch3_V        = new Float32Array(M)
 const quality_flag = new Float32Array(M)
 for (let i = 0; i < M; i++) {
   const t = (i / (M - 1)) * 10
@@ -50,4 +50,24 @@ for (let i = 0; i < M; i++) {
 }
 
 // Export data object (shared across all plots)
-export const data = { x1, y1, v1, f1, x2, y2, v2, f2, time_s, ch1_V, ch2_V, ch3_V, quality_flag }
+// quantity_kinds align with the registered axis quantity kinds so that:
+//  - scatter layer auto-picks the same axes as scatter-mv / scatter-sa
+//  - color and filter axes are consistently labelled across layer types
+export const data = {
+  data: { x1, y1, v1, f1, x2, y2, v2, f2, time_s, ch1_V, ch2_V, ch3_V, quality_flag },
+  quantity_kinds: {
+    x1: "distance_m",
+    y1: "voltage_V",
+    v1: "reflectance_au",
+    f1: "incidence_angle_rad",
+    x2: "distance_m",
+    y2: "current_A",
+    v2: "temperature_K",
+    f2: "velocity_ms",
+    // voltage channels — same quantity kind so they share an axis when used together
+    ch1_V: "voltage_V",
+    ch2_V: "voltage_V",
+    ch3_V: "voltage_V",
+    // time_s and quality_flag have no registered quantity kind; column name is used as fallback
+  },
+}

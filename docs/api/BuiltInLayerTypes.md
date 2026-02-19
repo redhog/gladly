@@ -22,12 +22,13 @@ A scatter plot that renders points coloured by a per-point value mapped through 
 
 **Behavior:**
 - Point size: 4.0 px
-- Spatial quantity kinds derived from `xData`/`yData` property names
-- Color axis quantity kind derived from `vData` property name
-- Colorscale: from `config.axes[vData].colorscale`, or the quantity kind registry; defaults to `"viridis"` if registered
+- Uses [`Data.wrap`](Reference.md#data) internally, so it accepts flat `{ col: Float32Array }` objects, per-column rich objects, and the columnar format — any of the three formats described in the `Data` reference
+- Spatial quantity kinds: taken from the data's `quantity_kind` metadata for the named column if present; otherwise the column name itself
+- Color axis quantity kind: same resolution for `vData`; the key in `config.axes` must match the resolved quantity kind
+- Colorscale: from `config.axes[quantityKind].colorscale`, or the quantity kind registry
 - Supports log scales on all axes via `config.axes[...].scale: "log"`
 
-**Example:**
+**Example (simple flat format):**
 
 ```javascript
 plot.update({
@@ -38,6 +39,28 @@ plot.update({
     ],
     axes: {
       temperature: { min: 0, max: 100, colorscale: "plasma" }
+    }
+  }
+})
+```
+
+**Example (columnar format with quantity kinds):**
+
+When the data carries `quantity_kinds`, the resolved quantity kind — not the column name — is used as the axis key in `config.axes`:
+
+```javascript
+plot.update({
+  data: {
+    data: { x, y, temperature },
+    quantity_kinds: { x: "distance_m", y: "voltage_V", temperature: "temperature_K" }
+  },
+  config: {
+    layers: [
+      { scatter: { xData: "x", yData: "y", vData: "temperature" } }
+    ],
+    axes: {
+      // key is the resolved quantity kind, not the column name "temperature"
+      temperature_K: { min: 0, max: 100, colorscale: "plasma" }
     }
   }
 })

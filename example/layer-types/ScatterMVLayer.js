@@ -1,4 +1,4 @@
-import { LayerType, registerLayerType } from "../../src/index.js"
+import { LayerType, registerLayerType, Data } from "../../src/index.js"
 
 /**
  * Scatter plot layer type for distance (x) vs voltage (y)
@@ -79,13 +79,14 @@ export const ScatterMVLayer = new LayerType({
     required: ["xData", "yData", "vData", "fData"]
   }),
   createLayer: function(parameters, data) {
+    const d = Data.wrap(data)
     const { xData, yData, vData, fData } = parameters
     return [{
       attributes: {
-        x: data[xData],
-        y: data[yData],
-        reflectance_au: data[vData],
-        incidence_angle_rad: data[fData],
+        x: d.getData(xData),
+        y: d.getData(yData),
+        reflectance_au: d.getData(vData),
+        incidence_angle_rad: d.getData(fData),
       },
       uniforms: {},
     }]

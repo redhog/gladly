@@ -336,6 +336,90 @@ Returns an array of all registered quantity kind name strings.
 
 ---
 
+## `Data`
+
+A utility class that normalises plain JavaScript objects of various shapes into a consistent columnar interface.
+
+> **This class is completely optional.** The plotting framework itself never inspects or requires any particular shape for the `data` object passed to `plot.update()` — it is passed through unchanged to each layer type's `createLayer` and `getAxisConfig` functions. Only the built-in layer types call `Data.wrap`, and custom layer type authors may adopt it voluntarily for the same benefit.
+
+### Supported plain-object formats
+
+**Simple** — a flat object of `Float32Array` values (no metadata):
+
+```javascript
+{
+  x: new Float32Array([...]),
+  y: new Float32Array([...]),
+  v: new Float32Array([...])
+}
+```
+
+**Per-column rich** — each column is an object with a `data` array and optional metadata:
+
+```javascript
+{
+  x: { data: new Float32Array([...]), quantity_kind: "distance_m", domain: [0, 10] },
+  y: { data: new Float32Array([...]), quantity_kind: "voltage_V" },
+  v: { data: new Float32Array([...]), quantity_kind: "temperature_K", domain: { min: 0, max: 100 } }
+}
+```
+
+**Columnar** — data arrays, quantity kinds, and domains kept in parallel sub-objects:
+
+```javascript
+{
+  data: {
+    x: new Float32Array([...]),
+    y: new Float32Array([...]),
+    v: new Float32Array([...])
+  },
+  quantity_kinds: {           // optional — any entry can be omitted
+    x: "distance_m",
+    y: "voltage_V",
+    v: "temperature_K"
+  },
+  domains: {                  // optional — any entry can be omitted
+    x: [0, 10],               // [min, max] array, or
+    v: { min: 0, max: 100 }   // {min, max} object — both forms accepted
+  }
+}
+```
+
+In all formats, `quantity_kind` / `quantity_kinds` and `domain` / `domains` are fully optional on any individual column. Missing quantity kinds fall back to the column name; missing domains are auto-calculated from the data array.
+
+### `Data.wrap(data)`
+
+```javascript
+import { Data } from './src/index.js'
+const d = Data.wrap(rawData)
+```
+
+The primary entry point. Returns `data` **unchanged** if it already has `columns` and `getData` methods (duck-typing — any conforming class works, not just `Data` itself). Otherwise wraps the plain object, auto-detecting which format it uses.
+
+### `data.columns()`
+
+Returns `string[]` — the list of column names.
+
+### `data.getData(col)`
+
+Returns the `Float32Array` for column `col`, or `undefined` if the column does not exist.
+
+### `data.getQuantityKind(col)`
+
+Returns the quantity kind string for column `col`, or `undefined` if none was specified. Layer type authors typically fall back to the column name when undefined:
+
+```javascript
+const qk = d.getQuantityKind(params.vData) ?? params.vData
+```
+
+When a quantity kind is present, it is used as the axis identity (the key in `config.axes`) instead of the raw column name. This means two datasets that call the same physical quantity the same thing will automatically share axes.
+
+### `data.getDomain(col)`
+
+Returns `[min, max]` for column `col`, or `undefined` if no domain was specified. When returned, the built-in layers pass it as the `domains` entry in the `createLayer` return value, which tells the plot to skip its own min/max scan of the data array for that axis.
+
+---
+
 ## Built-in Layer Types
 
 Gladly ships three pre-registered layer types — `scatter`, `colorbar`, and `filterbar`. See [Built-in Layer Types](BuiltInLayerTypes.md) for full documentation.

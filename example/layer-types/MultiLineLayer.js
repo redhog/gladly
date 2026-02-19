@@ -1,6 +1,7 @@
 import { LayerType } from "../../src/LayerType.js"
 import { registerLayerType } from "../../src/LayerTypeRegistry.js"
 import { AXES } from "../../src/AxisRegistry.js"
+import { Data } from "../../src/Data.js"
 
 export const multiLineLayerType = new LayerType({
   name: "multi-line",
@@ -9,11 +10,12 @@ export const multiLineLayerType = new LayerType({
   yAxis: "yaxis_left",
   colorAxisQuantityKinds: ["line_index"],
 
-  getAxisConfig: function(parameters) {
+  getAxisConfig: function(parameters, data) {
+    const d = Data.wrap(data)
     const { xData, xAxis = "xaxis_bottom", yAxis = "yaxis_left" } = parameters
     return {
       xAxis,
-      xAxisQuantityKind: xData,
+      xAxisQuantityKind: d.getQuantityKind(xData) ?? xData,
       yAxis,
     }
   },
@@ -57,7 +59,7 @@ export const multiLineLayerType = new LayerType({
   `,
 
   schema: (data) => {
-    const dataProperties = data ? Object.keys(data) : []
+    const dataProperties = Data.wrap(data).columns()
     return {
       type: "object",
       title: "Multi-line plot",
@@ -101,6 +103,7 @@ export const multiLineLayerType = new LayerType({
   },
 
   createLayer: function(parameters, data) {
+    const d = Data.wrap(data)
     const {
       xData,
       filterData,
@@ -108,16 +111,16 @@ export const multiLineLayerType = new LayerType({
       badColor = [0.5, 0.5, 0.5, 1.0],
     } = parameters
 
-    const xArr = data[xData]
-    if (!xArr) throw new Error(`Data property '${xData}' not found`)
-    const filterArr = filterData ? data[filterData] : null
+    const xArr = d.getData(xData)
+    if (!xArr) throw new Error(`Data column '${xData}' not found`)
+    const filterArr = filterData ? d.getData(filterData) : null
     const N = xArr.length
     const nSegs = N - 1
 
-    const yColumns = Object.keys(data).filter(k => k !== xData && k !== filterData)
+    const yColumns = d.columns().filter(k => k !== xData && k !== filterData)
 
     return yColumns.map((colName, idx) => {
-      const yArr = data[colName]
+      const yArr = d.getData(colName)
       const xs      = new Float32Array(nSegs * 2)
       const ys      = new Float32Array(nSegs * 2)
       const lineIdx = new Float32Array(nSegs * 2)
