@@ -47,7 +47,7 @@ const plotConfig = {
     { rects: { xData: "barX", yTopData: "barTop", yBottomData: "barBottom", vData: "barColor", e: 10 } }
   ],
   axes: {
-    barColor: { colorbar: "vertical" }
+    barColor: { colorbar: "vertical", colorscale: "viridis" }
   }
 }
 
