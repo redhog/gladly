@@ -1,6 +1,6 @@
 {
   "name": "gladly",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "description": "GPU-powered multi-axis plotting library with regl + d3",
   "type": "module",
 
