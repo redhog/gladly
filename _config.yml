@@ -1,0 +1,44 @@
+title: Gladly
+description: A lightweight, GPU-accelerated plotting library with a declarative API
+baseurl: /docs
+
+theme: minima
+
+plugins:
+  - jekyll-relative-links
+
+relative_links:
+  enabled: true
+  collections: false
+
+include:
+  - README.md
+
+exclude:
+  - node_modules
+  - src
+  - example
+  - dist-example
+  - .parcel-cache
+  - Gemfile.lock
+  - package.json
+  - package-lock.json
+  - CLAUDE.md
+
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: default
+  - scope:
+      path: "docs"
+    values:
+      permalink: /:basename/
+  - scope:
+      path: "docs/api"
+    values:
+      permalink: /api/:basename/
+  - scope:
+      path: "docs/architecture"
+    values:
+      permalink: /architecture/:basename/
