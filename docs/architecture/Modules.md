@@ -56,7 +56,7 @@ Detailed breakdown of each source module. For the high-level picture see [ARCHIT
   vert: string,        // GLSL vertex shader
   frag: string,        // GLSL fragment shader
   schema: (data) => JSONSchema,
-  createLayer: (parameters, data) => { attributes, uniforms, vertexCount? },
+  createLayer: (parameters, data) => Array<{ attributes, uniforms, primitive?, vertexCount?, nameMap? }>,
   getAxisConfig: (parameters, data) => axisConfig,  // optional dynamic resolver
 }
 ```
@@ -72,7 +72,7 @@ Detailed breakdown of each source module. For the high-level picture see [ARCHIT
 - Dynamically builds `attributes` and `uniforms` maps from the layer instance
 
 **`createLayer(parameters, data)`**
-- Calls the user-supplied factory to get `{ attributes, uniforms, vertexCount?, nameMap? }`
+- Calls the user-supplied factory to get an array of `{ attributes, uniforms, primitive?, vertexCount?, nameMap? }`
 - Calls `resolveAxisConfig()` to merge static declarations with `getAxisConfig()` output
 - Constructs and returns a ready-to-render Layer
 
@@ -247,7 +247,7 @@ Extends `Plot`. Overrides `render()` to read the current colorscale and domain f
 
 **Purpose:** `LayerType` that renders a gradient quad for a colorbar.
 
-Uses a triangle-strip primitive (`cx = [-1,1,-1,1]`, `cy = [-1,-1,1,1]`, `vertexCount = 4`) to fill the entire canvas with a gradient. Supports `orientation` parameter (`"horizontal"` or `"vertical"`).
+Uses a triangle-strip primitive (`cx = [-1,1,-1,1]`, `cy = [-1,-1,1,1]`, `primitive = "triangle strip"`, `vertexCount = 4`) to fill the entire canvas with a gradient. Supports `orientation` parameter (`"horizontal"` or `"vertical"`). The `primitive` is set on the object returned from `createLayer`, not on the `LayerType` itself.
 
 ---
 

@@ -74,10 +74,10 @@ const redDotsType = new LayerType({
 
   createLayer: function(parameters, data) {
     const { xData, yData } = parameters
-    return {
+    return [{
       attributes: { x: data[xData], y: data[yData] },
       uniforms: {},
-    }
+    }]
   }
 })
 
@@ -156,7 +156,7 @@ const heatDotsType = new LayerType({
 
   createLayer: function(parameters, data) {
     const { xData, yData, vData } = parameters
-    return {
+    return [{
       attributes: { x: data[xData], y: data[yData], [vData]: data[vData] },
       uniforms: {},
       nameMap: {
@@ -164,7 +164,7 @@ const heatDotsType = new LayerType({
         [`colorscale_${vData}`]: 'colorscale',
         [`color_range_${vData}`]: 'color_range',
       },
-    }
+    }]
   }
 })
 
@@ -237,14 +237,14 @@ const filteredDotsType = new LayerType({
 
   createLayer: function(parameters, data) {
     const { xData, yData, zData } = parameters
-    return {
+    return [{
       attributes: { x: data[xData], y: data[yData], [zData]: data[zData] },
       uniforms: {},
       nameMap: {
         [zData]: 'filter_data',
         [`filter_range_${zData}`]: 'filter_range',
       },
-    }
+    }]
   }
 })
 ```
@@ -318,7 +318,7 @@ const filteredScatterType = new LayerType({
 
   createLayer: function(parameters, data) {
     const { xData, yData, vData, zData } = parameters
-    return {
+    return [{
       attributes: {
         x: data[xData], y: data[yData],
         [vData]: data[vData],
@@ -332,7 +332,7 @@ const filteredScatterType = new LayerType({
         [zData]: 'filter_data',
         [`filter_range_${zData}`]: 'filter_range',
       },
-    }
+    }]
   }
 })
 ```
@@ -389,14 +389,14 @@ const fixedScatterType = new LayerType({
   schema: () => ({ /* ... */ }),
   createLayer: function(parameters, data) {
     const { xData, yData, vData, fData } = parameters
-    return {
+    return [{
       attributes: {
         x: data[xData], y: data[yData],
         temperature_K: data[vData],
         velocity_ms: data[fData],
       },
       uniforms: {},
-    }
+    }]
   }
 })
 ```
@@ -519,7 +519,7 @@ new LayerType({ name,
 | `vert` | string | GLSL vertex shader |
 | `frag` | string | GLSL fragment shader |
 | `schema` | function | `(data) => JSONSchema` |
-| `createLayer` | function | `(parameters, data) => { attributes, uniforms, vertexCount?, nameMap? }` — GPU data only |
+| `createLayer` | function | `(parameters, data) => Array<{ attributes, uniforms, primitive?, vertexCount?, nameMap? }>` — GPU data only; each element becomes one `Layer` |
 
 **`getAxisConfig` return shape:**
 
@@ -570,7 +570,9 @@ bool filter_in_range(vec4 range, float value)
 
 ### `createLayer` Return Value
 
-The object returned by your `createLayer` function:
+`createLayer` must return an **array** of GPU config objects. Each element becomes one rendered `Layer`. Returning multiple elements renders multiple draw calls from one layer spec (e.g. one per data series).
+
+Each element in the array:
 
 ```javascript
 {
@@ -587,6 +589,12 @@ The object returned by your `createLayer` function:
   // Layer-specific GPU uniforms (in addition to the auto-provided ones).
   // Keys are shader-visible names (or use nameMap to rename them).
   uniforms: {},
+
+  // Optional: WebGL primitive type. Defaults to "points".
+  // Set per element to use different primitives in different draw calls.
+  // Valid values: "points", "lines", "line strip", "line loop",
+  //               "triangles", "triangle strip", "triangle fan"
+  primitive: "points",
 
   // Optional: override vertex count (defaults to attributes.x.length)
   vertexCount: null,
