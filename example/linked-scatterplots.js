@@ -47,8 +47,7 @@ let plot1Config = {
     xaxis_bottom: { min: 0, max: 10 },
     yaxis_left: { min: 0, max: 5 },
     reflectance_au: { min: 0, max: 1, colorbar: "vertical" },
-    incidence_angle_rad: { min: -1.5, max: 1.5, filterbar: "horizontal" },
-    line_index: { colorbar: "vertical" }
+    incidence_angle_rad: { min: -1.5, max: 1.5 },
   }
 }
 let plot2Config = {
@@ -56,8 +55,8 @@ let plot2Config = {
     { "scatter-sa": { xData: "x2", yData: "y2", vData: "v2", fData: "f2", xAxis: "xaxis_top", yAxis: "yaxis_left" } }
   ],
   axes: {
-    temperature_K: { min: 0, max: 1, colorbar: "vertical" },
-    velocity_ms: { min: -2, max: 2, filterbar: "horizontal" }
+    temperature_K: { min: 0, max: 1, colorbar: "horizontal" },
+    velocity_ms: { min: -2, max: 2 }
   }
 }
 
