@@ -56,6 +56,23 @@ Updates the plot with new configuration and/or data.
 
 Re-renders with existing config and data.
 
+### `getConfig()`
+
+Returns a snapshot of the current configuration, enriched with live axis state.
+
+```javascript
+const config = plot.getConfig()
+// config has the same shape as the object passed to update({ config })
+```
+
+The returned object is a shallow copy of the last config passed to `update()`, with the `axes` property replaced by a merged version that includes the current `min`/`max` for every active axis:
+
+- **Spatial axes** (`xaxis_bottom`, etc.): `min`/`max` reflect the current zoom domain.
+- **Color axes**: `min`/`max` reflect the current color range.
+- **Filter axes**: `min`/`max` reflect the current filter bounds (either bound may be `null` for open ranges).
+
+The result can be passed back to `update({ config })` to restore the exact current view, or serialised for state-saving / cross-plot synchronisation.
+
 ### `destroy()`
 
 Removes event listeners and destroys the WebGL context.

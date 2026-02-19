@@ -19,6 +19,7 @@ Gladly is a lightweight, high-performance plotting library that combines WebGL (
 
 For detailed information about using and understanding Gladly:
 
+- **[Quick Start](docs/Quickstart.md)**: Installation and minimal working example
 - **[API Documentation](docs/API.md)**: User-facing API reference overview and data model
   - **[Configuring Plots](docs/api/PlotConfiguration.md)**: `plot.update()`, axes config, auto-range, multi-layer, interaction, examples
   - **[Writing Layer Types](docs/api/LayerTypes.md)**: `LayerType` constructor, shaders, color/filter axes, GLSL helpers, constants
