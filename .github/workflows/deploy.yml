@@ -1,4 +1,4 @@
-name: Deploy Example to GitHub Pages
+name: Deploy to GitHub Pages
 
 on:
   push:
@@ -19,16 +19,33 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+
+      - name: Build example app
+        uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
       - run: npm ci
       - run: npm run build:example
+
+      - name: Build Jekyll docs site
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+          bundler-cache: true
+      - run: bundle exec jekyll build
+
+      - name: Assemble combined output
+        run: |
+          mkdir dist
+          cp -r dist-example/. dist/
+          mkdir dist/docs
+          cp -r _site/. dist/docs/
+
       - uses: actions/configure-pages@v4
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: dist-example
+          path: dist
 
   deploy:
     environment:
