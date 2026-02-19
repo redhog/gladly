@@ -1,6 +1,6 @@
 title: Gladly
 description: A lightweight, GPU-accelerated plotting library with a declarative API
-baseurl: /docs
+baseurl: /gladly/docs
 
 theme: minima
 
