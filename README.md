@@ -13,8 +13,10 @@ Gladly combines WebGL rendering (via regl) with D3.js for interactive axes and z
 - 🎯 Interactive multi-axis support (up to 4 axes)
 - 🔍 Zoom and pan interactions
 - 🧩 Extensible layer type registry
-- 📏 Unit-aware axis management
-- ⚡ ~250 lines of focused source code
+- 📏 Quantity and unit-aware axis management
+- 🎨 Supports all standard colorscales
+- 🔗 Subplot axis linking
+- 🌈 Axis to coloring or filtering linking
 
 ## Documentation
 
