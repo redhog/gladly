@@ -2,6 +2,20 @@
 
 ## Installation
 
+### From npm
+
+```bash
+npm install gladly-plot
+```
+
+```javascript
+import { Plot, registerLayerType, scatterLayerType } from 'gladly-plot'
+```
+
+### From source
+
+Clone the repository, then:
+
 ```bash
 npm install regl d3
 ```
@@ -9,6 +23,15 @@ npm install regl d3
 ```javascript
 import { Plot, registerLayerType, scatterLayerType } from './src/index.js'
 ```
+
+#### Run the built-in example
+
+```bash
+npm install
+npm start
+```
+
+Open your browser to `http://localhost:1234` to see the demo.
 
 ## Minimal example
 
@@ -21,7 +44,7 @@ Width and height are auto-detected from `clientWidth`/`clientHeight` and update 
 
 **JavaScript:**
 ```javascript
-import { Plot, registerLayerType, scatterLayerType } from './src/index.js'
+import { Plot, registerLayerType, scatterLayerType } from 'gladly-plot'
 
 // 1. Register layer types once at startup
 registerLayerType("scatter", scatterLayerType)
@@ -48,15 +71,6 @@ plot.update({
   }
 })
 ```
-
-## Run the built-in example
-
-```bash
-npm install
-npm start
-```
-
-Open your browser to `http://localhost:1234` to see the demo.
 
 ## Next steps
 
