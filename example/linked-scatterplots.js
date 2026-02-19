@@ -37,7 +37,7 @@ let editorSyncing = false
 const plot1 = new Plot(document.getElementById('tab1-plot1'))
 const plot2 = new Plot(document.getElementById('tab1-plot2'))
 
-linkAxes(plot1, 'xaxis_bottom', plot2, 'xaxis_top')
+linkAxes(plot1.axes.xaxis_bottom, plot2.axes.xaxis_top)
 
 let plot1Config = {
   layers: [

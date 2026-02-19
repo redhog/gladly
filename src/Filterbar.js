@@ -25,7 +25,7 @@ export class Filterbar extends Plot {
 
     // Link the filterbar's spatial axis to the target's filter axis.
     // Zoom/pan on the filterbar propagates back to update the filter range.
-    this._spatialLink = linkAxes(this, this._spatialAxis, targetPlot, filterAxisName)
+    this._spatialLink = linkAxes(this.axes[this._spatialAxis], targetPlot.axes[filterAxisName])
 
     // Re-render (with sync) whenever the target plot renders.
     this._syncCallback = () => this.render()
@@ -131,6 +131,7 @@ export class Filterbar extends Plot {
   }
 
   destroy() {
+    this._spatialLink.unlink()
     this._targetPlot._renderCallbacks.delete(this._syncCallback)
     super.destroy()
   }

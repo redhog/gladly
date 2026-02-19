@@ -23,8 +23,9 @@ export class Colorbar extends Plot {
       }
     })
 
-    // Link the colorbar's spatial axis to the target's color axis for unit validation.
-    this._spatialLink = linkAxes(this, this._spatialAxis, targetPlot, colorAxisName)
+    // Link the colorbar's spatial axis to the target's color axis.
+    // Zooming the colorbar propagates domain changes to the target's color range.
+    this._spatialLink = linkAxes(this.axes[this._spatialAxis], targetPlot.axes[colorAxisName])
 
     // Re-render (with sync) whenever the target plot renders.
     this._syncCallback = () => this.render()
@@ -56,6 +57,7 @@ export class Colorbar extends Plot {
   }
 
   destroy() {
+    this._spatialLink.unlink()
     this._targetPlot._renderCallbacks.delete(this._syncCallback)
     super.destroy()
   }

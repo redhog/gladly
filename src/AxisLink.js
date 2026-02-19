@@ -1,37 +1,31 @@
-export class AxisLink {
-  constructor(plot1, axis1, plot2, axis2) {
-    this.plot1 = plot1
-    this.axis1 = axis1
-    this.plot2 = plot2
-    this.axis2 = axis2
-
-    // Register with both plots
-    this.plot1._addAxisLink(this.axis1, this)
-    this.plot2._addAxisLink(this.axis2, this)
+/**
+ * Links two Axis (or duck-typed axis) objects bidirectionally.
+ *
+ * When either axis's domain changes via setDomain(), the other is updated to match.
+ * Quantity kinds are validated at link time if both are known.
+ *
+ * Returns an object with an unlink() method to tear down the link.
+ *
+ * Any object that implements the Axis interface may be used:
+ *   { quantityKind, getDomain(), setDomain(domain), subscribe(cb), unsubscribe(cb) }
+ */
+export function linkAxes(axis1, axis2) {
+  const qk1 = axis1.quantityKind
+  const qk2 = axis2.quantityKind
+  if (qk1 && qk2 && qk1 !== qk2) {
+    throw new Error(`Cannot link axes with incompatible quantity kinds: ${qk1} vs ${qk2}`)
   }
 
-  unlink() {
-    if (this.plot1) {
-      this.plot1._removeAxisLink(this.axis1, this)
-    }
-    if (this.plot2) {
-      this.plot2._removeAxisLink(this.axis2, this)
-    }
-    this.plot1 = null
-    this.plot2 = null
-  }
+  const cb1 = (domain) => axis2.setDomain(domain)
+  const cb2 = (domain) => axis1.setDomain(domain)
 
-  getLinkedAxis(plot, axis) {
-    if (plot === this.plot1 && axis === this.axis1) {
-      return { plot: this.plot2, axis: this.axis2 }
-    }
-    if (plot === this.plot2 && axis === this.axis2) {
-      return { plot: this.plot1, axis: this.axis1 }
-    }
-    return null
-  }
-}
+  axis1.subscribe(cb1)
+  axis2.subscribe(cb2)
 
-export function linkAxes(plot1, axis1, plot2, axis2) {
-  return new AxisLink(plot1, axis1, plot2, axis2)
+  return {
+    unlink() {
+      axis1.unsubscribe(cb1)
+      axis2.unsubscribe(cb2)
+    }
+  }
 }

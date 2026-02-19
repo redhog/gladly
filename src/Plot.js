@@ -4,6 +4,7 @@ import { scaleLinear } from "d3-scale"
 import { axisBottom, axisTop, axisLeft, axisRight } from "d3-axis"
 import { zoom, zoomIdentity } from "d3-zoom"
 import { AXES, AxisRegistry } from "./AxisRegistry.js"
+import { Axis } from "./Axis.js"
 import { ColorAxisRegistry } from "./ColorAxisRegistry.js"
 import { FilterAxisRegistry } from "./FilterAxisRegistry.js"
 import { getLayerType, getRegisteredLayerTypes } from "./LayerTypeRegistry.js"
@@ -59,9 +60,9 @@ export class Plot {
     this._dirty = false
     this._rafId = null
 
-    // Axis links (persists across updates); any axis ID (spatial or color) is allowed
-    this.axisLinks = new Map()
-    AXES.forEach(axis => this.axisLinks.set(axis, new Set()))
+    // Stable Axis instances keyed by axis name — persist across update() calls
+    this._axisCache = new Map()
+    this._axesProxy = null
 
     // Auto-managed Float colorbars keyed by color axis name
     this._floats = new Map()
@@ -106,9 +107,6 @@ export class Plot {
       this.plotWidth = width - this.margin.left - this.margin.right
       this.plotHeight = height - this.margin.top - this.margin.bottom
 
-      const { layers: pendingLayers = [] } = this.currentConfig
-      this._preValidateAxisLinks(pendingLayers, this.currentData)
-
       if (this.regl) {
         this.regl.destroy()
       }
@@ -126,6 +124,31 @@ export class Plot {
 
   forceUpdate() {
     this.update({})
+  }
+
+  /**
+   * Returns a stable Axis instance for the given axis name.
+   * Works for spatial axes (e.g. "xaxis_bottom") and quantity-kind axes (color/filter).
+   * The same instance is returned across plot.update() calls, so links survive updates.
+   *
+   * Usage: plot.axes.xaxis_bottom, plot.axes["velocity_ms"], etc.
+   */
+  get axes() {
+    if (!this._axesProxy) {
+      this._axesProxy = new Proxy(this._axisCache, {
+        get: (cache, name) => {
+          if (typeof name !== 'string') return undefined
+          if (!cache.has(name)) cache.set(name, new Axis(this, name))
+          return cache.get(name)
+        }
+      })
+    }
+    return this._axesProxy
+  }
+
+  _getAxis(name) {
+    if (!this._axisCache.has(name)) this._axisCache.set(name, new Axis(this, name))
+    return this._axisCache.get(name)
   }
 
   getConfig() {
@@ -207,30 +230,6 @@ export class Plot {
     }
   }
 
-  _addAxisLink(axisName, link) {
-    try {
-      if (!this.axisLinks) {
-        this.axisLinks = new Map()
-      }
-      if (!this.axisLinks.has(axisName)) {
-        this.axisLinks.set(axisName, new Set())
-      }
-      this.axisLinks.get(axisName).add(link)
-    } catch (error) {
-      console.error('Error adding axis link:', error)
-    }
-  }
-
-  _removeAxisLink(axisName, link) {
-    try {
-      if (this.axisLinks && this.axisLinks.has(axisName)) {
-        this.axisLinks.get(axisName).delete(link)
-      }
-    } catch (error) {
-      console.error('Error removing axis link:', error)
-    }
-  }
-
   // Returns the quantity kind for any axis ID (spatial or color axis).
   // For color axes, the axis ID IS the quantity kind.
   getAxisQuantityKind(axisId) {
@@ -263,135 +262,6 @@ export class Plot {
       this.colorAxisRegistry.setRange(axisId, domain[0], domain[1])
     } else if (this.filterAxisRegistry?.hasAxis(axisId)) {
       this.filterAxisRegistry.setRange(axisId, domain[0], domain[1])
-    }
-  }
-
-  _preValidateAxisLinks(layersConfig, data) {
-    const pendingKinds = {}
-
-    for (const layerSpec of layersConfig) {
-      const entries = Object.entries(layerSpec)
-      if (entries.length !== 1) continue
-
-      const [layerTypeName, parameters] = entries[0]
-      const layerType = getLayerType(layerTypeName)
-      const ac = layerType.resolveAxisConfig(parameters, data)
-
-      for (const [axisName, kind] of [
-        [ac.xAxis, ac.xAxisQuantityKind],
-        [ac.yAxis, ac.yAxisQuantityKind]
-      ]) {
-        if (!axisName || !kind) continue
-
-        if (pendingKinds[axisName] && pendingKinds[axisName] !== kind) {
-          throw new Error(`Axis kind conflict on ${axisName}: ${pendingKinds[axisName]} vs ${kind}`)
-        }
-        pendingKinds[axisName] = kind
-
-        const links = this.axisLinks.get(axisName)
-        if (!links || links.size === 0) continue
-
-        for (const link of links) {
-          const linked = link.getLinkedAxis(this, axisName)
-          if (!linked) continue
-
-          const linkedKind = linked.plot.getAxisQuantityKind(linked.axis)
-          if (!linkedKind) continue
-
-          if (kind !== linkedKind) {
-            throw new Error(
-              `Linked axes have incompatible quantity kinds: ` +
-              `${axisName} (${kind}) cannot link to ` +
-              `${linked.plot.container.id || 'plot'}.${linked.axis} (${linkedKind})`
-            )
-          }
-        }
-      }
-
-      // Validate color axis links
-      for (const quantityKind of ac.colorAxisQuantityKinds) {
-        const links = this.axisLinks.get(quantityKind)
-        if (!links || links.size === 0) continue
-
-        for (const link of links) {
-          const linked = link.getLinkedAxis(this, quantityKind)
-          if (!linked) continue
-
-          const linkedKind = linked.plot.getAxisQuantityKind(linked.axis)
-          if (!linkedKind) continue
-
-          if (quantityKind !== linkedKind) {
-            throw new Error(
-              `Linked axes have incompatible quantity kinds: ` +
-              `color axis '${quantityKind}' cannot link to ` +
-              `${linked.plot.container.id || 'plot'}.${linked.axis} (${linkedKind})`
-            )
-          }
-        }
-      }
-
-      // Validate filter axis links
-      for (const quantityKind of ac.filterAxisQuantityKinds) {
-        const links = this.axisLinks.get(quantityKind)
-        if (!links || links.size === 0) continue
-
-        for (const link of links) {
-          const linked = link.getLinkedAxis(this, quantityKind)
-          if (!linked) continue
-
-          const linkedKind = linked.plot.getAxisQuantityKind(linked.axis)
-          if (!linkedKind) continue
-
-          if (quantityKind !== linkedKind) {
-            throw new Error(
-              `Linked axes have incompatible quantity kinds: ` +
-              `filter axis '${quantityKind}' cannot link to ` +
-              `${linked.plot.container.id || 'plot'}.${linked.axis} (${linkedKind})`
-            )
-          }
-        }
-      }
-    }
-  }
-
-  _validateAxisLinks(axisId) {
-    const links = this.axisLinks.get(axisId)
-    if (!links || links.size === 0) return
-
-    const thisKind = this.getAxisQuantityKind(axisId)
-    if (!thisKind) return
-
-    for (const link of links) {
-      const linked = link.getLinkedAxis(this, axisId)
-      if (!linked) continue
-
-      const linkedKind = linked.plot.getAxisQuantityKind(linked.axis)
-      if (!linkedKind) continue
-
-      if (thisKind !== linkedKind) {
-        throw new Error(
-          `Linked axes have incompatible quantity kinds: ` +
-          `${axisId} (${thisKind}) cannot link to ` +
-          `${linked.plot.container.id || 'plot'}.${linked.axis} (${linkedKind})`
-        )
-      }
-    }
-  }
-
-  _propagateDomainToLinks(axisId, newDomain) {
-    try {
-      const links = this.axisLinks.get(axisId)
-      if (!links || links.size === 0) return
-
-      for (const link of links) {
-        const linked = link.getLinkedAxis(this, axisId)
-        if (!linked) continue
-
-        linked.plot.setAxisDomain(linked.axis, newDomain)
-        linked.plot.scheduleRender()
-      }
-    } catch (error) {
-      console.error('Error propagating domain to linked axes:', error)
     }
   }
 
@@ -459,14 +329,9 @@ export class Plot {
     }
     this._filterbarFloats.clear()
 
-    const allLinks = new Set()
-    for (const links of this.axisLinks.values()) {
-      for (const link of links) {
-        allLinks.add(link)
-      }
-    }
-    for (const link of allLinks) {
-      link.unlink()
+    // Clear all axis listeners so linked axes stop trying to update this plot
+    for (const axis of this._axisCache.values()) {
+      axis._listeners.clear()
     }
 
     if (this.resizeObserver) {
@@ -508,19 +373,14 @@ export class Plot {
       if (ac.xAxis) this.axisRegistry.ensureAxis(ac.xAxis, ac.xAxisQuantityKind, axesConfig[ac.xAxis]?.scale ?? axesConfig[ac.xAxisQuantityKind]?.scale)
       if (ac.yAxis) this.axisRegistry.ensureAxis(ac.yAxis, ac.yAxisQuantityKind, axesConfig[ac.yAxis]?.scale ?? axesConfig[ac.yAxisQuantityKind]?.scale)
 
-      if (ac.xAxis) this._validateAxisLinks(ac.xAxis)
-      if (ac.yAxis) this._validateAxisLinks(ac.yAxis)
-
       // Register color axes (colorscale comes from config or quantity kind registry, not from here)
       for (const quantityKind of ac.colorAxisQuantityKinds) {
         this.colorAxisRegistry.ensureColorAxis(quantityKind)
-        this._validateAxisLinks(quantityKind)
       }
 
       // Register filter axes
       for (const quantityKind of ac.filterAxisQuantityKinds) {
         this.filterAxisRegistry.ensureFilterAxis(quantityKind)
-        this._validateAxisLinks(quantityKind)
       }
 
       // Create one draw command per GPU config returned by the layer type.
@@ -1097,11 +957,7 @@ export class Plot {
             const newDomain = isLog
               ? [Math.exp(newTDomain[0]), Math.exp(newTDomain[1])]
               : newTDomain
-            scale.domain(newDomain)
-
-            if (event.sourceEvent) {
-              this._propagateDomainToLinks(axis, newDomain)
-            }
+            this._getAxis(axis).setDomain(newDomain)
           }
         })
 
