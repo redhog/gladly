@@ -11,9 +11,6 @@ relative_links:
   enabled: true
   collections: false
 
-include:
-  - README.md
-
 exclude:
   - node_modules
   - src

@@ -1,7 +1,3 @@
----
-layout: default
-permalink: /
----
 # Gladly
 
 A lightweight, GPU-accelerated plotting library with a declarative API.
