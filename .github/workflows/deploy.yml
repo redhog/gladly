@@ -33,6 +33,8 @@ jobs:
         with:
           ruby-version: '3.2'
           bundler-cache: true
+      - name: Inject front matter into README for Jekyll
+        run: printf -- "---\nlayout: default\npermalink: /\n---\n\n" | cat - README.md > README.tmp && mv README.tmp README.md
       - run: bundle exec jekyll build
 
       - name: Assemble combined output
