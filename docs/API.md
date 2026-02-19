@@ -120,5 +120,7 @@ plot.update({
 
 - **[Quick Start](Quickstart.md)** — installation and minimal working example
 - **[Configuring Plots](api/PlotConfiguration.md)** — `plot.update()`, axes config, auto-range, multi-layer, interaction, examples
+- **[Colorbars and Filterbars](api/ColorbarsAndFilterbars.md)** — floating color/filter widgets, auto-creation via config, manual placement
 - **[Writing Layer Types](api/LayerTypes.md)** — `LayerType` constructor, shaders, color axes, filter axes, GLSL helpers, constants
+- **[Built-in Layer Types](api/BuiltInLayerTypes.md)** — `scatter`, `colorbar`, `filterbar` layer type reference
 - **[API Reference](api/Reference.md)** — `Plot`, `registerLayerType`, `getLayerType` and other public API entries

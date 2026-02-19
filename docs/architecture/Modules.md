@@ -8,16 +8,29 @@ Detailed breakdown of each source module. For the high-level picture see [ARCHIT
 
 **Purpose:** Single public API entry point.
 
-**Exports:**
+**Public exports:**
 - `Plot` — main plotting class
 - `LayerType` — class for defining custom layer types
-- `Layer` — data container (internal use)
-- `AxisRegistry` — spatial scale management (internal use)
-- `scatterLayerType` — pre-built scatter `LayerType`
+- `Axis` — first-class axis object (obtained via `plot.axes[name]`)
+- `linkAxes` — cross-plot axis linking
+- `scatterLayerType` — built-in scatter `LayerType`
+- `colorbarLayerType` — built-in colorbar gradient `LayerType`
+- `filterbarLayerType` — built-in filterbar axis `LayerType`
+- `Colorbar` — colorbar plot (extends `Plot`)
+- `Float` — draggable floating colorbar widget
+- `Filterbar` — filterbar plot (extends `Plot`)
+- `FilterbarFloat` — draggable floating filterbar widget
 - `registerLayerType`, `getLayerType`, `getRegisteredLayerTypes`
+- `registerAxisQuantityKind`, `getAxisQuantityKind`, `getRegisteredAxisQuantityKinds`
 - `registerColorscale`, `getRegisteredColorscales`, `buildColorGlsl`
 - `buildFilterGlsl`
 - `AXES`
+
+**Internal exports** (available for advanced use, not part of the stable public API):
+- `Layer` — data container DTO
+- `AxisRegistry` — spatial scale management
+- `ColorAxisRegistry` — color axis range + colorscale management
+- `FilterAxisRegistry` — filter axis range management
 
 ---
 
@@ -183,9 +196,47 @@ this.units  = {}   // { axisName: quantityKind }
 
 ---
 
+## `Axis.js`
+
+**Purpose:** First-class axis object. Stable across `update()` calls; safe to hold references to.
+
+**Pattern:** Observer (subscribe/notify)
+
+**Key behaviour:**
+- `getDomain()` / `setDomain(domain)` — read and write the axis range on the owning plot
+- `subscribe(callback)` / `unsubscribe(callback)` — register for domain-change notifications
+- Re-entrancy guard prevents infinite loops when axes are linked bidirectionally
+- Works for spatial axes (e.g. `"xaxis_bottom"`), color axes, and filter axes via a unified `Plot.getAxisDomain` / `Plot.setAxisDomain` interface
+
+Obtained via `plot.axes[axisName]`.
+
+---
+
+## `AxisLink.js`
+
+**Purpose:** Cross-plot axis linking.
+
+**`linkAxes(axis1, axis2)`** — Subscribes each axis to the other. When either calls `setDomain`, the other is updated. Returns `{ unlink() }` to remove the bidirectional link.
+
+Accepts any object implementing the `Axis` interface (duck typing), not just `Axis` instances.
+
+---
+
+## `AxisQuantityKindRegistry.js`
+
+**Purpose:** Global registry of quantity kind definitions.
+
+**`registerAxisQuantityKind(name, definition)`** — Registers or merges a definition `{ label, scale, colorscale }` for a quantity kind string.
+
+**`getAxisQuantityKind(name)`** — Returns the definition, falling back to `{ label: name, scale: "linear" }` for unknown names.
+
+**`getRegisteredAxisQuantityKinds()`** — Returns an array of all registered names.
+
+---
+
 ## `ColorAxisRegistry.js`
 
-**Purpose:** Track color axis quantity kinds, ranges, and colorscale preferences.
+**Purpose:** Track color axis quantity kinds, ranges, and colorscale preferences. Internal — managed by `Plot`.
 
 **`ensureColorAxis(quantityKind)`** — Registers a quantity kind if not already present.
 
@@ -193,19 +244,21 @@ this.units  = {}   // { axisName: quantityKind }
 
 **`setColorscale(quantityKind, name)`** — Stores the colorscale preference.
 
-**`getIndex(quantityKind)`** — Returns the integer colorscale index used as a GLSL uniform.
+**`getColorscaleIndex(quantityKind)`** — Returns the integer colorscale index used as a GLSL uniform.
 
 ---
 
 ## `FilterAxisRegistry.js`
 
-**Purpose:** Track filter axis quantity kinds and their active ranges.
+**Purpose:** Track filter axis quantity kinds and their active ranges. Internal — managed by `Plot`.
 
 **`ensureFilterAxis(quantityKind)`** — Registers a quantity kind with open bounds.
 
 **`setRange(quantityKind, min, max)`** — Sets one or both bounds (each independently optional).
 
-**`getVec4(quantityKind)`** — Returns `[min, max, hasMin, hasMax]` for use as a GLSL `vec4` uniform.
+**`getRangeUniform(quantityKind)`** — Returns `[min, max, hasMin, hasMax]` for use as a GLSL `vec4` uniform.
+
+**`buildFilterGlsl()`** (exported from `FilterAxisRegistry.js`) — Returns the `filter_in_range` GLSL helper string.
 
 ---
 
@@ -215,7 +268,7 @@ this.units  = {}   // { axisName: quantityKind }
 
 **`registerColorscale(name, glslFn)`** — Adds a named GLSL function.
 
-**`buildColorGlsl()`** — Returns all colorscale functions concatenated with the `map_color(int cs, vec2 range, float value)` dispatcher. Injected by `LayerType.createDrawCommand` when color axes are present.
+**`buildColorGlsl()`** — Returns all colorscale functions concatenated with two dispatchers: `map_color(int cs, vec2 range, float value)` (linear) and `map_color_s(int cs, vec2 range, float value, float scaleType)` (handles log scale). Injected by `LayerType.createDrawCommand` when color axes are present.
 
 ---
 
@@ -227,19 +280,11 @@ Imported by `index.js` as a side-effect so all colorscales are available immedia
 
 ---
 
-## `AxisLink.js`
-
-**Purpose:** Cross-plot axis linking.
-
-Provides utilities to synchronise the domain of an axis across multiple `Plot` instances (e.g., linking the x-axis of a main plot to a detail plot). Uses `Plot._renderCallbacks` to propagate domain changes.
-
----
-
 ## `Colorbar.js`
 
 **Purpose:** Specialised plot for rendering a color legend.
 
-Extends `Plot`. Overrides `render()` to read the current colorscale and domain from a target plot's `ColorAxisRegistry`, then delegates to `super.render()`. Registers itself in the target plot's `_renderCallbacks` so it automatically redraws when the main plot updates.
+Extends `Plot`. Overrides `render()` to read the current range, colorscale, and scale type from a target plot's color axis registry, then delegates to `super.render()`. Registers itself in the target plot's `_renderCallbacks` so it redraws automatically whenever the main plot updates. Links its spatial axis bidirectionally to the target's color axis so zoom/pan propagates.
 
 ---
 
@@ -247,7 +292,7 @@ Extends `Plot`. Overrides `render()` to read the current colorscale and domain f
 
 **Purpose:** `LayerType` that renders a gradient quad for a colorbar.
 
-Uses a triangle-strip primitive (`cx = [-1,1,-1,1]`, `cy = [-1,-1,1,1]`, `primitive = "triangle strip"`, `vertexCount = 4`) to fill the entire canvas with a gradient. Supports `orientation` parameter (`"horizontal"` or `"vertical"`). The `primitive` is set on the object returned from `createLayer`, not on the `LayerType` itself.
+Uses a triangle-strip primitive (`cx = [-1,1,-1,1]`, `cy = [-1,-1,1,1]`, `primitive = "triangle strip"`, `vertexCount = 4`) to fill the entire canvas with a color gradient. Supports `orientation` (`"horizontal"` or `"vertical"`). Auto-registered as `"colorbar"` on import.
 
 ---
 
@@ -255,4 +300,28 @@ Uses a triangle-strip primitive (`cx = [-1,1,-1,1]`, `cy = [-1,-1,1,1]`, `primit
 
 **Purpose:** Draggable, resizable floating colorbar widget.
 
-Wraps a `Colorbar` in an absolutely-positioned `<div>` inside the parent plot's container. A thin drag bar at the top is the only draggable handle; the `Colorbar` sub-container below it receives pointer events normally so zoom/pan on the colorbar still works.
+Wraps a `Colorbar` in an absolutely-positioned `<div>` inside the parent plot's container. A thin drag bar at the top is the only draggable handle; the `Colorbar` sub-container below it receives pointer events normally so zoom/pan on the colorbar still works. Sets `Plot._FloatClass = Float` on import so `Plot._syncFloats()` can instantiate it without a direct import dependency.
+
+---
+
+## `Filterbar.js`
+
+**Purpose:** Specialised plot for interactively controlling a filter axis range.
+
+Extends `Plot`. Overrides `render()` to read the current filter range from the target plot's filter axis registry, update the spatial axis domain, and sync the ∞ checkbox states. Links its spatial axis bidirectionally to the target's filter axis. Adds two checkbox overlays at the edges of the plot that toggle open bounds (null min / null max) on the target filter axis.
+
+---
+
+## `FilterbarLayer.js`
+
+**Purpose:** `LayerType` that registers a filter axis without rendering any geometry.
+
+Binds the filter axis quantity kind to a spatial axis so tick labels show the filter range. Always returns `vertexCount: 0` — the draw call is a no-op. Auto-registered as `"filterbar"` on import.
+
+---
+
+## `FilterbarFloat.js`
+
+**Purpose:** Draggable, resizable floating filterbar widget.
+
+Mirrors `Float.js` but wraps a `Filterbar` instead of a `Colorbar`. Sets `Plot._FilterbarFloatClass = FilterbarFloat` on import so `Plot._syncFloats()` can instantiate it without a direct import dependency.

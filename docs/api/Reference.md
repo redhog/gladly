@@ -10,12 +10,13 @@ The main plotting container that manages WebGL rendering and SVG axes.
 
 **Constructor:**
 ```javascript
-new Plot(container)
+new Plot(container, { margin } = {})
 ```
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `container` | HTMLElement | Parent `<div>`. Must have explicit CSS dimensions. Canvas and SVG are created inside it automatically. |
+| `margin` | object | Plot margin in px: `{ top, right, bottom, left }`. Defaults to `{ top: 60, right: 60, bottom: 60, left: 60 }`. |
 
 **Instance properties:**
 
@@ -292,8 +293,81 @@ Returns an array of all registered layer type name strings.
 
 ---
 
-## `scatterLayerType`
+## `registerAxisQuantityKind(name, definition)`
 
-A built-in `LayerType` for scatter plots. See [Writing Layer Types — scatterLayerType](LayerTypes.md#scatterlayertype) for full details.
+Registers (or merges into) the definition for a quantity kind. Quantity kinds are strings that identify what an axis measures (e.g. `"velocity_ms"`, `"temperature_K"`). Registering a quantity kind lets the library use the correct label and default scale/colorscale everywhere that quantity kind appears, without having to repeat those settings in every `config.axes` block.
 
-**Parameters:** `xData`, `yData`, `vData` (required), `xAxis`, `yAxis` (optional).
+```javascript
+registerAxisQuantityKind("velocity_ms", {
+  label:      "Velocity (m/s)",
+  scale:      "linear",
+  colorscale: "Blues"
+})
+```
+
+**Definition fields:**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `label` | `string` | the name itself | Human-readable axis label rendered next to the axis. |
+| `scale` | `"linear"` \| `"log"` | `"linear"` | Default scale type for spatial axes using this quantity kind. Can be overridden per-plot in `config.axes[name].scale`. |
+| `colorscale` | `string` | — | Default colorscale name for color axes using this quantity kind (e.g. `"viridis"`, `"plasma"`). Can be overridden per-plot in `config.axes[name].colorscale`. |
+
+If `name` was already registered, the new definition is **merged** into the existing one (existing fields that are not present in the new definition are preserved). This differs from `registerLayerType`, which throws on duplicate names.
+
+Quantity kinds do not need to be registered — any string is accepted everywhere a quantity kind is expected. An unregistered name gets `{ label: name, scale: "linear" }` as its implicit definition.
+
+---
+
+## `getAxisQuantityKind(name)`
+
+Returns the definition object for a quantity kind. If `name` has not been registered, returns `{ label: name, scale: "linear" }` without adding it to the registry.
+
+```javascript
+const def = getAxisQuantityKind("velocity_ms")
+// { label: "Velocity (m/s)", scale: "linear", colorscale: "Blues" }
+```
+
+---
+
+## `getRegisteredAxisQuantityKinds()`
+
+Returns an array of all registered quantity kind name strings.
+
+---
+
+## Built-in Layer Types
+
+Gladly ships three pre-registered layer types — `scatter`, `colorbar`, and `filterbar`. See [Built-in Layer Types](BuiltInLayerTypes.md) for full documentation.
+
+---
+
+## `Colorbar`
+
+A specialised plot that renders a color gradient and keeps itself in sync with a target plot's color axis.
+
+Typically auto-created by setting `axes[quantityKind].colorbar: "horizontal"` or `"vertical"` in `config`. For manual creation and full API see [Colorbars and Filterbars](ColorbarsAndFilterbars.md#colorbar).
+
+---
+
+## `Float`
+
+A draggable, resizable floating panel that wraps a `Colorbar` inside the parent plot's container.
+
+Typically auto-created alongside the colorbar when `axes[quantityKind].colorbar` is set. For manual creation and full API see [Colorbars and Filterbars](ColorbarsAndFilterbars.md#float).
+
+---
+
+## `Filterbar`
+
+A specialised plot that displays a filter axis range and lets the user adjust it interactively.
+
+Typically auto-created by setting `axes[quantityKind].filterbar: "horizontal"` or `"vertical"` in `config`. For manual creation and full API see [Colorbars and Filterbars](ColorbarsAndFilterbars.md#filterbar).
+
+---
+
+## `FilterbarFloat`
+
+A draggable, resizable floating panel that wraps a `Filterbar` inside the parent plot's container.
+
+Typically auto-created alongside the filterbar when `axes[quantityKind].filterbar` is set. For manual creation and full API see [Colorbars and Filterbars](ColorbarsAndFilterbars.md#filterbarfloat).

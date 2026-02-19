@@ -31,16 +31,21 @@ gladly/
 │   ├── Layer.js                      # Data container (DTO)
 │   ├── LayerType.js                  # Shader + metadata + schema + factory
 │   ├── ScatterLayer.js               # Built-in scatter plot LayerType
-│   ├── AxisRegistry.js               # Spatial scale management
-│   ├── ColorAxisRegistry.js          # Color axis range + colorscale management
-│   ├── FilterAxisRegistry.js         # Filter axis range management + GLSL helper
+│   ├── ColorbarLayer.js              # Built-in colorbar gradient LayerType
+│   ├── FilterbarLayer.js             # Built-in filterbar axis LayerType
+│   ├── Axis.js                       # First-class axis object (stable across update())
+│   ├── AxisRegistry.js               # Spatial scale management (internal)
+│   ├── ColorAxisRegistry.js          # Color axis range + colorscale management (internal)
+│   ├── FilterAxisRegistry.js         # Filter axis range management + GLSL helper (internal)
+│   ├── AxisQuantityKindRegistry.js   # Global quantity kind definitions
+│   ├── AxisLink.js                   # Cross-plot axis linking
 │   ├── LayerTypeRegistry.js          # Global layer type registration
 │   ├── ColorscaleRegistry.js         # GLSL colorscale registration + dispatch builder
 │   ├── MatplotlibColorscales.js      # All matplotlib colorscales pre-registered
-│   ├── AxisLink.js                   # Cross-plot axis linking
 │   ├── Colorbar.js                   # Colorbar plot (extends Plot)
-│   ├── ColorbarLayer.js              # Triangle-strip quad layer for colorbars
-│   └── Float.js                      # Draggable floating colorbar widget
+│   ├── Float.js                      # Draggable floating colorbar widget
+│   ├── Filterbar.js                  # Filterbar plot (extends Plot)
+│   └── FilterbarFloat.js             # Draggable floating filterbar widget
 ├── example/
 │   ├── main.js                       # Example usage
 │   └── index.html                    # Demo page
@@ -48,9 +53,13 @@ gladly/
 └── docs/
     ├── API.md                         # User-facing API overview
     ├── ARCHITECTURE.md                # This file
+    ├── Quickstart.md                  # Installation and minimal example
     ├── api/
     │   ├── PlotConfiguration.md       # How to configure plots
-    │   └── LayerTypes.md              # How to write layer types
+    │   ├── LayerTypes.md              # How to write layer types
+    │   ├── BuiltInLayerTypes.md       # scatter, colorbar, filterbar layer types
+    │   ├── ColorbarsAndFilterbars.md  # Colorbar, Float, Filterbar, FilterbarFloat
+    │   └── Reference.md               # Full public API reference
     └── architecture/
         ├── Modules.md                 # Detailed module responsibilities
         └── DataFlow.md                # Data flow and rendering pipeline

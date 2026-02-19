@@ -92,7 +92,16 @@ Four positions are available:
 | `yaxis_left` | Left |
 | `yaxis_right` | Right |
 
-Each accepts `{ min, max }`. Omit an axis entirely to have its range auto-calculated from the data.
+Each accepts:
+
+| Property | Description |
+|----------|-------------|
+| `min` | Lower bound of the axis range (auto-calculated if omitted) |
+| `max` | Upper bound of the axis range (auto-calculated if omitted) |
+| `scale` | `"linear"` (default) or `"log"` — logarithmic scale; all data values must be > 0 |
+| `label` | Axis label text (overrides the quantity kind registry default) |
+
+Omit an axis entirely to have its range auto-calculated from the data.
 
 ### Color Axes
 
@@ -103,6 +112,9 @@ The key is the **quantity kind** string declared by the layer type (for the buil
 | `min` | Lower bound of the color range (auto-calculated if omitted) |
 | `max` | Upper bound of the color range (auto-calculated if omitted) |
 | `colorscale` | Named colorscale string (see [colorscales reference](LayerTypes.md#colorscales)) |
+| `scale` | `"linear"` (default) or `"log"` — logarithmic mapping; range values must be > 0 |
+| `label` | Axis label text (overrides the quantity kind registry default) |
+| `colorbar` | `"none"` (default), `"horizontal"`, or `"vertical"` — auto-creates a floating colorbar widget |
 
 Multiple layers sharing the same quantity kind automatically share a common range and colorscale.
 
@@ -114,8 +126,31 @@ The key is the **quantity kind** string declared by the layer type. Each entry a
 |----------|-------------|
 | `min` | Lower bound — points with value < min are discarded |
 | `max` | Upper bound — points with value > max are discarded |
+| `scale` | `"linear"` (default) or `"log"` — logarithmic scale for the filterbar display; data values must be > 0 |
+| `label` | Axis label text (overrides the quantity kind registry default) |
+| `filterbar` | `"none"` (default), `"horizontal"`, or `"vertical"` — auto-creates a floating filterbar widget |
 
 Both `min` and `max` are independently optional. Omitting both (or not listing the filter axis at all) means no filtering: all points are shown.
+
+### Floating Widgets (colorbar / filterbar)
+
+Setting `colorbar` or `filterbar` on an axis auto-creates a floating, draggable, resizable widget inside the plot container:
+
+```javascript
+axes: {
+  temperature: {
+    colorscale: "plasma",
+    colorbar: "horizontal"   // floating colorbar below the plot area
+  },
+  depth: {
+    filterbar: "vertical"    // floating filterbar on the side
+  }
+}
+```
+
+The widget is destroyed and recreated whenever `update()` is called with a changed value. Setting the property back to `"none"` removes it.
+
+For manual widget placement in a separate container, see [Colorbars and Filterbars](ColorbarsAndFilterbars.md).
 
 ---
 
@@ -182,14 +217,18 @@ import { Plot, LayerType, registerLayerType } from './src/index.js'
 
 const tempType = new LayerType({
   name: "temperature",
-  axisQuantityKinds: { x: "meters", y: "volts" },
-  // ... shaders, schema, createLayer
+  xAxisQuantityKind: "time_s",
+  yAxisQuantityKind: "temperature_K",
+  getAxisConfig: (params) => ({ xAxis: params.xAxis, yAxis: params.yAxis }),
+  // ... vert, frag, schema, createLayer
 })
 
 const pressureType = new LayerType({
   name: "pressure",
-  axisQuantityKinds: { x: "meters", y: "log10" },
-  // ... shaders, schema, createLayer
+  xAxisQuantityKind: "time_s",
+  yAxisQuantityKind: "pressure_Pa",
+  getAxisConfig: (params) => ({ xAxis: params.xAxis, yAxis: params.yAxis }),
+  // ... vert, frag, schema, createLayer
 })
 
 registerLayerType("temperature", tempType)
@@ -206,7 +245,7 @@ plot.update({
     axes: {
       xaxis_bottom: { min: 0,   max: 100 },
       yaxis_left:   { min: 0,   max: 100 },
-      yaxis_right:  { min: 0.1, max: 1000 }   // log scale
+      yaxis_right:  { min: 0.1, max: 1000, scale: "log" }
     }
   }
 })

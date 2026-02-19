@@ -662,23 +662,39 @@ Any field that is `undefined` (or absent) leaves the corresponding static declar
 
 **Automatically provided shader uniforms:**
 
-| Uniform | GLSL type | Description |
-|---------|-----------|-------------|
-| `xDomain` | `vec2` | [min, max] of the x spatial axis current range |
-| `yDomain` | `vec2` | [min, max] of the y spatial axis current range |
-| `count` | `int` | Number of data points |
-| `colorscale_<quantityKind>` | `int` | Colorscale index (one per color axis) |
-| `color_range_<quantityKind>` | `vec2` | [min, max] color range (one per color axis) |
-| `filter_range_<quantityKind>` | `vec4` | `[min, max, hasMin, hasMax]` (one per filter axis) |
+| Uniform | GLSL type | When | Description |
+|---------|-----------|------|-------------|
+| `xDomain` | `vec2` | always | `[min, max]` of the x spatial axis current range |
+| `yDomain` | `vec2` | always | `[min, max]` of the y spatial axis current range |
+| `xScaleType` | `float` | always | `0.0` = linear, `1.0` = log |
+| `yScaleType` | `float` | always | `0.0` = linear, `1.0` = log |
+| `count` | `int` | always | Number of data points (vertices) |
+| `colorscale_<quantityKind>` | `int` | color axes | Colorscale index (one per color axis) |
+| `color_range_<quantityKind>` | `vec2` | color axes | `[min, max]` color range (one per color axis) |
+| `color_scale_type_<quantityKind>` | `float` | color axes | `0.0` = linear, `1.0` = log (one per color axis) |
+| `filter_range_<quantityKind>` | `vec4` | filter axes | `[min, max, hasMin, hasMax]` (one per filter axis) |
+| `filter_scale_type_<quantityKind>` | `float` | filter axes | `0.0` = linear, `1.0` = log (one per filter axis) |
 
 **Automatically injected GLSL functions:**
 
 ```glsl
-// Injected when color axes are present:
-vec4 map_color(int cs, vec2 range, float value)
+// Always injected into vertex shader:
+float normalize_axis(float v, vec2 domain, float scaleType)
+// Maps v from data-space to [0, 1], handling both linear and log scales.
+// scaleType: 0.0 = linear, 1.0 = log.
 
-// Injected when filter axes are present:
+// Injected when color axes are present (both vertex and fragment shader):
+vec4 map_color(int cs, vec2 range, float value)
+// Maps value to RGBA using colorscale cs and linear range.
+
+vec4 map_color_s(int cs, vec2 range, float value, float scaleType)
+// Like map_color but handles log scale: applies log() to value and range
+// before mapping when scaleType > 0.5.
+
+// Injected when filter axes are present (vertex shader):
 bool filter_in_range(vec4 range, float value)
+// Returns false when value is outside the filter bounds.
+// range: [min, max, hasMin, hasMax]; open bounds (hasMin/hasMax == 0) always pass.
 ```
 
 **Methods:**
@@ -766,23 +782,9 @@ All values in `attributes` must be `Float32Array` and are validated at layer con
 
 ---
 
-### `scatterLayerType`
+### Built-in layer types
 
-The built-in scatter plot layer type.
-
-- **Spatial quantity kinds:** dynamic — each resolved from the corresponding `xData`/`yData` property name
-- **Color axis:** quantity kind resolved from `vData`; colorscale from the quantity kind registry (default `"viridis"` if registered)
-- **Point size:** 4.0 pixels
-
-**Parameters:**
-
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `xData` | yes | Data key for x coordinates; also used as x-axis quantity kind |
-| `yData` | yes | Data key for y coordinates; also used as y-axis quantity kind |
-| `vData` | yes | Data key for color values; also used as color axis quantity kind |
-| `xAxis` | no | x-axis position (default: `"xaxis_bottom"`) |
-| `yAxis` | no | y-axis position (default: `"yaxis_left"`) |
+The built-in `scatter`, `colorbar`, and `filterbar` layer types are documented in [Built-in Layer Types](BuiltInLayerTypes.md).
 
 ---
 
