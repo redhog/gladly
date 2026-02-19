@@ -4,7 +4,6 @@ import { AXES } from "../../src/AxisRegistry.js"
 
 export const multiLineLayerType = new LayerType({
   name: "multi-line",
-  primitive: "lines",
 
   xAxis: "xaxis_bottom",
   yAxis: "yaxis_left",
@@ -137,6 +136,7 @@ export const multiLineLayerType = new LayerType({
         attributes: { x: xs, y: ys, line_index: lineIdx, bad_segment: badSeg },
         uniforms: { bad_color: badColor },
         domains: { line_index: [idx, idx] },
+        primitive: "lines",
         lineWidth: 2,
         nameMap: {
           colorscale_line_index:       'colorscale',

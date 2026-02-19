@@ -22,7 +22,7 @@ export class LayerType {
     // Optional dynamic resolver — overrides statics wherever it returns a non-undefined value
     getAxisConfig,
     // GPU rendering
-    primitive, vert, frag, schema, createLayer
+    vert, frag, schema, createLayer
   }) {
     this.name = name
     // Static declarations stored as-is (undefined = not declared)
@@ -32,7 +32,6 @@ export class LayerType {
     this.yAxisQuantityKind = yAxisQuantityKind
     this.colorAxisQuantityKinds = colorAxisQuantityKinds ?? []
     this.filterAxisQuantityKinds = filterAxisQuantityKinds ?? []
-    this.primitive = primitive ?? "points"
     this.vert = vert
     this.frag = frag
 
@@ -91,7 +90,7 @@ export class LayerType {
       attributes,
       uniforms,
       viewport: regl.prop("viewport"),
-      primitive: this.primitive,
+      primitive: layer.primitive,
       lineWidth: layer.lineWidth,
       count: regl.prop("count")
     })
@@ -141,6 +140,7 @@ export class LayerType {
       nameMap: gpuConfig.nameMap ?? {},
       domains: gpuConfig.domains ?? {},
       lineWidth: gpuConfig.lineWidth ?? 1,
+      primitive: gpuConfig.primitive ?? "points",
       vertexCount: gpuConfig.vertexCount ?? null,
       xAxis: axisConfig.xAxis,
       yAxis: axisConfig.yAxis,

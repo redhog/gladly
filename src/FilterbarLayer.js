@@ -3,7 +3,6 @@ import { registerLayerType } from "./LayerTypeRegistry.js"
 
 export const filterbarLayerType = new LayerType({
   name: "filterbar",
-  primitive: "points",
 
   getAxisConfig: function(parameters) {
     const { filterAxis, orientation = "horizontal" } = parameters

@@ -7,7 +7,6 @@ const quadCy = new Float32Array([-1, -1, 1, 1])
 
 export const colorbarLayerType = new LayerType({
   name: "colorbar",
-  primitive: "triangle strip",
 
   getAxisConfig: function(parameters) {
     const { colorAxis, orientation = "horizontal" } = parameters
@@ -61,6 +60,7 @@ export const colorbarLayerType = new LayerType({
     return [{
       attributes: { cx: quadCx, cy: quadCy },
       uniforms: { horizontal: orientation === "horizontal" ? 1 : 0 },
+      primitive: "triangle strip",
       vertexCount: 4,
       nameMap: {
         [`colorscale_${colorAxis}`]: 'colorscale',
