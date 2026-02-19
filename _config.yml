@@ -29,6 +29,10 @@ defaults:
     values:
       layout: default
   - scope:
+      path: "README.md"
+    values:
+      permalink: /
+  - scope:
       path: "docs"
     values:
       permalink: /:basename/
