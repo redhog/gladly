@@ -29,6 +29,14 @@
         background: #1a1a2e;
         color: white;
         box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+        z-index: 10;
+      }
+
+      .menubar-left {
+        display: flex;
+        align-items: flex-end;
+        height: 100%;
+        gap: 0;
       }
 
       .menubar-title {
@@ -36,6 +44,34 @@
         font-size: 18px;
         font-weight: 600;
         color: white;
+        padding-right: 24px;
+        line-height: 48px;
+      }
+
+      .tabs {
+        display: flex;
+        align-items: flex-end;
+        height: 100%;
+      }
+
+      .tab {
+        padding: 0 20px;
+        height: 36px;
+        line-height: 36px;
+        background: #888;
+        color: black;
+        cursor: pointer;
+        border-radius: 4px 4px 0 0;
+        margin-right: 4px;
+        font-size: 14px;
+        user-select: none;
+      }
+
+      .tab.active {
+        background: white;
+        color: black;
+        /* White shadow downward covers the menubar's dark drop-shadow beneath the tab */
+        box-shadow: 0 6px 0 0 white;
       }
 
       .menubar a {
@@ -50,7 +86,7 @@
         opacity: 1;
       }
 
-      .container {
+      .tab-content {
         flex: 1;
         overflow: hidden;
         display: grid;
@@ -157,7 +193,7 @@
         font-size: 18px;
       }
 
-      #editor-container {
+      .editor-container {
         flex: 1;
         width: 100%;
         min-height: 0;
@@ -165,7 +201,7 @@
         box-sizing: border-box;
       }
 
-      #editor-container > div {
+      .editor-container > div {
         width: 100%;
         box-sizing: border-box;
       }
@@ -332,7 +368,13 @@
   </head>
   <body>
     <div class="menubar">
-      <span class="menubar-title">I'll GLadly render 1M points</span>
+      <div class="menubar-left">
+        <span class="menubar-title">I'll GLadly render 1M points</span>
+        <div class="tabs">
+          <div class="tab active" data-tab="tab1">Linked scatterplots</div>
+          <div class="tab" data-tab="tab2">Scatter + Lines</div>
+        </div>
+      </div>
       <a href="https://github.com/redhog/gladly" target="_blank" rel="noopener" aria-label="GitHub">
         <svg height="28" viewBox="0 0 16 16" width="28" fill="currentColor" aria-hidden="true">
           <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38
@@ -346,34 +388,19 @@
         </svg>
       </a>
     </div>
-    <div class="container">
-      <div class="plots-container">
-        <div>
-          <div class="plot-header">
-            <h3>Plot 1 (Bottom X-Axis)</h3>
-            <button id="edit-plot1-btn">Edit This Plot</button>
-          </div>
-          <div id="plot1" class="plot-panel active"></div>
-        </div>
-        <div>
-          <div class="plot-header">
-            <h3>Plot 2 (Top X-Axis - Linked to Plot 1)</h3>
-            <button id="edit-plot2-btn">Edit This Plot</button>
-          </div>
-          <div id="plot2" class="plot-panel"></div>
-        </div>
-      </div>
-      <div class="editor-panel">
-        <h3>Layer Configuration - <span id="current-plot-label">Plot 1</span></h3>
-        <div class="info">
-          Use the form below to modify the plot layers. Changes are applied automatically.<br>
-          <strong>Note:</strong> The X-axes of both plots are linked - zooming one affects the other!<br>
-          <strong>Colorbars</strong> float over each plot — drag to reposition, drag the corner handle to resize.
-        </div>
-        <div id="editor-container"></div>
-        <div id="validation-errors"></div>
-      </div>
-    </div>
-    <script type="module" src="./main.js"></script>
+
+    <script>
+      document.querySelectorAll('.tab').forEach(function(tab) {
+        tab.addEventListener('click', function() {
+          var targetId = tab.dataset.tab
+          document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('active') })
+          tab.classList.add('active')
+          document.querySelectorAll('.tab-content').forEach(function(c) { c.style.display = 'none' })
+          document.getElementById(targetId).style.display = 'grid'
+        })
+      })
+    </script>
+    <script type="module" src="./linked-scatterplots.js"></script>
+    <script type="module" src="./scatter-lines.js"></script>
   </body>
 </html>

@@ -90,6 +90,13 @@ export class Plot {
       const width = this.container.clientWidth
       const height = this.container.clientHeight
 
+      // Container is hidden or not yet laid out (e.g. inside display:none tab).
+      // Store config/data and return; ResizeObserver will call forceUpdate() once
+      // the container gets real dimensions.
+      if (width === 0 || height === 0) {
+        return
+      }
+
       this.canvas.width = width
       this.canvas.height = height
       this.svg.attr('width', width).attr('height', height)
