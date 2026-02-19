@@ -261,8 +261,8 @@ export class Plot {
       if (scale) scale.domain(domain)
     } else if (this.colorAxisRegistry?.hasAxis(axisId)) {
       this.colorAxisRegistry.setRange(axisId, domain[0], domain[1])
-    } else {
-      this.filterAxisRegistry?.setRange(axisId, domain[0], domain[1])
+    } else if (this.filterAxisRegistry?.hasAxis(axisId)) {
+      this.filterAxisRegistry.setRange(axisId, domain[0], domain[1])
     }
   }
 
