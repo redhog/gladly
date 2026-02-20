@@ -385,7 +385,7 @@ export class Plot {
 
       // Create one draw command per GPU config returned by the layer type.
       for (const layer of layerType.createLayer(parameters, data)) {
-        layer.draw = layer.type.createDrawCommand(this.regl, layer)
+        layer.draw = layer.type.createDrawCommand(this.regl, layer, this)
         this.layers.push(layer)
       }
     }

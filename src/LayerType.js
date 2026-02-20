@@ -22,7 +22,7 @@ export class LayerType {
     // Optional dynamic resolver — overrides statics wherever it returns a non-undefined value
     getAxisConfig,
     // GPU rendering
-    vert, frag, schema, createLayer
+    vert, frag, schema, createLayer, createDrawCommand
   }) {
     this.name = name
     // Static declarations stored as-is (undefined = not declared)
@@ -38,6 +38,7 @@ export class LayerType {
     if (schema) this._schema = schema
     if (createLayer) this._createLayer = createLayer
     if (getAxisConfig) this._getAxisConfig = getAxisConfig
+    if (createDrawCommand) this.createDrawCommand = createDrawCommand
   }
 
   createDrawCommand(regl, layer) {

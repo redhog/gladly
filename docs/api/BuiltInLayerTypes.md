@@ -1,6 +1,6 @@
 # Built-in Layer Types
 
-Gladly ships three pre-registered layer types. For writing custom layer types see [Writing Layer Types](LayerTypes.md).
+Gladly ships four pre-registered layer types. For writing custom layer types see [Writing Layer Types](LayerTypes.md).
 
 ---
 
@@ -63,6 +63,141 @@ plot.update({
       temperature_K: { min: 0, max: 100, colorscale: "plasma" }
     }
   }
+})
+```
+
+---
+
+## `tile`
+
+A geographic map underlay that fetches and renders raster tiles from XYZ, WMS, or WMTS services. Tiles are reprojected from the tile service's CRS to the plot's CRS using tessellated meshes, so any pair of projected coordinate systems is supported. proj4 definitions are fetched automatically from [epsg.io](https://epsg.io) on first use; quantity kind labels are looked up from the `projnames` package.
+
+**Auto-registered** on import. `tileLayerType` and `TileLayerType` are also exported if needed.
+
+**Parameters:**
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `source` | yes | — | Tile source object — see source types below |
+| `tileCrs` | no | `"EPSG:3857"` | CRS of the tile service |
+| `plotCrs` | no | same as `tileCrs` | CRS of the plot axes. When it differs from `tileCrs`, each tile is tessellated and reprojected |
+| `tessellation` | no | `8` | Grid resolution (N×N quads per tile) used when reprojecting. Higher values give more accurate curves at the cost of more vertices |
+| `opacity` | no | `1.0` | Tile opacity, 0–1 |
+| `xAxis` | no | `"xaxis_bottom"` | x-axis to use |
+| `yAxis` | no | `"yaxis_left"` | y-axis to use |
+
+**Source types:**
+
+`source.type: "xyz"` — Standard slippy-map tiles (OpenStreetMap, Mapbox, etc.)
+
+| Field | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `url` | yes | — | URL template with `{z}`, `{x}`, `{y}`, and optional `{s}` placeholders |
+| `subdomains` | no | `["a","b","c"]` | Subdomain letters substituted for `{s}` |
+| `minZoom` | no | `0` | Minimum zoom level |
+| `maxZoom` | no | `19` | Maximum zoom level |
+
+`source.type: "wms"` — OGC Web Map Service. Fetches a single image per viewport change.
+
+| Field | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `url` | yes | — | WMS service base URL |
+| `layers` | yes | — | Comma-separated layer names |
+| `format` | no | `"image/png"` | Image format |
+| `version` | no | `"1.3.0"` | WMS version (`"1.1.1"` or `"1.3.0"`) |
+| `crs` | no | `tileCrs` | CRS for the `GetMap` request |
+| `styles` | no | — | Comma-separated style names |
+| `transparent` | no | `true` | Request transparent background |
+
+`source.type: "wmts"` — OGC Web Map Tile Service. Uses the same Web Mercator tile grid as XYZ.
+
+| Field | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `url` | yes | — | Base URL — either a RESTful template (with `{TileMatrix}`, `{TileRow}`, `{TileCol}` or `{z}`, `{x}`, `{y}`) or a KVP endpoint |
+| `layer` | yes | — | Layer identifier |
+| `style` | no | `"default"` | Style identifier |
+| `format` | no | `"image/png"` | Image format |
+| `tileMatrixSet` | no | `"WebMercatorQuad"` | Tile matrix set identifier |
+| `minZoom` | no | `0` | Minimum zoom level |
+| `maxZoom` | no | `19` | Maximum zoom level |
+
+**Behavior:**
+- Tiles are loaded asynchronously; the plot renders other layers immediately and tiles appear as they arrive
+- Tile textures are cached (up to 50 tiles for XYZ/WMTS; WMS keeps only the current and previous image)
+- A new tile load is triggered when the visible domain shifts or zooms by more than ~2%
+- EPSG quantity kinds (`epsg_CODE_x` / `epsg_CODE_y`) are registered automatically using `projnames` labels when a new CRS code is first encountered, so axis labels are populated without any user setup
+- proj4 definitions for EPSG:4326 (WGS84) and EPSG:3857 (Web Mercator) are built-in; all others are fetched from `https://epsg.io/{code}.proj4` on first use. For offline use, pre-register with [`registerEpsgDef`](Reference.md#registerepsgdef)
+- The tile layer contributes no domain data — axis bounds must come from other layers or explicit `axes.min`/`max` config
+- Alpha blending is enabled; use `opacity` for transparent overlays
+
+**Example — OSM tiles reprojected from Web Mercator to WGS84 lon/lat:**
+
+```javascript
+import { Plot, registerAxisQuantityKind } from 'gladly-plot'
+
+registerAxisQuantityKind('city_index', { label: 'City', scale: 'linear', colorscale: 'plasma' })
+
+const lon     = new Float32Array([-74.006, -0.118, 139.691])
+const lat     = new Float32Array([ 40.714, 51.509,  35.690])
+const cityIdx = new Float32Array([0, 1, 2])
+
+const data = {
+  data: { lon, lat, cityIdx },
+  quantity_kinds: { lon: 'epsg_4326_x', lat: 'epsg_4326_y', cityIdx: 'city_index' },
+}
+
+plot.update({
+  config: {
+    layers: [
+      {
+        tile: {
+          source: {
+            type: 'xyz',
+            url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+          },
+          tileCrs: 'EPSG:3857',
+          plotCrs: 'EPSG:4326',
+          opacity: 0.9,
+        },
+      },
+      { scatter: { xData: 'lon', yData: 'lat', vData: 'cityIdx' } },
+    ],
+    axes: {
+      xaxis_bottom: { min: -180, max: 180 },
+      yaxis_left:   { min: -80,  max: 80  },
+      city_index:   { colorbar: 'vertical', colorscale: 'plasma', min: 0, max: 2 },
+    },
+  },
+  data,
+})
+```
+
+**Example — WMS service:**
+
+```javascript
+plot.update({
+  config: {
+    layers: [
+      {
+        tile: {
+          source: {
+            type: 'wms',
+            url: 'https://example.com/wms',
+            layers: 'MyLayer',
+            format: 'image/png',
+            version: '1.3.0',
+          },
+          tileCrs: 'EPSG:3857',
+          plotCrs: 'EPSG:26911',   // NAD83 / UTM zone 11N — fetched automatically
+        },
+      },
+    ],
+    axes: {
+      xaxis_bottom: { min: 400000, max: 700000 },
+      yaxis_left:   { min: 3700000, max: 4000000 },
+    },
+  },
+  data: {},
 })
 ```
 

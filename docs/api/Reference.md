@@ -269,6 +269,22 @@ const link = linkAxes(plot.axes["velocity_ms"], slider)
 
 ---
 
+## `registerEpsgDef(epsgCode, proj4string)`
+
+Pre-registers a proj4 CRS definition and the matching `epsg_CODE_x` / `epsg_CODE_y` quantity kinds. Use this in environments without network access (air-gapped, offline apps) where the `tile` layer cannot fetch definitions from `epsg.io`.
+
+```javascript
+import { registerEpsgDef } from 'gladly-plot'
+
+registerEpsgDef(26911, '+proj=utm +zone=11 +datum=NAD83 +units=m +no_defs')
+```
+
+The quantity kind labels are looked up from `projnames` (e.g. EPSG:26911 → `"NAD83 / UTM zone 11N X"` and `"NAD83 / UTM zone 11N Y"`). Proj4 strings for any code can be obtained from [epsg.io](https://epsg.io) (append `.proj4` to the code URL).
+
+**When not needed:** In network-connected environments the `tile` layer automatically fetches and registers any unrecognised CRS on first use — `registerEpsgDef` is only required when you need guaranteed offline operation, or when you want to register quantity kinds for scatter/line data before the tile layer initialises.
+
+---
+
 ## `registerLayerType(name, layerType)`
 
 Registers a LayerType under a name for use in `config.layers`.
@@ -422,7 +438,7 @@ Returns `[min, max]` for column `col`, or `undefined` if no domain was specified
 
 ## Built-in Layer Types
 
-Gladly ships three pre-registered layer types — `scatter`, `colorbar`, and `filterbar`. See [Built-in Layer Types](BuiltInLayerTypes.md) for full documentation.
+Gladly ships four pre-registered layer types — `scatter`, `tile`, `colorbar`, and `filterbar`. See [Built-in Layer Types](BuiltInLayerTypes.md) for full documentation.
 
 ---
 

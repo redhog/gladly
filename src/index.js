@@ -17,6 +17,8 @@ export { Float } from "./Float.js"
 export { Filterbar } from "./Filterbar.js"
 export { filterbarLayerType } from "./FilterbarLayer.js"
 export { FilterbarFloat } from "./FilterbarFloat.js"
+export { tileLayerType, TileLayerType } from "./TileLayer.js"
+export { registerEpsgDef, parseCrsCode, crsToQkX, crsToQkY, qkToEpsgCode, reproject } from "./EpsgUtils.js"
 
 // Register all matplotlib colorscales (side-effect import)
 import "./MatplotlibColorscales.js"
