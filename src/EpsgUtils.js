@@ -43,6 +43,11 @@ export function registerEpsgDef(epsgCode, proj4string) {
 
 // ─── Internal auto-fetch machinery ───────────────────────────────────────────
 
+// Labels for EPSG codes absent from (or wrong in) the projnames package.
+const EPSG_LABEL_OVERRIDES = {
+  4326: 'WGS 84',
+}
+
 // Tracks codes whose quantity kinds have been registered (avoids duplicate work)
 const _registeredQkCodes = new Set()
 
@@ -52,7 +57,7 @@ const _pendingFetches = new Map()
 function _registerQuantityKinds(code) {
   if (_registeredQkCodes.has(code)) return
   _registeredQkCodes.add(code)
-  const name = byEpsg[code] ?? `EPSG:${code}`
+  const name = EPSG_LABEL_OVERRIDES[code] ?? byEpsg[code] ?? `EPSG:${code}`
   registerAxisQuantityKind(`epsg_${code}_x`, { label: `${name} X`, scale: 'linear' })
   registerAxisQuantityKind(`epsg_${code}_y`, { label: `${name} Y`, scale: 'linear' })
 }
