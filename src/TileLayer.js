@@ -200,6 +200,7 @@ class TileManager {
 
     this.tiles = new Map()       // tileKey → tile entry
     this.accessOrder = []        // LRU tracking
+    this._neededKeys = new Set() // keys required by the most recent syncTiles call
 
     this._lastXDomain = null
     this._lastYDomain = null
@@ -313,7 +314,7 @@ class TileManager {
     this._lastViewport = viewport ? { width: viewport.width, height: viewport.height } : null
 
     const needed = this._computeNeededTiles(xDomain, yDomain, viewport)
-    const neededKeys = new Set(needed.map(t => t.key))
+    this._neededKeys = new Set(needed.map(t => t.key))
 
     // Start loading tiles not yet in cache
     for (const tileSpec of needed) {
@@ -321,23 +322,7 @@ class TileManager {
         this._loadTile(tileSpec)
       }
     }
-
-    // LRU eviction: remove oldest tiles beyond cache limit if they aren't currently needed
-    if (this.tiles.size > MAX_TILE_CACHE) {
-      for (const key of this.accessOrder) {
-        if (!neededKeys.has(key) && this.tiles.has(key)) {
-          this._evictTile(key)
-          if (this.tiles.size <= MAX_TILE_CACHE) break
-        }
-      }
-    }
-
-    // Keep WMS cache small: evict old WMS images not in current set
-    if (this.source.type === 'wms') {
-      for (const key of [...this.tiles.keys()]) {
-        if (!neededKeys.has(key)) this._evictTile(key)
-      }
-    }
+    // Eviction is deferred to _loadTile() so old tiles stay visible while new ones load.
   }
 
   _evictTile(key) {
@@ -382,6 +367,25 @@ class TileManager {
         elements,
         indexCount: mesh.indices.length,
       })
+
+      // Now that this tile is ready, evict old tiles that are no longer needed.
+      // Eviction is done here (not in syncTiles) so superseded tiles stay visible
+      // as a fallback while their replacements are still loading.
+      const neededKeys = this._neededKeys
+      if (this.source.type === 'wms') {
+        // WMS covers the whole viewport with one image; always evict non-needed tiles.
+        for (const key of [...this.tiles.keys()]) {
+          if (key !== tileSpec.key && !neededKeys.has(key)) this._evictTile(key)
+        }
+      } else if (this.tiles.size > MAX_TILE_CACHE) {
+        // XYZ/WMTS: LRU eviction only when the cache grows too large.
+        for (const key of this.accessOrder) {
+          if (key !== tileSpec.key && !neededKeys.has(key) && this.tiles.has(key)) {
+            this._evictTile(key)
+            if (this.tiles.size <= MAX_TILE_CACHE) break
+          }
+        }
+      }
 
       this.onLoad()
     } catch (err) {
