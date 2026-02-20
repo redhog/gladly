@@ -43,7 +43,9 @@ export const scatterLayerType = new LayerType({
     uniform float color_scale_type;
     varying float value;
     void main() {
-      gl_FragColor = map_color_s(colorscale, color_range, value, color_scale_type);
+      float t = clamp((value - color_range.x) / (color_range.y - color_range.x), 0.0, 1.0);
+      vec4 color = map_color_s(colorscale, color_range, value, color_scale_type);
+      gl_FragColor = vec4(color.rgb, t);
     }
   `,
   schema: (data) => {
@@ -78,6 +80,11 @@ export const scatterLayerType = new LayerType({
           enum: AXES.filter(a => a.includes("y")),
           default: "yaxis_left",
           description: "Which y-axis to use for this layer"
+        },
+        alphaBlend: {
+          type: "boolean",
+          default: false,
+          description: "Map the normalized color value to alpha so low values fade to transparent"
         }
       },
       required: ["xData", "yData", "vData"]
@@ -85,7 +92,7 @@ export const scatterLayerType = new LayerType({
   },
   createLayer: function(parameters, data) {
     const d = Data.wrap(data)
-    const { xData, yData, vData } = parameters
+    const { xData, yData, vData, alphaBlend = false } = parameters
 
     const xQK = d.getQuantityKind(xData) ?? xData
     const yQK = d.getQuantityKind(yData) ?? yData
@@ -117,6 +124,10 @@ export const scatterLayerType = new LayerType({
         [`color_range_${vQK}`]: 'color_range',
         [`color_scale_type_${vQK}`]: 'color_scale_type',
       },
+      blend: alphaBlend ? {
+        enable: true,
+        func: { srcRGB: 'src alpha', dstRGB: 'one minus src alpha', srcAlpha: 0, dstAlpha: 1 },
+      } : null,
     }]
   }
 })

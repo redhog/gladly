@@ -101,7 +101,8 @@ export class LayerType {
       viewport: regl.prop("viewport"),
       primitive: layer.primitive,
       lineWidth: layer.lineWidth,
-      count: regl.prop("count")
+      count: regl.prop("count"),
+      ...(layer.blend ? { blend: layer.blend } : {})
     }
 
     if (layer.instanceCount !== null) {
@@ -159,6 +160,7 @@ export class LayerType {
       vertexCount: gpuConfig.vertexCount ?? null,
       instanceCount: gpuConfig.instanceCount ?? null,
       attributeDivisors: gpuConfig.attributeDivisors ?? {},
+      blend: gpuConfig.blend ?? null,
       xAxis: axisConfig.xAxis,
       yAxis: axisConfig.yAxis,
       xAxisQuantityKind: axisConfig.xAxisQuantityKind,

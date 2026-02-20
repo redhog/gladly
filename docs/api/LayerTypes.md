@@ -713,7 +713,7 @@ new LayerType({ name,
 | `vert` | string | GLSL vertex shader |
 | `frag` | string | GLSL fragment shader |
 | `schema` | function | `(data) => JSONSchema` |
-| `createLayer` | function | `(parameters, data) => Array<{ attributes, uniforms, primitive?, vertexCount?, instanceCount?, attributeDivisors?, nameMap? }>` — GPU data only; each element becomes one `Layer` |
+| `createLayer` | function | `(parameters, data) => Array<{ attributes, uniforms, primitive?, vertexCount?, instanceCount?, attributeDivisors?, nameMap?, blend? }>` — GPU data only; each element becomes one `Layer` |
 
 **`getAxisConfig` return shape:**
 
@@ -844,6 +844,20 @@ Each element in the array:
     color_range_temperature_K:  'color_range',
     velocity_ms:                'filter_data',
     filter_range_velocity_ms:   'filter_range',
+  },
+
+  // Optional: regl blend configuration for this draw call.
+  // When null or omitted, blending is disabled (the default for opaque layers).
+  // When provided, passed directly to regl as the blend config.
+  // Use separate srcAlpha/dstAlpha to avoid writing into the canvas alpha channel:
+  blend: {
+    enable: true,
+    func: {
+      srcRGB:   'src alpha',           // RGB: weight by fragment alpha
+      dstRGB:   'one minus src alpha', // RGB: preserve background scaled by (1 - alpha)
+      srcAlpha: 0,                     // alpha channel: ignore fragment alpha
+      dstAlpha: 1,                     // alpha channel: preserve framebuffer alpha unchanged
+    },
   },
 }
 ```

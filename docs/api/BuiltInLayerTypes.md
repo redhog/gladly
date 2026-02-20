@@ -19,6 +19,7 @@ A scatter plot that renders points coloured by a per-point value mapped through 
 | `vData` | yes | — | Data key for color values; also used as the color axis quantity kind |
 | `xAxis` | no | `"xaxis_bottom"` | x-axis position |
 | `yAxis` | no | `"yaxis_left"` | y-axis position |
+| `alphaBlend` | no | `false` | When `true`, the normalized color value is used as the fragment alpha, so points at the bottom of the color range fade to fully transparent rather than rendering the colorscale's zero color. RGB blending uses standard `src alpha` / `one minus src alpha`; the framebuffer alpha channel is left unchanged. Useful for density or heatmap-style overlays where the absence of data should be invisible. |
 
 **Behavior:**
 - Point size: 4.0 px
