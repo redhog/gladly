@@ -106,10 +106,11 @@ const plotConfig = {
     {
       tile: {
         source: {
-          type: 'xyz',
-          url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-          subdomains: ['a', 'b', 'c'],
-          maxZoom: 19,
+          xyz: {
+            url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+            subdomains: ['a', 'b', 'c'],
+            maxZoom: 19,
+          },
         },
         tileCrs: 'EPSG:3857',
         plotCrs: 'EPSG:4326',

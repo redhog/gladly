@@ -42,6 +42,16 @@ function optimalZoom(bboxInTileCrs, pixelWidth, minZoom, maxZoom) {
   return Math.min(Math.max(Math.floor(z), minZoom), maxZoom)
 }
 
+// ─── Source resolution ────────────────────────────────────────────────────────
+
+// source is stored as { xyz: {...} } | { wms: {...} } | { wmts: {...} }
+// Normalize to { type: 'xyz'|'wms'|'wmts', ...params } for the rest of the pipeline.
+function resolveSource(source) {
+  const type = Object.keys(source).find(k => k === 'xyz' || k === 'wms' || k === 'wmts')
+  if (!type) throw new Error(`source must have exactly one key of: xyz, wms, wmts`)
+  return { type, ...source[type] }
+}
+
 // ─── URL builders ──────────────────────────────────────────────────────────────
 
 function buildXyzUrl(source, z, x, y) {
@@ -81,7 +91,7 @@ function buildWmtsUrl(source, z, x, y) {
 
 function buildWmsUrl(source, bbox, tileCrs, pixelWidth, pixelHeight) {
   const version = source.version ?? '1.3.0'
-  const crsParam = source.crs ?? `EPSG:${parseCrsCode(tileCrs)}`
+  const crsParam = `EPSG:${parseCrsCode(tileCrs)}`
 
   // WMS 1.3.0 with geographic CRS (EPSG:4326) swaps axis order: BBOX is minLat,minLon,maxLat,maxLon
   const is13 = version === '1.3.0'
@@ -423,53 +433,94 @@ class TileLayerType extends LayerType {
       properties: {
         source: {
           type: 'object',
-          description: 'Tile source configuration',
-          oneOf: [
+          description: 'Tile source configuration. Exactly one key (xyz, wms, or wmts) must be present.',
+          anyOf: [
             {
               title: 'XYZ',
               properties: {
-                type: { const: 'xyz' },
-                url: { type: 'string', description: 'URL template with {z}, {x}, {y}, optional {s}' },
-                subdomains: { type: 'array', items: { type: 'string' }, description: 'Subdomain letters for {s}' },
-                minZoom: { type: 'integer', default: 0 },
-                maxZoom: { type: 'integer', default: 19 },
+                xyz: {
+                  type: 'object',
+                  properties: {
+                    url: { type: 'string', default: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', description: 'URL template with {z}, {x}, {y}, optional {s}' },
+                    subdomains: { type: 'array', items: { type: 'string' }, default: ['a', 'b', 'c'], description: 'Subdomain letters for {s}' },
+                    minZoom: { type: 'integer', default: 0 },
+                    maxZoom: { type: 'integer', default: 19 },
+                  },
+                  required: ['url'],
+                  default: {
+                    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                    subdomains: ['a', 'b', 'c'],
+                  },
+                },
               },
-              required: ['type', 'url'],
+              required: ['xyz'],
+              additionalProperties: false,
             },
             {
               title: 'WMS',
               properties: {
-                type: { const: 'wms' },
-                url: { type: 'string', description: 'WMS service base URL' },
-                layers: { type: 'string', description: 'Comma-separated layer names' },
-                styles: { type: 'string', description: 'Comma-separated style names (optional)' },
-                format: { type: 'string', default: 'image/png' },
-                version: { type: 'string', enum: ['1.1.1', '1.3.0'], default: '1.3.0' },
-                crs: { type: 'string', description: 'CRS for GetMap request (default: tileCrs)' },
-                transparent: { type: 'boolean', default: true },
+                wms: {
+                  type: 'object',
+                  properties: {
+                    url: { type: 'string', default: 'https://gibs.earthdata.nasa.gov/wms/epsg3857/best/wms.cgi', description: 'WMS service base URL' },
+                    layers: { type: 'string', default: 'BlueMarble_NextGeneration', description: 'Comma-separated layer names' },
+                    styles: { type: 'string', default: '', description: 'Comma-separated style names (optional)' },
+                    format: { type: 'string', default: 'image/jpeg' },
+                    version: { type: 'string', enum: ['1.1.1', '1.3.0'], default: '1.1.1' },
+                    transparent: { type: 'boolean', default: false },
+                  },
+                  required: ['url', 'layers'],
+                  default: {
+                    url: 'https://gibs.earthdata.nasa.gov/wms/epsg3857/best/wms.cgi',
+                    layers: 'BlueMarble_NextGeneration',
+                    format: 'image/jpeg',
+                    transparent: false,
+                    version: '1.1.1',
+                  },
+                },
               },
-              required: ['type', 'url', 'layers'],
+              required: ['wms'],
+              additionalProperties: false,
             },
             {
               title: 'WMTS',
               properties: {
-                type: { const: 'wmts' },
-                url: { type: 'string', description: 'WMTS base URL (RESTful template or KVP endpoint)' },
-                layer: { type: 'string' },
-                style: { type: 'string', default: 'default' },
-                format: { type: 'string', default: 'image/png' },
-                tileMatrixSet: { type: 'string', default: 'WebMercatorQuad' },
-                minZoom: { type: 'integer', default: 0 },
-                maxZoom: { type: 'integer', default: 19 },
+                wmts: {
+                  type: 'object',
+                  properties: {
+                    url: { type: 'string', default: 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/WMTS', description: 'WMTS base URL (RESTful template or KVP endpoint)' },
+                    layer: { type: 'string', default: 'USGSTopo' },
+                    style: { type: 'string', default: 'default' },
+                    format: { type: 'string', default: 'image/jpeg' },
+                    tileMatrixSet: { type: 'string', default: 'GoogleMapsCompatible' },
+                    minZoom: { type: 'integer', default: 0 },
+                    maxZoom: { type: 'integer', default: 19 },
+                  },
+                  required: ['url', 'layer'],
+                  default: {
+                    url: 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/WMTS',
+                    layer: 'USGSTopo',
+                    tileMatrixSet: 'GoogleMapsCompatible',
+                    format: 'image/jpeg',
+                  },
+                },
               },
-              required: ['type', 'url', 'layer'],
+              required: ['wmts'],
+              additionalProperties: false,
             },
           ],
+          default: {
+            xyz: {
+              url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+              subdomains: ['a', 'b', 'c'],
+            },
+          },
         },
         tileCrs: {
           type: 'string',
           default: 'EPSG:3857',
-          description: 'CRS of the tile service (e.g. "EPSG:3857"). Defaults to EPSG:3857.',
+          description: 'CRS of the tile service. For XYZ/WMTS this is the tile grid CRS; for WMS this becomes the CRS/SRS parameter in GetMap requests. Defaults to EPSG:3857 (Web Mercator).',
+          examples: ['EPSG:3857', 'EPSG:4326'],
         },
         plotCrs: {
           type: 'string',
@@ -499,9 +550,10 @@ class TileLayerType extends LayerType {
       xAxis = 'xaxis_bottom',
       yAxis = 'yaxis_left',
       plotCrs,
-      tileCrs = 'EPSG:3857',
+      tileCrs,
     } = parameters
-    const effectivePlotCrs = plotCrs ?? tileCrs
+    const effectiveTileCrs = tileCrs ?? 'EPSG:3857'
+    const effectivePlotCrs = plotCrs ?? effectiveTileCrs
     return {
       xAxis,
       xAxisQuantityKind: crsToQkX(effectivePlotCrs),
@@ -517,9 +569,10 @@ class TileLayerType extends LayerType {
       xAxis = 'xaxis_bottom',
       yAxis = 'yaxis_left',
       plotCrs,
-      tileCrs = 'EPSG:3857',
+      tileCrs,
     } = parameters
-    const effectivePlotCrs = plotCrs ?? tileCrs
+    const effectiveTileCrs = tileCrs ?? 'EPSG:3857'
+    const effectivePlotCrs = plotCrs ?? effectiveTileCrs
 
     // Return a plain object: compatible with the render loop but no Float32Array required.
     return [{
@@ -541,13 +594,15 @@ class TileLayerType extends LayerType {
 
   createDrawCommand(regl, layer, plot) {
     const {
-      source,
-      tileCrs = 'EPSG:3857',
+      source: sourceSpec,
+      tileCrs,
       plotCrs,
       tessellation = 8,
       opacity = 1.0,
     } = layer.parameters
-    const effectivePlotCrs = plotCrs ?? tileCrs
+    const source = resolveSource(sourceSpec)
+    const effectiveTileCrs = tileCrs ?? 'EPSG:3857'
+    const effectivePlotCrs = plotCrs ?? effectiveTileCrs
 
     // Create the regl draw command immediately — it doesn't need CRS info
     const drawTile = regl({
@@ -579,14 +634,14 @@ class TileLayerType extends LayerType {
     let tileManager = null
 
     Promise.all([
-      ensureCrsDefined(tileCrs),
+      ensureCrsDefined(effectiveTileCrs),
       ensureCrsDefined(effectivePlotCrs),
     ]).then(() => {
       try {
         tileManager = new TileManager({
           regl,
           source,
-          tileCrs,
+          tileCrs: effectiveTileCrs,
           plotCrs: effectivePlotCrs,
           tessellation,
           onLoad: () => plot.scheduleRender(),

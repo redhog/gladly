@@ -16,9 +16,9 @@ export class AxisRegistry {
   }
 
   ensureAxis(axisName, axisQuantityKind, scaleOverride) {
-    if (!AXES.includes(axisName)) throw `Unknown axis ${axisName}`
+    if (!AXES.includes(axisName)) throw new Error(`Unknown axis ${axisName}`)
     if (this.axisQuantityKinds[axisName] && this.axisQuantityKinds[axisName] !== axisQuantityKind)
-      throw `Axis quantity kind mismatch on axis ${axisName}: ${this.axisQuantityKinds[axisName]} vs ${axisQuantityKind}`
+      throw new Error(`Axis quantity kind mismatch on axis ${axisName}: ${this.axisQuantityKinds[axisName]} vs ${axisQuantityKind}`)
 
     if (!this.scales[axisName]) {
       const quantityKindDef = getAxisQuantityKind(axisQuantityKind)
