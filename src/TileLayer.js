@@ -32,14 +32,19 @@ function tileToMercBbox(tx, ty, z) {
   }
 }
 
-function optimalZoom(bboxInTileCrs, pixelWidth, minZoom, maxZoom) {
+function optimalZoom(bboxInTileCrs, pixelWidth, pixelHeight, minZoom, maxZoom) {
   // Assume tile grid is Web Mercator: one tile = 256 px at zoom 0.
-  // Scale factor = pixelWidth / tileWidth_in_tileCrs_units
-  // For Web Mercator: tileWidth at zoom 0 = 2 * MERC_MAX
+  // Use the minimum of the x- and y-derived zoom levels so that neither
+  // dimension produces an unmanageable number of tiles.  A large y-extent
+  // with a small x-extent used to drive zoom to maxZoom via x alone, which
+  // could generate hundreds-of-thousands of tiles in the y direction.
   const xExtent = Math.abs(bboxInTileCrs.maxX - bboxInTileCrs.minX)
-  const worldWidth = 2 * MERC_MAX
-  const z = Math.log2((pixelWidth / 256) * (worldWidth / xExtent))
-  return Math.min(Math.max(Math.floor(z), minZoom), maxZoom)
+  const yExtent = Math.abs(bboxInTileCrs.maxY - bboxInTileCrs.minY)
+  const worldSize = 2 * MERC_MAX
+  const zx = xExtent > 0 ? Math.log2((pixelWidth  / 256) * (worldSize / xExtent)) : Infinity
+  const zy = yExtent > 0 ? Math.log2((pixelHeight / 256) * (worldSize / yExtent)) : Infinity
+  const z = Math.min(zx, zy)
+  return Math.min(Math.max(Math.floor(isFinite(z) ? z : maxZoom), minZoom), maxZoom)
 }
 
 // ─── Source resolution ────────────────────────────────────────────────────────
@@ -210,8 +215,22 @@ class TileManager {
 
   _domainChanged(xDomain, yDomain, viewport) {
     if (!this._lastXDomain || !this._lastYDomain) return true
+    const viewChanged = !!(viewport && this._lastViewport && (
+      viewport.width !== this._lastViewport.width ||
+      viewport.height !== this._lastViewport.height
+    ))
     const dx = Math.abs(xDomain[1] - xDomain[0])
     const dy = Math.abs(yDomain[1] - yDomain[0])
+    // When a domain has zero width, relative change is undefined; fall back to
+    // exact equality so we don't treat every frame as "changed" (div-by-zero
+    // would give Infinity > threshold = true on every call).
+    if (dx === 0 || dy === 0) {
+      return xDomain[0] !== this._lastXDomain[0] ||
+             xDomain[1] !== this._lastXDomain[1] ||
+             yDomain[0] !== this._lastYDomain[0] ||
+             yDomain[1] !== this._lastYDomain[1] ||
+             viewChanged
+    }
     const xChange = Math.max(
       Math.abs(xDomain[0] - this._lastXDomain[0]) / dx,
       Math.abs(xDomain[1] - this._lastXDomain[1]) / dx
@@ -219,10 +238,6 @@ class TileManager {
     const yChange = Math.max(
       Math.abs(yDomain[0] - this._lastYDomain[0]) / dy,
       Math.abs(yDomain[1] - this._lastYDomain[1]) / dy
-    )
-    const viewChanged = viewport && this._lastViewport && (
-      viewport.width !== this._lastViewport.width ||
-      viewport.height !== this._lastViewport.height
     )
     return xChange > DOMAIN_CHANGE_THRESHOLD || yChange > DOMAIN_CHANGE_THRESHOLD || viewChanged
   }
@@ -257,7 +272,7 @@ class TileManager {
     // XYZ / WMTS: standard tile grid
     const minZoom = source.minZoom ?? 0
     const maxZoom = source.maxZoom ?? 19
-    const z = optimalZoom(tileBbox, viewport.width, minZoom, maxZoom)
+    const z = optimalZoom(tileBbox, viewport.width, viewport.height, minZoom, maxZoom)
 
     const [xMin, yMax] = mercToTileXY(tileBbox.minX, tileBbox.minY, z)  // note: minY → top tile
     const [xMax, yMin] = mercToTileXY(tileBbox.maxX, tileBbox.maxY, z)  // maxY → bottom tile
@@ -267,6 +282,15 @@ class TileManager {
     const txMax = Math.min(tileCount - 1, xMax)
     const tyMin = Math.max(0, yMin)
     const tyMax = Math.min(tileCount - 1, yMax)
+
+    // Safety cap: if the computed tile range is still unreasonably large (e.g.
+    // due to a degenerate bbox or an unsupported CRS), bail out rather than
+    // allocating millions of objects and crashing the tab.
+    const MAX_TILES = 512
+    if ((txMax - txMin + 1) * (tyMax - tyMin + 1) > MAX_TILES) {
+      console.warn(`[TileLayer] tile range too large (${txMax - txMin + 1}×${tyMax - tyMin + 1} at z=${z}), skipping`)
+      return []
+    }
 
     const tiles = []
     for (let ty = tyMin; ty <= tyMax; ty++) {
