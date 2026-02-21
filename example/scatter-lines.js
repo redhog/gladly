@@ -82,9 +82,15 @@ plot.on('mouseup', (e) => {
   const status = document.getElementById('tab2-pick-status')
   if (!result) { status.textContent = ''; return }
   const { configLayerIndex, dataIndex, layer } = result
-  const isInstanced = layer.instanceCount !== null
-  const row = Object.fromEntries(Object.entries(layer.attributes).filter(([k]) => !isInstanced || (layer.attributeDivisors[k] ?? 0) === 1).map(([k, v]) => [k, v[dataIndex]]))
-  status.textContent = `layer=${configLayerIndex} index=${dataIndex} ${JSON.stringify(row)}`
+  const getRow = (idx) => Object.fromEntries(
+    Object.entries(data.data).map(([k, v]) => [k, v[idx]]).filter(([, v]) => v !== undefined)
+  )
+  if (layer.instanceCount !== null) {
+    // Lines: dataIndex is a segment index; source points are at dataIndex and dataIndex+1
+    status.textContent = `layer=${configLayerIndex} segment=${dataIndex} start=${JSON.stringify(getRow(dataIndex))} end=${JSON.stringify(getRow(dataIndex + 1))}`
+  } else {
+    status.textContent = `layer=${configLayerIndex} index=${dataIndex} ${JSON.stringify(getRow(dataIndex))}`
+  }
 })
 
 let editor = new JSONEditor(document.getElementById('tab2-editor-container'), {
