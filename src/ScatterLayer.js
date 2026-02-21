@@ -41,11 +41,10 @@ export const scatterLayerType = new LayerType({
     uniform int colorscale;
     uniform vec2 color_range;
     uniform float color_scale_type;
+    uniform float alphaBlend;
     varying float value;
     void main() {
-      float t = clamp((value - color_range.x) / (color_range.y - color_range.x), 0.0, 1.0);
-      vec4 color = map_color_s(colorscale, color_range, value, color_scale_type);
-      gl_FragColor = vec4(color.rgb, t);
+      gl_FragColor = map_color_s(colorscale, color_range, value, color_scale_type, alphaBlend);
     }
   `,
   schema: (data) => {
@@ -116,7 +115,7 @@ export const scatterLayerType = new LayerType({
 
     return [{
       attributes: { x, y, [vQK]: v },
-      uniforms: {},
+      uniforms: { alphaBlend: alphaBlend ? 1.0 : 0.0 },
       domains,
       nameMap: {
         [vQK]: 'color_data',

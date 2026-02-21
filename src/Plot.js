@@ -355,7 +355,8 @@ export class Plot {
   }
 
   _processLayers(layersConfig, data) {
-    for (const layerSpec of layersConfig) {
+    for (let configLayerIndex = 0; configLayerIndex < layersConfig.length; configLayerIndex++) {
+      const layerSpec = layersConfig[configLayerIndex]
       const entries = Object.entries(layerSpec)
       if (entries.length !== 1) {
         throw new Error("Each layer specification must have exactly one layer type key")
@@ -385,6 +386,7 @@ export class Plot {
 
       // Create one draw command per GPU config returned by the layer type.
       for (const layer of layerType.createLayer(parameters, data)) {
+        layer.configLayerIndex = configLayerIndex
         layer.draw = layer.type.createDrawCommand(this.regl, layer, this)
         this.layers.push(layer)
       }
@@ -811,7 +813,9 @@ export class Plot {
         xScaleType: xIsLog ? 1.0 : 0.0,
         yScaleType: yIsLog ? 1.0 : 0.0,
         viewport: viewport,
-        count: layer.vertexCount ?? layer.attributes.x?.length ?? 0
+        count: layer.vertexCount ?? layer.attributes.x?.length ?? 0,
+        u_pickingMode: 0.0,
+        u_pickLayerIndex: 0.0,
       }
 
       if (layer.instanceCount !== null) {
@@ -972,5 +976,93 @@ export class Plot {
       })
 
     fullOverlay.call(zoomBehavior)
+  }
+
+  lookup(x, y) {
+    const result = {}
+    if (!this.axisRegistry) return result
+    const plotX = x - this.margin.left
+    const plotY = y - this.margin.top
+    for (const axisId of AXES) {
+      const scale = this.axisRegistry.getScale(axisId)
+      if (!scale) continue
+      const qk = this.axisRegistry.axisQuantityKinds[axisId]
+      const value = axisId.includes('y') ? scale.invert(plotY) : scale.invert(plotX)
+      result[axisId] = value
+      if (qk) result[qk] = value
+    }
+    return result
+  }
+
+  on(eventType, callback) {
+    const handler = (e) => {
+      if (!this.container.contains(e.target)) return
+      const rect = this.container.getBoundingClientRect()
+      const x = e.clientX - rect.left
+      const y = e.clientY - rect.top
+      callback(e, this.lookup(x, y))
+    }
+    window.addEventListener(eventType, handler, { capture: true })
+    return { remove: () => window.removeEventListener(eventType, handler, { capture: true }) }
+  }
+
+  pick(x, y) {
+    if (!this.regl || !this.layers.length) return null
+
+    const fbo = this.regl.framebuffer({
+      width: this.width, height: this.height,
+      colorFormat: 'rgba', colorType: 'uint8', depth: false,
+    })
+
+    const glX = Math.round(x)
+    const glY = this.height - Math.round(y) - 1
+
+    let result = null
+    this.regl({ framebuffer: fbo })(() => {
+      this.regl.clear({ color: [0, 0, 0, 0] })
+      const viewport = {
+        x: this.margin.left, y: this.margin.bottom,
+        width: this.plotWidth, height: this.plotHeight
+      }
+      for (let i = 0; i < this.layers.length; i++) {
+        const layer = this.layers[i]
+        const xIsLog = layer.xAxis ? this.axisRegistry.isLogScale(layer.xAxis) : false
+        const yIsLog = layer.yAxis ? this.axisRegistry.isLogScale(layer.yAxis) : false
+        const props = {
+          xDomain: layer.xAxis ? this.axisRegistry.getScale(layer.xAxis).domain() : [0, 1],
+          yDomain: layer.yAxis ? this.axisRegistry.getScale(layer.yAxis).domain() : [0, 1],
+          xScaleType: xIsLog ? 1.0 : 0.0,
+          yScaleType: yIsLog ? 1.0 : 0.0,
+          viewport,
+          count: layer.vertexCount ?? layer.attributes.x?.length ?? 0,
+          u_pickingMode: 1.0,
+          u_pickLayerIndex: i,
+        }
+        if (layer.instanceCount !== null) props.instances = layer.instanceCount
+        for (const qk of layer.colorAxes) {
+          props[`colorscale_${qk}`] = this.colorAxisRegistry.getColorscaleIndex(qk)
+          const range = this.colorAxisRegistry.getRange(qk)
+          props[`color_range_${qk}`] = range ?? [0, 1]
+          props[`color_scale_type_${qk}`] = this._getScaleTypeFloat(qk)
+        }
+        for (const qk of layer.filterAxes) {
+          props[`filter_range_${qk}`] = this.filterAxisRegistry.getRangeUniform(qk)
+          props[`filter_scale_type_${qk}`] = this._getScaleTypeFloat(qk)
+        }
+        layer.draw(props)
+      }
+      const pixels = this.regl.read({ x: glX, y: glY, width: 1, height: 1 })
+      if (pixels[0] === 0) {
+        result = null
+      } else {
+        const layerIndex = pixels[0] - 1
+        const dataIndex = (pixels[1] << 16) | (pixels[2] << 8) | pixels[3]
+        const layer = this.layers[layerIndex]
+        result = { layerIndex, configLayerIndex: layer.configLayerIndex, dataIndex, layer }
+      }
+    })
+
+    fbo.destroy()
+    return result
   }
 }

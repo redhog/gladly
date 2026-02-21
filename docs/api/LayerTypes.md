@@ -56,7 +56,7 @@ const redDotsType = new LayerType({
   frag: `
     precision mediump float;
     void main() {
-      gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+      gl_FragColor = gladly_apply_color(vec4(1.0, 0.0, 0.0, 1.0));
     }
   `,
 
@@ -129,15 +129,17 @@ const heatDotsType = new LayerType({
     }
   `,
 
-  // map_color() is injected automatically when color axes are present
+  // map_color_s() is injected automatically when color axes are present
+  // It calls gladly_apply_color() internally, so no explicit wrap needed.
   frag: `
     precision mediump float;
     uniform int colorscale;
     uniform vec2 color_range;
+    uniform float color_scale_type;
     varying float value;
 
     void main() {
-      gl_FragColor = map_color(colorscale, color_range, value);
+      gl_FragColor = map_color_s(colorscale, color_range, value, color_scale_type, 0.0);
     }
   `,
 
@@ -230,7 +232,7 @@ const filteredDotsType = new LayerType({
 
   frag: `
     precision mediump float;
-    void main() { gl_FragColor = vec4(0.0, 0.5, 1.0, 1.0); }
+    void main() { gl_FragColor = gladly_apply_color(vec4(0.0, 0.5, 1.0, 1.0)); }
   `,
 
   schema: (data) => ({ /* ... */ }),
@@ -307,10 +309,11 @@ const filteredScatterType = new LayerType({
     precision mediump float;
     uniform int colorscale;
     uniform vec2 color_range;
+    uniform float color_scale_type;
     varying float value;
 
     void main() {
-      gl_FragColor = map_color(colorscale, color_range, value);
+      gl_FragColor = map_color_s(colorscale, color_range, value, color_scale_type, 0.0);
     }
   `,
 
@@ -381,9 +384,10 @@ const fixedScatterType = new LayerType({
     precision mediump float;
     uniform int colorscale_temperature_K;
     uniform vec2 color_range_temperature_K;
+    uniform float color_scale_type_temperature_K;
     varying float value;
     void main() {
-      gl_FragColor = map_color(colorscale_temperature_K, color_range_temperature_K, value);
+      gl_FragColor = map_color_s(colorscale_temperature_K, color_range_temperature_K, value, color_scale_type_temperature_K, 0.0);
     }
   `,
   schema: () => ({ /* ... */ }),
@@ -509,10 +513,12 @@ When a layer has color axes, `createDrawCommand` automatically:
 // Static layer type — shader names match generated names directly:
 uniform int colorscale_temperature_K;
 uniform vec2 color_range_temperature_K;
+uniform float color_scale_type_temperature_K;
 varying float value;
 
 void main() {
-  gl_FragColor = map_color(colorscale_temperature_K, color_range_temperature_K, value);
+  // map_color_s calls gladly_apply_color internally — no explicit wrap needed.
+  gl_FragColor = map_color_s(colorscale_temperature_K, color_range_temperature_K, value, color_scale_type_temperature_K, 0.0);
 }
 ```
 
@@ -634,7 +640,7 @@ const rectLayerType = new LayerType({
 
   frag: `
     precision mediump float;
-    void main() { gl_FragColor = vec4(0.2, 0.5, 0.8, 1.0); }
+    void main() { gl_FragColor = gladly_apply_color(vec4(0.2, 0.5, 0.8, 1.0)); }
   `,
 
   schema: (data) => ({ /* ... */ }),
@@ -683,6 +689,70 @@ const rectLayerType = new LayerType({
 - `vertexCount: 6` — vertices per instance (the quad)
 - `instanceCount: n` — number of instances (data points)
 - `domains` — pre-computed ranges covering multiple source arrays (both `top` and `bottom` for the y axis), so auto-range doesn't need an attribute to scan
+
+---
+
+## Picking Support
+
+GPU picking lets the application identify which layer and data point is under the mouse cursor. The framework handles the mechanics automatically — layer authors only need to follow one rule: **always assign `gl_FragColor` through `gladly_apply_color()`**.
+
+### The rule
+
+```glsl
+// ✅ Correct — picking works automatically
+void main() {
+  vec4 color = /* your color calculation */;
+  gl_FragColor = gladly_apply_color(color);
+}
+
+// ❌ Wrong — pick pass will not detect this fragment
+void main() {
+  gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+}
+```
+
+In normal rendering, `gladly_apply_color` is a pass-through and has no effect on visual output. In a GPU pick pass it encodes the layer and vertex index into the RGBA channels.
+
+### Using `map_color_s`
+
+`map_color_s` calls `gladly_apply_color` internally, so layers using it for their final output need **no additional call**:
+
+```glsl
+void main() {
+  // gladly_apply_color is called inside map_color_s — no wrapping needed
+  gl_FragColor = map_color_s(colorscale, color_range, value, color_scale_type, 0.0);
+}
+```
+
+Only wrap `gladly_apply_color` explicitly when doing additional processing after `map_color_s` (e.g. custom alpha):
+
+```glsl
+void main() {
+  float t = clamp((value - color_range.x) / (color_range.y - color_range.x), 0.0, 1.0);
+  vec4 color = map_color_s(colorscale, color_range, value, color_scale_type, 0.0);
+  gl_FragColor = gladly_apply_color(vec4(color.rgb, t));  // explicit wrap needed here
+}
+```
+
+Double-calling `gladly_apply_color` is safe: in pick mode it always returns the correct pick encoding regardless of input.
+
+### Instanced layers
+
+For instanced layers (`instanceCount !== null`), `a_pickId` is a per-instance attribute (divisor 1). The `dataIndex` returned by `plot.pick()` is therefore the **instance** index into the per-instance attribute arrays. When reading back picked values, filter out per-vertex attributes:
+
+```javascript
+const { layer, dataIndex } = result
+const isInstanced = layer.instanceCount !== null
+const row = Object.fromEntries(
+  Object.entries(layer.attributes)
+    .filter(([k]) => !isInstanced || (layer.attributeDivisors[k] ?? 0) === 1)
+    .map(([k, v]) => [k, v[dataIndex]])
+)
+```
+
+### Layers that override `createDrawCommand`
+
+If a layer type overrides `createDrawCommand` entirely (e.g. `TileLayer`), the automatic `a_pickId` / `gladly_apply_color` injection does not apply. Such layers are not pickable and `plot.pick()` will never return a hit for them. This is by design.
 
 ---
 
@@ -739,29 +809,44 @@ Any field that is `undefined` (or absent) leaves the corresponding static declar
 | `xScaleType` | `float` | always | `0.0` = linear, `1.0` = log |
 | `yScaleType` | `float` | always | `0.0` = linear, `1.0` = log |
 | `count` | `int` | always | Number of data points (vertices) |
+| `u_pickingMode` | `float` | always | `0.0` = normal render, `1.0` = GPU pick pass |
+| `u_pickLayerIndex` | `float` | always | Layer index encoded in the pick pass |
 | `colorscale_<quantityKind>` | `int` | color axes | Colorscale index (one per color axis) |
 | `color_range_<quantityKind>` | `vec2` | color axes | `[min, max]` color range (one per color axis) |
 | `color_scale_type_<quantityKind>` | `float` | color axes | `0.0` = linear, `1.0` = log (one per color axis) |
 | `filter_range_<quantityKind>` | `vec4` | filter axes | `[min, max, hasMin, hasMax]` (one per filter axis) |
 | `filter_scale_type_<quantityKind>` | `float` | filter axes | `0.0` = linear, `1.0` = log (one per filter axis) |
 
-**Automatically injected GLSL functions:**
+**Automatically injected GLSL:**
 
 ```glsl
 // Always injected into vertex shader:
+attribute float a_pickId;   // per-vertex id (non-instanced) or per-instance id (instanced)
+varying float v_pickId;     // passed to fragment shader; automatically assigned in main()
+
 float normalize_axis(float v, vec2 domain, float scaleType)
 // Maps v from data-space to [0, 1], handling both linear and log scales.
-// scaleType: 0.0 = linear, 1.0 = log.
 
-// Injected when color axes are present (both vertex and fragment shader):
+// Always injected into fragment shader:
+varying float v_pickId;
+
+vec4 gladly_apply_color(vec4 color)
+// In normal rendering: returns color unchanged.
+// In a GPU pick pass (u_pickingMode > 0.5): ignores color and returns the
+// pick-encoded RGBA for this vertex (layer index + data index).
+// Call this as the last step before assigning gl_FragColor.
+
+// Injected when color axes are present:
 vec4 map_color(int cs, vec2 range, float value)
-// Maps value to RGBA using colorscale cs and linear range.
+// Maps value to RGBA using colorscale cs and a linear range.
 
-vec4 map_color_s(int cs, vec2 range, float value, float scaleType)
-// Like map_color but handles log scale: applies log() to value and range
-// before mapping when scaleType > 0.5.
+vec4 map_color_s(int cs, vec2 range, float value, float scaleType, float useAlpha)
+// Like map_color but handles log scale (log() applied when scaleType > 0.5).
+// When useAlpha > 0.5, replaces the output alpha with the normalized value t
+// (making low values fade to transparent).
+// Calls gladly_apply_color() internally — no explicit call needed in the shader.
 
-// Injected when filter axes are present (vertex shader):
+// Injected when filter axes are present (vertex shader only):
 bool filter_in_range(vec4 range, float value)
 // Returns false when value is outside the filter bounds.
 // range: [min, max, hasMin, hasMax]; open bounds (hasMin/hasMax == 0) always pass.

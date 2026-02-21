@@ -339,7 +339,34 @@
       }
 
       /* ? badge on labels/titles that have a description */
-      label.je-form-input-label:has(~ p.je-form-input-label)::after,
+      label.je-form-input-label:has(~ p.je-form-input-label)::after {
+        flex-shrink: 0;
+        height: 28px;
+        line-height: 28px;
+        padding: 0 16px;
+        background: #111;
+        color: #b0ffb0;
+        font-family: monospace;
+        font-size: 13px;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+
+      .pick-status {
+        flex-shrink: 0;
+        height: 28px;
+        line-height: 28px;
+        padding: 0 16px;
+        background: #111;
+        color: #b0ffb0;
+        font-family: monospace;
+        font-size: 13px;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+
       .je-object__container:has(> p) .je-object__title::after {
         content: '?';
         display: inline-flex;
@@ -404,6 +431,9 @@
           tab.classList.add('active')
           document.querySelectorAll('.tab-content').forEach(function(c) { c.style.display = 'none' })
           document.getElementById(targetId).style.display = 'grid'
+          document.querySelectorAll('.pick-status').forEach(function(s) { s.style.display = 'none' })
+          var ps = document.getElementById(targetId + '-pick-status')
+          if (ps) ps.style.display = ''
         })
       })
     </script>

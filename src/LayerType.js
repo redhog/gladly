@@ -11,6 +11,44 @@ function buildSpatialGlsl() {
 }`
 }
 
+function buildApplyColorGlsl() {
+  return `uniform float u_pickingMode;
+uniform float u_pickLayerIndex;
+varying float v_pickId;
+vec4 gladly_apply_color(vec4 color) {
+  if (u_pickingMode > 0.5) {
+    float layerIdx = u_pickLayerIndex + 1.0;
+    float dataIdx = floor(v_pickId + 0.5);
+    return vec4(
+      layerIdx / 255.0,
+      floor(dataIdx / 65536.0) / 255.0,
+      floor(mod(dataIdx, 65536.0) / 256.0) / 255.0,
+      mod(dataIdx, 256.0) / 255.0
+    );
+  }
+  return color;
+}`
+}
+
+function injectPickIdAssignment(src) {
+  const lastBrace = src.lastIndexOf('}')
+  if (lastBrace === -1) return src
+  return src.slice(0, lastBrace) + '  v_pickId = a_pickId;\n}'
+}
+
+function injectInto(src, helpers) {
+  const injected = helpers.filter(Boolean).join('\n')
+  if (!injected) return src
+  const versionRe = /^[ \t]*#version[^\n]*\n?/
+  const versionMatch = src.match(versionRe)
+  const version = versionMatch ? versionMatch[0] : ''
+  const rest = version ? src.slice(version.length) : src
+  const precisionRe = /^\s*precision\s+\S+\s+\S+\s*;\s*$/mg
+  const precisions = rest.match(precisionRe) ?? []
+  const body = rest.replace(precisionRe, '')
+  return version + precisions.join('\n') + '\n' + injected + '\n' + body
+}
+
 export class LayerType {
   constructor({
     name,
@@ -48,19 +86,29 @@ export class LayerType {
     // Build a single-entry uniform object with renamed key reading from the internal prop name.
     const u = (internalName) => ({ [shaderName(internalName)]: regl.prop(internalName) })
 
-    const attributes = Object.fromEntries(
-      Object.entries(layer.attributes).map(([key, buffer]) => {
-        const divisor = layer.attributeDivisors[key]
-        const attrObj = divisor !== undefined ? { buffer, divisor } : { buffer }
-        return [shaderName(key), attrObj]
-      })
-    )
+    const isInstanced = layer.instanceCount !== null
+    const pickCount = isInstanced ? layer.instanceCount : (layer.vertexCount ?? layer.attributes.x?.length ?? 0)
+    const pickIds = new Float32Array(pickCount)
+    for (let i = 0; i < pickCount; i++) pickIds[i] = i
+
+    const attributes = {
+      ...Object.fromEntries(
+        Object.entries(layer.attributes).map(([key, buffer]) => {
+          const divisor = layer.attributeDivisors[key]
+          const attrObj = divisor !== undefined ? { buffer, divisor } : { buffer }
+          return [shaderName(key), attrObj]
+        })
+      ),
+      a_pickId: isInstanced ? { buffer: regl.buffer(pickIds), divisor: 1 } : regl.buffer(pickIds)
+    }
 
     const uniforms = {
       ...u("xDomain"),
       ...u("yDomain"),
       ...u("xScaleType"),
       ...u("yScaleType"),
+      u_pickingMode: regl.prop('u_pickingMode'),
+      u_pickLayerIndex: regl.prop('u_pickLayerIndex'),
       ...Object.fromEntries(
         Object.entries(layer.uniforms).map(([key, value]) => [shaderName(key), value])
       )
@@ -80,22 +128,11 @@ export class LayerType {
     const spatialGlsl = buildSpatialGlsl()
     const colorGlsl = layer.colorAxes.length > 0 ? buildColorGlsl() : ''
     const filterGlsl = layer.filterAxes.length > 0 ? buildFilterGlsl() : ''
-    const injectInto = (src, helpers) => {
-      const injected = helpers.filter(Boolean).join('\n')
-      if (!injected) return src
-      const versionRe = /^[ \t]*#version[^\n]*\n?/
-      const versionMatch = src.match(versionRe)
-      const version = versionMatch ? versionMatch[0] : ''
-      const rest = version ? src.slice(version.length) : src
-      const precisionRe = /^\s*precision\s+\S+\s+\S+\s*;\s*$/mg
-      const precisions = rest.match(precisionRe) ?? []
-      const body = rest.replace(precisionRe, '')
-      return version + precisions.join('\n') + '\n' + injected + '\n' + body
-    }
+    const pickVertDecls = `attribute float a_pickId;\nvarying float v_pickId;`
 
     const drawConfig = {
-      vert: injectInto(this.vert, [spatialGlsl, colorGlsl, filterGlsl]),
-      frag: injectInto(this.frag, [colorGlsl, filterGlsl]),
+      vert: injectPickIdAssignment(injectInto(this.vert, [spatialGlsl, filterGlsl, pickVertDecls])),
+      frag: injectInto(this.frag, [buildApplyColorGlsl(), colorGlsl, filterGlsl]),
       attributes,
       uniforms,
       viewport: regl.prop("viewport"),

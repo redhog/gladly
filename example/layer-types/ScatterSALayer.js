@@ -52,7 +52,7 @@ export const ScatterSALayer = new LayerType({
     uniform float color_scale_type_temperature_K;
     varying float value;
     void main() {
-      gl_FragColor = map_color_s(colorscale_temperature_K, color_range_temperature_K, value, color_scale_type_temperature_K);
+      gl_FragColor = map_color_s(colorscale_temperature_K, color_range_temperature_K, value, color_scale_type_temperature_K, 0.0);
     }
   `,
   schema: () => ({

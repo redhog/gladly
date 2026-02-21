@@ -99,6 +99,11 @@ const data = {
     </div>
   `
   document.body.appendChild(panel)
+  const pickStatus = document.createElement('div')
+  pickStatus.id = 'tab4-pick-status'
+  pickStatus.className = 'pick-status'
+  pickStatus.style.display = 'none'
+  document.body.appendChild(pickStatus)
 }
 
 const plotConfig = {

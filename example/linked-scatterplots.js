@@ -29,6 +29,10 @@ import { data } from "./shared.js"
     </div>
   `
   document.body.appendChild(panel)
+  const pickStatus = document.createElement('div')
+  pickStatus.id = 'tab1-pick-status'
+  pickStatus.className = 'pick-status'
+  document.body.appendChild(pickStatus)
 }
 
 let activePlot = 'plot1'
@@ -86,6 +90,21 @@ function updatePlot(plotId, plotConfig) {
 
 updatePlot('plot1', plot1Config)
 updatePlot('plot2', plot2Config)
+
+function attachPickHandler(plot) {
+  plot.on('mouseup', (e) => {
+    const rect = plot.container.getBoundingClientRect()
+    const result = plot.pick(e.clientX - rect.left, e.clientY - rect.top)
+    const status = document.getElementById('tab1-pick-status')
+    if (!result) { status.textContent = ''; return }
+    const { configLayerIndex, dataIndex, layer } = result
+    const isInstanced = layer.instanceCount !== null
+    const row = Object.fromEntries(Object.entries(layer.attributes).filter(([k]) => !isInstanced || (layer.attributeDivisors[k] ?? 0) === 1).map(([k, v]) => [k, v[dataIndex]]))
+    status.textContent = `layer=${configLayerIndex} index=${dataIndex} ${JSON.stringify(row)}`
+  })
+}
+attachPickHandler(plot1)
+attachPickHandler(plot2)
 
 let editor = new JSONEditor(document.getElementById('tab1-editor-container'), {
   schema: Plot.schema(data),

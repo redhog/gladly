@@ -41,7 +41,7 @@ export const colorbarLayerType = new LayerType({
       float r0 = color_scale_type > 0.5 ? log(color_range.x) : color_range.x;
       float r1 = color_scale_type > 0.5 ? log(color_range.y) : color_range.y;
       float v  = r0 + tval * (r1 - r0);
-      gl_FragColor = map_color(colorscale, vec2(r0, r1), v);
+      gl_FragColor = gladly_apply_color(map_color(colorscale, vec2(r0, r1), v));
     }
   `,
 

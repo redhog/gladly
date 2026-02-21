@@ -68,6 +68,11 @@ const data = {
     </div>
   `
   document.body.appendChild(panel)
+  const pickStatus = document.createElement('div')
+  pickStatus.id = 'tab3-pick-status'
+  pickStatus.className = 'pick-status'
+  pickStatus.style.display = 'none'
+  document.body.appendChild(pickStatus)
 }
 
 const plotConfig = {
@@ -98,6 +103,17 @@ function updatePlot(cfg) {
 }
 
 updatePlot(currentPlotConfig)
+
+plot.on('mouseup', (e) => {
+  const rect = plot.container.getBoundingClientRect()
+  const result = plot.pick(e.clientX - rect.left, e.clientY - rect.top)
+  const status = document.getElementById('tab3-pick-status')
+  if (!result) { status.textContent = ''; return }
+  const { configLayerIndex, dataIndex, layer } = result
+  const isInstanced = layer.instanceCount !== null
+  const row = Object.fromEntries(Object.entries(layer.attributes).filter(([k]) => !isInstanced || (layer.attributeDivisors[k] ?? 0) === 1).map(([k, v]) => [k, v[dataIndex]]))
+  status.textContent = `layer=${configLayerIndex} index=${dataIndex} ${JSON.stringify(row)}`
+})
 
 const editor = new JSONEditor(document.getElementById('tab3-editor-container'), {
   schema: Plot.schema(data),

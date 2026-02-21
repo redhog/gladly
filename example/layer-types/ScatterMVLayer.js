@@ -52,7 +52,7 @@ export const ScatterMVLayer = new LayerType({
     uniform float color_scale_type_reflectance_au;
     varying float value;
     void main() {
-      gl_FragColor = map_color_s(colorscale_reflectance_au, color_range_reflectance_au, value, color_scale_type_reflectance_au);
+      gl_FragColor = map_color_s(colorscale_reflectance_au, color_range_reflectance_au, value, color_scale_type_reflectance_au, 0.0);
     }
   `,
   schema: () => ({

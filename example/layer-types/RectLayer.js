@@ -67,7 +67,7 @@ export const rectLayerType = new LayerType({
     varying float value;
 
     void main() {
-      gl_FragColor = map_color_s(colorscale, color_range, value, color_scale_type);
+      gl_FragColor = map_color_s(colorscale, color_range, value, color_scale_type, 0.0);
     }
   `,
 

@@ -51,9 +51,9 @@ export const multiLineLayerType = new LayerType({
     varying float vBadSegment;
     void main() {
       if (vBadSegment > 0.5) {
-        gl_FragColor = bad_color;
+        gl_FragColor = gladly_apply_color(bad_color);
       } else {
-        gl_FragColor = map_color_s(colorscale, color_range, vLineIndex, color_scale_type);
+        gl_FragColor = map_color_s(colorscale, color_range, vLineIndex, color_scale_type, 0.0);
       }
     }
   `,

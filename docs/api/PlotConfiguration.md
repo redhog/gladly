@@ -197,6 +197,48 @@ plot.update({
 
 ## Interaction
 
+### Event Handling
+
+`plot.on(eventType, callback)` registers a listener for events originating within the plot container. The callback receives the raw DOM event and the data coordinates at the cursor position:
+
+```javascript
+plot.on('mousemove', (e, coords) => {
+  // coords: { xaxis_bottom: 42.3, distance_m: 42.3, yaxis_left: 1.7, ... }
+  console.log('x =', coords.xaxis_bottom, 'y =', coords.yaxis_left)
+})
+```
+
+Returns `{ remove() }` to unregister.
+
+Listeners fire for all mouse buttons including the primary (left) button, even during pan gestures.
+
+For raw pixel-to-data conversion without an event, use `plot.lookup(x, y)` with container-relative pixel coordinates.
+
+### GPU Picking
+
+`plot.pick(x, y)` identifies which data point is at a given pixel using a GPU offscreen render pass. Returns `null` for background, or `{ configLayerIndex, layerIndex, dataIndex, layer }` on a hit:
+
+```javascript
+plot.on('mouseup', (e) => {
+  const rect = plot.container.getBoundingClientRect()
+  const result = plot.pick(e.clientX - rect.left, e.clientY - rect.top)
+  if (!result) return
+
+  const { configLayerIndex, dataIndex, layer } = result
+  const isInstanced = layer.instanceCount !== null
+  const row = Object.fromEntries(
+    Object.entries(layer.attributes)
+      .filter(([k]) => !isInstanced || (layer.attributeDivisors[k] ?? 0) === 1)
+      .map(([k, v]) => [k, v[dataIndex]])
+  )
+  console.log(`layer=${configLayerIndex} index=${dataIndex}`, row)
+})
+```
+
+`configLayerIndex` is the index into `config.layers` you passed to `update()`. For instanced layers (e.g. `rects`), `dataIndex` is the instance index; filter out per-vertex attributes using `layer.attributeDivisors`.
+
+See [`plot.pick()`](Reference.md#pickx-y) and [`plot.on()`](Reference.md#oneventtype-callback) for the full API reference.
+
 ### Zoom and Pan
 
 Gladly supports interactive zoom and pan out of the box:
