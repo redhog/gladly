@@ -7,7 +7,8 @@ import { FilterAxisRegistry } from "./FilterAxisRegistry.js"
 import { ZoomController } from "./ZoomController.js"
 import { getLayerType, getRegisteredLayerTypes } from "./LayerTypeRegistry.js"
 import { getAxisQuantityKind, getScaleTypeFloat } from "./AxisQuantityKindRegistry.js"
-import { getRegisteredColorscales } from "./ColorscaleRegistry.js"
+import { getRegisteredColorscales, getRegistered2DColorscales } from "./ColorscaleRegistry.js"
+import { Float } from "./Float.js"
 
 function buildPlotSchema(data) {
   const layerTypes = getRegisteredLayerTypes()
@@ -86,7 +87,10 @@ function buildPlotSchema(data) {
             scale: { type: "string", enum: ["linear", "log"] },
             colorscale: {
               type: "string",
-              enum: [...getRegisteredColorscales().keys()]
+              enum: [
+                ...getRegisteredColorscales().keys(),
+                ...getRegistered2DColorscales().keys()
+              ]
             },
             colorbar: {
               type: "string",
@@ -98,14 +102,40 @@ function buildPlotSchema(data) {
             }
           }
         }
+      },
+      colorbars: {
+        type: "array",
+        description: "Floating colorbar widgets. Use xAxis+yAxis for 2D, one axis for 1D.",
+        items: {
+          type: "object",
+          properties: {
+            xAxis: { type: "string", description: "Quantity kind for the x axis of the colorbar" },
+            yAxis: { type: "string", description: "Quantity kind for the y axis of the colorbar" },
+            colorscale: {
+              type: "string",
+              description: "Colorscale override. A 2D colorscale name enables the true-2D path.",
+              enum: [
+                ...getRegisteredColorscales().keys(),
+                ...getRegistered2DColorscales().keys()
+              ]
+            }
+          }
+        }
       }
     }
   }
 }
 
 export class Plot {
-  static _FloatClass = null
-  static _FilterbarFloatClass = null
+  // Registry of float factories keyed by type name.
+  // Each entry: { factory(parentPlot, container, opts) → widget, defaultSize(opts) → {width,height} }
+  // Populated by Colorbar.js, Filterbar.js, Colorbar2d.js at module load time.
+  static _floatFactories = new Map()
+
+  static registerFloatFactory(type, factoryDef) {
+    Plot._floatFactories.set(type, factoryDef)
+  }
+
   constructor(container, { margin } = {}) {
     this.container = container
     this.margin = margin ?? { top: 60, right: 60, bottom: 60, left: 60 }
@@ -143,10 +173,9 @@ export class Plot {
     this._axisCache = new Map()
     this._axesProxy = null
 
-    // Auto-managed Float colorbars keyed by color axis name
+    // Auto-managed Float widgets keyed by a config-derived tag string.
+    // Covers 1D colorbars, 2D colorbars, and filterbars in a single unified Map.
     this._floats = new Map()
-    // Auto-managed FilterbarFloat widgets keyed by filter axis name
-    this._filterbarFloats = new Map()
 
     this._setupResizeObserver()
   }
@@ -280,7 +309,7 @@ export class Plot {
   }
 
   _initialize() {
-    const { layers = [], axes = {} } = this.currentConfig
+    const { layers = [], axes = {}, colorbars = [] } = this.currentConfig
 
     this.regl = reglInit({ canvas: this.canvas, extensions: ['ANGLE_instanced_arrays'] })
 
@@ -294,6 +323,17 @@ export class Plot {
 
     this._processLayers(layers, this.currentData)
     this._setDomains(axes)
+
+    // Apply colorscale overrides from top-level colorbars entries. These override any
+    // per-axis colorscale from config.axes or quantity kind registry. Applying after
+    // _setDomains ensures they take effect last. For 2D colorbars both axes receive the
+    // same colorscale name, which resolves to a negative index in the shader, triggering
+    // the true-2D colorscale path in map_color_s_2d.
+    for (const entry of colorbars) {
+      if (!entry.colorscale) continue
+      if (entry.xAxis) this.colorAxisRegistry.ensureColorAxis(entry.xAxis, entry.colorscale)
+      if (entry.yAxis) this.colorAxisRegistry.ensureColorAxis(entry.yAxis, entry.colorscale)
+    }
 
     new ZoomController(this)
     this.render()
@@ -350,54 +390,74 @@ export class Plot {
   }
 
   _syncFloats() {
-    const axes = this.currentConfig?.axes ?? {}
+    const config = this.currentConfig ?? {}
+    const axes = config.axes ?? {}
+    const colorbarsConfig = config.colorbars ?? []
 
-    // --- Color axis floats ---
-    const desiredColor = new Map()
-    for (const [axisName, axisConfig] of Object.entries(axes)) {
-      if (AXES.includes(axisName)) continue  // skip spatial axes
-      const cb = axisConfig.colorbar
-      if (cb === "vertical" || cb === "horizontal") {
-        desiredColor.set(axisName, cb)
-      }
-    }
+    // Build a map from tag → { factoryDef, opts, y } for every float that should exist.
+    // Tags encode the full config so changing any relevant field destroys and recreates the float.
+    // Using tags rather than axis names means orientation changes cause clean destroy+recreate
+    // with no separate state to compare.
+    const desired = new Map()
 
-    for (const [axisName, float] of this._floats) {
-      const wantedOrientation = desiredColor.get(axisName)
-      if (wantedOrientation === undefined || wantedOrientation !== float._colorbar._orientation) {
-        float.destroy()
-        this._floats.delete(axisName)
-      }
-    }
-
-    for (const [axisName, orientation] of desiredColor) {
-      if (!this._floats.has(axisName)) {
-        this._floats.set(axisName, new Plot._FloatClass(this, axisName, { orientation }))
-      }
-    }
-
-    // --- Filter axis floats ---
-    const desiredFilter = new Map()
+    // 1D colorbars declared inline on axes: axes[qk].colorbar = "horizontal"|"vertical"
     for (const [axisName, axisConfig] of Object.entries(axes)) {
       if (AXES.includes(axisName)) continue
-      if (!this.filterAxisRegistry?.hasAxis(axisName)) continue
-      const fb = axisConfig.filterbar
-      if (fb === "vertical" || fb === "horizontal") {
-        desiredFilter.set(axisName, fb)
+      const cb = axisConfig.colorbar
+      if (cb === "vertical" || cb === "horizontal") {
+        const tag = `colorbar:${axisName}:${cb}`
+        const factoryDef = Plot._floatFactories.get('colorbar')
+        if (factoryDef) desired.set(tag, { factoryDef, opts: { axisName, orientation: cb }, y: 10 })
+      }
+      // Filterbars declared inline on axes: axes[qk].filterbar = "horizontal"|"vertical"
+      if (this.filterAxisRegistry?.hasAxis(axisName)) {
+        const fb = axisConfig.filterbar
+        if (fb === "vertical" || fb === "horizontal") {
+          const tag = `filterbar:${axisName}:${fb}`
+          const factoryDef = Plot._floatFactories.get('filterbar')
+          if (factoryDef) desired.set(tag, { factoryDef, opts: { axisName, orientation: fb }, y: 100 })
+        }
       }
     }
 
-    for (const [axisName, float] of this._filterbarFloats) {
-      const wantedOrientation = desiredFilter.get(axisName)
-      if (wantedOrientation === undefined || wantedOrientation !== float._filterbar._orientation) {
+    // Top-level colorbars array: 1D or 2D depending on which axes are specified.
+    for (const entry of colorbarsConfig) {
+      const { xAxis, yAxis } = entry
+      if (xAxis && yAxis) {
+        // 2D colorbar
+        const tag = `colorbar2d:${xAxis}:${yAxis}`
+        const factoryDef = Plot._floatFactories.get('colorbar2d')
+        if (factoryDef) desired.set(tag, { factoryDef, opts: { xAxis, yAxis }, y: 10 })
+      } else if (xAxis) {
+        // 1D horizontal colorbar from colorbars array
+        const tag = `colorbar:${xAxis}:horizontal`
+        const factoryDef = Plot._floatFactories.get('colorbar')
+        if (factoryDef) desired.set(tag, { factoryDef, opts: { axisName: xAxis, orientation: 'horizontal' }, y: 10 })
+      } else if (yAxis) {
+        // 1D vertical colorbar from colorbars array
+        const tag = `colorbar:${yAxis}:vertical`
+        const factoryDef = Plot._floatFactories.get('colorbar')
+        if (factoryDef) desired.set(tag, { factoryDef, opts: { axisName: yAxis, orientation: 'vertical' }, y: 10 })
+      }
+    }
+
+    // Destroy floats whose tag is no longer in desired
+    for (const [tag, float] of this._floats) {
+      if (!desired.has(tag)) {
         float.destroy()
-        this._filterbarFloats.delete(axisName)
+        this._floats.delete(tag)
       }
     }
 
-    for (const [axisName, orientation] of desiredFilter) {
-      if (!this._filterbarFloats.has(axisName)) {
-        this._filterbarFloats.set(axisName, new Plot._FilterbarFloatClass(this, axisName, { orientation }))
+    // Create floats for new tags
+    for (const [tag, { factoryDef, opts, y }] of desired) {
+      if (!this._floats.has(tag)) {
+        const size = factoryDef.defaultSize(opts)
+        this._floats.set(tag, new Float(
+          this,
+          (container) => factoryDef.factory(this, container, opts),
+          { y, ...size }
+        ))
       }
     }
   }
@@ -407,11 +467,6 @@ export class Plot {
       float.destroy()
     }
     this._floats.clear()
-
-    for (const float of this._filterbarFloats.values()) {
-      float.destroy()
-    }
-    this._filterbarFloats.clear()
 
     // Clear all axis listeners so linked axes stop trying to update this plot
     for (const axis of this._axisCache.values()) {

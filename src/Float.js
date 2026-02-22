@@ -1,37 +1,24 @@
-import { Colorbar } from "./Colorbar.js"
-import { Plot } from "./Plot.js"
-
 const DRAG_BAR_HEIGHT = 12
 const MIN_WIDTH  = 80
 const MIN_HEIGHT = DRAG_BAR_HEIGHT + 30
 
-// Default sizes include the drag bar so the colorbar content area is unchanged.
-const DEFAULT_SIZE = {
-  horizontal: { width: 220, height: 70 + DRAG_BAR_HEIGHT },
-  vertical:   { width: 70,  height: 220 + DRAG_BAR_HEIGHT }
-}
-
+// Generic draggable, resizable floating container that wraps any Plot-like widget.
+// factory(container) must return an object with a destroy() method.
 export class Float {
-  constructor(parentPlot, colorAxisName, {
-    orientation = "horizontal",
+  constructor(parentPlot, factory, {
     x = 10,
     y = 10,
-    width,
-    height,
-    margin
+    width = 220,
+    height = 82
   } = {}) {
-    const defaults = DEFAULT_SIZE[orientation]
-    const w = width  ?? defaults.width
-    const h = height ?? defaults.height
-
     // Outer floating container
     this._el = document.createElement('div')
     Object.assign(this._el.style, {
       position:     'absolute',
       left:         x + 'px',
       top:          y + 'px',
-      width:        w + 'px',
-      height:       h + 'px',
+      width:        width + 'px',
+      height:       height + 'px',
       zIndex:       '10',
       boxSizing:    'border-box',
       background:   'rgba(255,255,255,0.88)',
@@ -66,30 +53,30 @@ export class Float {
     // Resize handle — bottom-right corner
     this._resizeHandle = document.createElement('div')
     Object.assign(this._resizeHandle.style, {
-      position:          'absolute',
-      right:             '0',
-      bottom:            '0',
-      width:             '12px',
-      height:            '12px',
-      cursor:            'se-resize',
-      background:        'rgba(0,0,0,0.18)',
+      position:            'absolute',
+      right:               '0',
+      bottom:              '0',
+      width:               '12px',
+      height:              '12px',
+      cursor:              'se-resize',
+      background:          'rgba(0,0,0,0.18)',
       borderTopLeftRadius: '3px',
-      zIndex:            '3'
+      zIndex:              '3'
     })
     this._el.appendChild(this._resizeHandle)
 
-    // Sub-container for the colorbar — sits below the drag bar
-    this._colorbarEl = document.createElement('div')
-    Object.assign(this._colorbarEl.style, {
+    // Content area — sits below the drag bar, fills the rest of the float
+    this._contentEl = document.createElement('div')
+    Object.assign(this._contentEl.style, {
       position: 'absolute',
       top:      DRAG_BAR_HEIGHT + 'px',
       left:     '0',
       right:    '0',
       bottom:   '0'
     })
-    this._el.appendChild(this._colorbarEl)
+    this._el.appendChild(this._contentEl)
 
-    this._colorbar = new Colorbar(this._colorbarEl, parentPlot, colorAxisName, { orientation, margin })
+    this._widget = factory(this._contentEl)
 
     this._setupInteraction()
   }
@@ -151,9 +138,7 @@ export class Float {
 
   destroy() {
     this._cleanupInteraction()
-    this._colorbar.destroy()
+    this._widget.destroy()
     this._el.remove()
   }
 }
-
-Plot._FloatClass = Float

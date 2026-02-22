@@ -1,6 +1,6 @@
 import { registerAxisQuantityKind } from "../src/index.js"
 import { } from "../src/ScatterLayer.js"
-import { } from "../src/FilterbarFloat.js"
+import { } from "../src/Filterbar.js"
 import { } from "./layer-types/ScatterMVLayer.js"
 import { } from "./layer-types/ScatterSALayer.js"
 import { } from "./layer-types/MultiLineLayer.js"
