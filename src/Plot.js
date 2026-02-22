@@ -90,11 +90,13 @@ export class Plot {
 
       const width = this.container.clientWidth
       const height = this.container.clientHeight
+      const plotWidth = width - this.margin.left - this.margin.right
+      const plotHeight = height - this.margin.top - this.margin.bottom
 
-      // Container is hidden or not yet laid out (e.g. inside display:none tab).
+      // Container is hidden, not yet laid out, or too small to fit the margins.
       // Store config/data and return; ResizeObserver will call forceUpdate() once
       // the container gets real dimensions.
-      if (width === 0 || height === 0) {
+      if (width === 0 || height === 0 || plotWidth <= 0 || plotHeight <= 0) {
         return
       }
 
@@ -104,8 +106,8 @@ export class Plot {
 
       this.width = width
       this.height = height
-      this.plotWidth = width - this.margin.left - this.margin.right
-      this.plotHeight = height - this.margin.top - this.margin.bottom
+      this.plotWidth = plotWidth
+      this.plotHeight = plotHeight
 
       if (this.regl) {
         this.regl.destroy()
@@ -221,7 +223,10 @@ export class Plot {
   _setupResizeObserver() {
     if (typeof ResizeObserver !== 'undefined') {
       this.resizeObserver = new ResizeObserver(() => {
-        this.forceUpdate()
+        // Defer to next animation frame so the ResizeObserver callback exits
+        // before any DOM/layout changes happen, avoiding the "loop completed
+        // with undelivered notifications" browser error.
+        requestAnimationFrame(() => this.forceUpdate())
       })
       this.resizeObserver.observe(this.container)
     } else {
