@@ -1,4 +1,5 @@
 import { Plot } from "./Plot.js"
+import { getScaleTypeFloat } from "./AxisQuantityKindRegistry.js"
 import { linkAxes } from "./AxisLink.js"
 import "./ColorbarLayer.js"
 
@@ -34,7 +35,7 @@ export class Colorbar extends Plot {
 
   _getScaleTypeFloat(quantityKind) {
     if (quantityKind === this._colorAxisName && this._targetPlot) {
-      return this._targetPlot._getScaleTypeFloat(quantityKind)
+      return getScaleTypeFloat(quantityKind, this._targetPlot.currentConfig?.axes)
     }
     return super._getScaleTypeFloat(quantityKind)
   }
@@ -50,7 +51,7 @@ export class Colorbar extends Plot {
       }
       const colorscale = this._targetPlot.colorAxisRegistry?.getColorscale(this._colorAxisName)
       if (colorscale) this.colorAxisRegistry.ensureColorAxis(this._colorAxisName, colorscale)
-      const scaleType = this._targetPlot._getScaleTypeFloat(this._colorAxisName) > 0.5 ? "log" : "linear"
+      const scaleType = getScaleTypeFloat(this._colorAxisName, this._targetPlot.currentConfig?.axes) > 0.5 ? "log" : "linear"
       this.axisRegistry.setScaleType(this._spatialAxis, scaleType)
     }
     super.render()

@@ -1,4 +1,5 @@
 import { Plot } from "./Plot.js"
+import { getScaleTypeFloat } from "./AxisQuantityKindRegistry.js"
 import { linkAxes } from "./AxisLink.js"
 import "./FilterbarLayer.js"
 
@@ -124,7 +125,7 @@ export class Filterbar extends Plot {
           if (this._maxInput) this._maxInput.checked = range.max === null
         }
       }
-      const scaleType = this._targetPlot._getScaleTypeFloat(this._filterAxisName) > 0.5 ? "log" : "linear"
+      const scaleType = getScaleTypeFloat(this._filterAxisName, this._targetPlot.currentConfig?.axes) > 0.5 ? "log" : "linear"
       this.axisRegistry.setScaleType(this._spatialAxis, scaleType)
     }
     super.render()

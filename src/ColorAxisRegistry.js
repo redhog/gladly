@@ -1,4 +1,4 @@
-import { getAxisQuantityKind } from './AxisQuantityKindRegistry.js'
+import { getAxisQuantityKind, getScaleTypeFloat } from './AxisQuantityKindRegistry.js'
 import { getColorscaleIndex } from './ColorscaleRegistry.js'
 
 export class ColorAxisRegistry {
@@ -45,5 +45,47 @@ export class ColorAxisRegistry {
 
   getQuantityKinds() {
     return Array.from(this._axes.keys())
+  }
+
+  applyAutoDomainsFromLayers(layers, axesOverrides) {
+    for (const quantityKind of this.getQuantityKinds()) {
+      let min = Infinity, max = -Infinity
+
+      for (const layer of layers) {
+        for (const qk of layer.colorAxes) {
+          if (qk !== quantityKind) continue
+          if (layer.domains[qk] !== undefined) {
+            const [dMin, dMax] = layer.domains[qk]
+            if (dMin < min) min = dMin
+            if (dMax > max) max = dMax
+          } else {
+            const data = layer.attributes[qk]
+            if (!data) continue
+            for (let i = 0; i < data.length; i++) {
+              if (data[i] < min) min = data[i]
+              if (data[i] > max) max = data[i]
+            }
+          }
+        }
+      }
+
+      if (min !== Infinity) {
+        const override = axesOverrides[quantityKind]
+        if (override?.colorscale) this.ensureColorAxis(quantityKind, override.colorscale)
+        this.setRange(quantityKind, override?.min ?? min, override?.max ?? max)
+      }
+    }
+
+    for (const quantityKind of this.getQuantityKinds()) {
+      if (getScaleTypeFloat(quantityKind, axesOverrides) <= 0.5) continue
+      const range = this.getRange(quantityKind)
+      if (!range) continue
+      if (range[0] <= 0 || range[1] <= 0) {
+        throw new Error(
+          `Color axis '${quantityKind}' uses log scale but has non-positive range [${range[0]}, ${range[1]}]. ` +
+          `All data values and min/max must be > 0 for log scale.`
+        )
+      }
+    }
   }
 }

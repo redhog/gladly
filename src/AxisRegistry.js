@@ -38,6 +38,54 @@ export class AxisRegistry {
     return !!scale && typeof scale.base === 'function'
   }
 
+  applyAutoDomainsFromLayers(layers, axesOverrides) {
+    const autoDomains = {}
+
+    for (const axis of AXES) {
+      const layersUsingAxis = layers.filter(l => l.xAxis === axis || l.yAxis === axis)
+      if (layersUsingAxis.length === 0) continue
+
+      let min = Infinity, max = -Infinity
+      for (const layer of layersUsingAxis) {
+        const isXAxis = layer.xAxis === axis
+        const qk = isXAxis ? layer.xAxisQuantityKind : layer.yAxisQuantityKind
+        if (layer.domains[qk] !== undefined) {
+          const [dMin, dMax] = layer.domains[qk]
+          if (dMin < min) min = dMin
+          if (dMax > max) max = dMax
+        } else {
+          const dataArray = isXAxis ? layer.attributes.x : layer.attributes.y
+          if (!dataArray) continue
+          for (let i = 0; i < dataArray.length; i++) {
+            const val = dataArray[i]
+            if (val < min) min = val
+            if (val > max) max = val
+          }
+        }
+      }
+      if (min !== Infinity) autoDomains[axis] = [min, max]
+    }
+
+    for (const axis of AXES) {
+      const scale = this.getScale(axis)
+      if (!scale) continue
+      const override = axesOverrides[axis]
+      const domain = override ? [override.min, override.max] : autoDomains[axis]
+      if (domain) scale.domain(domain)
+    }
+
+    for (const axis of AXES) {
+      if (!this.isLogScale(axis)) continue
+      const [dMin, dMax] = this.getScale(axis).domain()
+      if ((isFinite(dMin) && dMin <= 0) || (isFinite(dMax) && dMax <= 0)) {
+        throw new Error(
+          `Axis '${axis}' uses log scale but has non-positive domain [${dMin}, ${dMax}]. ` +
+          `All data values and min/max must be > 0 for log scale.`
+        )
+      }
+    }
+  }
+
   setScaleType(axisName, scaleType) {
     const scale = this.scales[axisName]
     if (!scale) return
