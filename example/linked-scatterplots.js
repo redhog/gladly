@@ -1,6 +1,6 @@
 import { Plot, linkAxes } from "../src/index.js"
 import { JSONEditor } from '@json-editor/json-editor'
-import { data } from "./shared.js"
+import { data as dataPromise } from "./shared.js"
 
 {
   const panel = document.createElement('div')
@@ -34,6 +34,8 @@ import { data } from "./shared.js"
   pickStatus.className = 'pick-status'
   document.body.appendChild(pickStatus)
 }
+
+dataPromise.then(data => {
 
 let activePlot = 'plot1'
 let editorSyncing = false
@@ -172,3 +174,5 @@ document.getElementById('tab1-edit-plot1-btn').addEventListener('click', () => {
 document.getElementById('tab1-edit-plot2-btn').addEventListener('click', () => {
   switchToPlot('plot2')
 })
+
+}) // dataPromise.then

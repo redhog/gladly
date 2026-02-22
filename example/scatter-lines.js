@@ -1,6 +1,6 @@
 import { Plot } from "../src/index.js"
 import { JSONEditor } from '@json-editor/json-editor'
-import { data } from "./shared.js"
+import { data as dataPromise } from "./shared.js"
 
 {
   const panel = document.createElement('div')
@@ -28,6 +28,8 @@ import { data } from "./shared.js"
   pickStatus.style.display = 'none'
   document.body.appendChild(pickStatus)
 }
+
+dataPromise.then(data => {
 
 const plotConfig = {
   layers: [
@@ -130,3 +132,5 @@ editor.on('change', () => {
     `
   }
 })
+
+}) // dataPromise.then

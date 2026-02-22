@@ -1,30 +1,38 @@
 {
   "name": "gladly-plot",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "GPU-powered multi-axis plotting library with regl + d3",
   "type": "module",
-
   "exports": {
     ".": "./src/index.js"
   },
-
-  "files": ["src"],
-
+  "files": [
+    "src"
+  ],
   "scripts": {
+    "postinstall": "node scripts/fix-numjs-wasm.js",
     "dev": "parcel serve example/index.html --open",
     "build:example": "parcel build example/index.html --dist-dir dist-example --public-url ./",
     "preview": "npm run build:example && npx serve dist-example"
   },
-
   "dependencies": {
     "d3": "^7.8.5",
     "proj4": "^2.15.0",
     "projnames": "^0.0.2",
     "regl": "^2.1.0"
   },
+  "browserslist": [
+    "last 2 Chrome versions",
+    "last 2 Edge versions",
+    "last 2 Firefox versions",
+    "last 2 Safari versions"
+  ],
 
   "devDependencies": {
+    "@jayce789/numjs": "^2.2.6",
+    "@json-editor/json-editor": "^2.15.1",
     "parcel": "^2.9.0",
-    "@json-editor/json-editor": "^2.15.1"
+    "process": "^0.11.10",
+    "url": "^0.11.4"
   }
 }
