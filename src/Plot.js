@@ -15,13 +15,61 @@ function formatTick(v) {
   if (v === 0) return "0"
   const abs = Math.abs(v)
   if (abs >= 10000 || abs < 0.01) {
-    return v.toExponential(2)
+    // Strip trailing zeros from mantissa: "5.00e-15" → "5e-15", "1.50e+4" → "1.5e+4"
+    return v.toExponential(2).replace(/\.?0+(e)/, '$1')
   }
   const s = v.toPrecision(4)
   if (s.includes('.') && !s.includes('e')) {
     return s.replace(/\.?0+$/, '')
   }
   return s
+}
+
+// Returns tick values for a log scale using the 1-2-5 sequence (1×, 2×, 5× per decade),
+// which gives evenly-spaced marks in log space across any domain size.
+// Falls back to powers-of-10 (subsampled if needed) when the domain is too wide for
+// 1-2-5 ticks to fit within pixelCount. Returns null for very narrow domains where
+// no "nice" values land inside, so the caller can fall back to D3's default logic.
+function logTickValues(scale, pixelCount) {
+  const [dMin, dMax] = scale.domain()
+  if (dMin <= 0 || dMax <= 0) return null
+
+  const logMin = Math.log10(dMin)
+  const logMax = Math.log10(dMax)
+  const startExp = Math.floor(logMin)
+  const endExp = Math.ceil(logMax)
+
+  // Build the 1, 2, 5 × 10^e candidate list
+  const candidate = []
+  for (let e = startExp; e < endExp; e++) {
+    const base = Math.pow(10, e)
+    for (const mult of [1, 2, 5]) {
+      const v = base * mult
+      if (v >= dMin * (1 - 1e-10) && v <= dMax * (1 + 1e-10)) candidate.push(v)
+    }
+  }
+  // Include the upper decade boundary
+  const upperPow = Math.pow(10, endExp)
+  if (upperPow >= dMin * (1 - 1e-10) && upperPow <= dMax * (1 + 1e-10)) candidate.push(upperPow)
+
+  if (candidate.length >= 2 && candidate.length <= pixelCount) {
+    return candidate  // Fits fine — use 1/2/5 ticks as-is
+  }
+
+  // Too many 1/2/5 values: use powers-of-10 only, subsampled if still too many
+  const firstExp = Math.ceil(logMin)
+  const lastExp = Math.floor(logMax)
+  if (firstExp > lastExp) {
+    // Domain lies entirely within one decade and no nice value landed inside
+    return candidate.length >= 2 ? candidate : null
+  }
+  const numPowers = lastExp - firstExp + 1
+  const step = numPowers > pixelCount ? Math.ceil(numPowers / pixelCount) : 1
+  const powers = []
+  for (let e = firstExp; e <= lastExp; e += step) {
+    powers.push(Math.pow(10, e))
+  }
+  return powers.length >= 2 ? powers : null
 }
 
 export class Plot {
@@ -603,7 +651,8 @@ export class Plot {
                 min: { type: "number" },
                 max: { type: "number" },
                 label: { type: "string" },
-                scale: { type: "string", enum: ["linear", "log"] }
+                scale: { type: "string", enum: ["linear", "log"] },
+                rotate: { type: "boolean" }
               }
             },
             xaxis_top: {
@@ -612,7 +661,8 @@ export class Plot {
                 min: { type: "number" },
                 max: { type: "number" },
                 label: { type: "string" },
-                scale: { type: "string", enum: ["linear", "log"] }
+                scale: { type: "string", enum: ["linear", "log"] },
+                rotate: { type: "boolean" }
               }
             },
             yaxis_left: {
@@ -662,17 +712,28 @@ export class Plot {
     }
   }
 
-  _tickCount(axisName) {
+  _tickCount(axisName, rotate = false) {
     if (axisName.includes("y")) {
       return Math.max(2, Math.floor(this.plotHeight / 27))
     }
-    return Math.max(2, Math.floor(this.plotWidth / 40))
+    // Rotated labels consume less horizontal space (roughly sin(45°) of their width),
+    // so we can fit more ticks when rotation is active.
+    const pixelsPerTick = rotate ? 28 : 40
+    return Math.max(2, Math.floor(this.plotWidth / pixelsPerTick))
   }
 
-  _makeAxis(axisConstructor, scale, axisName) {
-    const count = this._tickCount(axisName)
+  _makeAxis(axisConstructor, scale, axisName, { rotate = false } = {}) {
+    const isLog = typeof scale.base === 'function'
+    const count = this._tickCount(axisName, rotate)
     const gen = axisConstructor(scale).tickFormat(formatTick)
-    if (count <= 2) {
+    if (isLog) {
+      const tv = logTickValues(scale, count)
+      if (tv !== null) {
+        gen.tickValues(tv)
+      } else {
+        gen.ticks(count)  // Very narrow domain: let D3 pick values
+      }
+    } else if (count <= 2) {
       gen.tickValues(scale.domain())
     } else {
       gen.ticks(count)
@@ -683,22 +744,40 @@ export class Plot {
   renderAxes() {
     if (this.axisRegistry.getScale("xaxis_bottom")) {
       const scale = this.axisRegistry.getScale("xaxis_bottom")
+      const axisConfig = this.currentConfig?.axes?.xaxis_bottom ?? {}
+      const rotate = axisConfig.rotate ?? false
       const g = this.svg.select(".xaxis_bottom")
         .attr("transform", `translate(${this.margin.left},${this.margin.top + this.plotHeight})`)
-        .call(this._makeAxis(axisBottom, scale, "xaxis_bottom"))
+        .call(this._makeAxis(axisBottom, scale, "xaxis_bottom", { rotate }))
       g.select(".domain").attr("stroke", "#000").attr("stroke-width", 2)
       g.selectAll(".tick line").attr("stroke", "#000")
       g.selectAll(".tick text").attr("fill", "#000").style("font-size", "12px")
+      if (rotate) {
+        g.selectAll(".tick text")
+          .style("text-anchor", "end")
+          .attr("dx", "-0.8em")
+          .attr("dy", "0.15em")
+          .attr("transform", "rotate(-45)")
+      }
       this.updateAxisLabel(g, "xaxis_bottom", this.plotWidth / 2, this.margin.bottom)
     }
     if (this.axisRegistry.getScale("xaxis_top")) {
       const scale = this.axisRegistry.getScale("xaxis_top")
+      const axisConfig = this.currentConfig?.axes?.xaxis_top ?? {}
+      const rotate = axisConfig.rotate ?? false
       const g = this.svg.select(".xaxis_top")
         .attr("transform", `translate(${this.margin.left},${this.margin.top})`)
-        .call(this._makeAxis(axisTop, scale, "xaxis_top"))
+        .call(this._makeAxis(axisTop, scale, "xaxis_top", { rotate }))
       g.select(".domain").attr("stroke", "#000").attr("stroke-width", 2)
       g.selectAll(".tick line").attr("stroke", "#000")
       g.selectAll(".tick text").attr("fill", "#000").style("font-size", "12px")
+      if (rotate) {
+        g.selectAll(".tick text")
+          .style("text-anchor", "start")
+          .attr("dx", "0.8em")
+          .attr("dy", "-0.35em")
+          .attr("transform", "rotate(45)")
+      }
       this.updateAxisLabel(g, "xaxis_top", this.plotWidth / 2, this.margin.top)
     }
     if (this.axisRegistry.getScale("yaxis_left")) {
