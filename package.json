@@ -11,7 +11,7 @@
   ],
   "scripts": {
     "prepare": "node scripts/fix-numjs-wasm.js",
-    "dev": "parcel serve example/index.html --open",
+    "dev": "parcel serve example/index.html --no-cache",
     "build:example": "parcel build example/index.html --dist-dir dist-example --public-url ./",
     "preview": "npm run build:example && npx serve dist-example"
   },
