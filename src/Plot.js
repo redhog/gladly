@@ -332,6 +332,7 @@ export class Plot {
     // the true-2D colorscale path in map_color_s_2d.
     for (const entry of colorbars) {
       if (!entry.colorscale || entry.colorscale == "none") continue
+      console.log("FROM colorbars");
       if (entry.xAxis) this.colorAxisRegistry.ensureColorAxis(entry.xAxis, entry.colorscale)
       if (entry.yAxis) this.colorAxisRegistry.ensureColorAxis(entry.yAxis, entry.colorscale)
     }

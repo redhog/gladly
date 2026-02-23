@@ -49,6 +49,10 @@ export class ColorAxisRegistry {
 
   applyAutoDomainsFromLayers(layers, axesOverrides) {
     for (const quantityKind of this.getQuantityKinds()) {
+      const override = axesOverrides[quantityKind]
+      if (override?.colorscale && override?.colorscale != "none")
+        this.ensureColorAxis(quantityKind, override.colorscale)
+      
       let min = Infinity, max = -Infinity
 
       for (const layer of layers) {
@@ -70,8 +74,6 @@ export class ColorAxisRegistry {
       }
 
       if (min !== Infinity) {
-        const override = axesOverrides[quantityKind]
-        if (override?.colorscale) this.ensureColorAxis(quantityKind, override.colorscale)
         this.setRange(quantityKind, override?.min ?? min, override?.max ?? max)
       }
     }
