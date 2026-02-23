@@ -23,3 +23,4 @@ export { registerEpsgDef, parseCrsCode, crsToQkX, crsToQkY, qkToEpsgCode, reproj
 
 // Register all matplotlib colorscales (side-effect import)
 import "./MatplotlibColorscales.js"
+import "./BivariateColorscales.js"
