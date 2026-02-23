@@ -115,6 +115,7 @@ function buildPlotSchema(data) {
               type: "string",
               description: "Colorscale override. A 2D colorscale name enables the true-2D path.",
               enum: [
+                "none",
                 ...getRegisteredColorscales().keys(),
                 ...getRegistered2DColorscales().keys()
               ]
@@ -305,7 +306,7 @@ export class Plot {
       }
     }
 
-    return { ...this.currentConfig, axes }
+    return { colorbars: [], ...this.currentConfig, axes}
   }
 
   _initialize() {
@@ -330,7 +331,7 @@ export class Plot {
     // same colorscale name, which resolves to a negative index in the shader, triggering
     // the true-2D colorscale path in map_color_s_2d.
     for (const entry of colorbars) {
-      if (!entry.colorscale) continue
+      if (!entry.colorscale || entry.colorscale == "none") continue
       if (entry.xAxis) this.colorAxisRegistry.ensureColorAxis(entry.xAxis, entry.colorscale)
       if (entry.yAxis) this.colorAxisRegistry.ensureColorAxis(entry.yAxis, entry.colorscale)
     }

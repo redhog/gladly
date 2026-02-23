@@ -155,7 +155,6 @@ editor.on('change', () => {
 function switchToPlot(plotId) {
   activePlot = plotId
 
-  document.getElementById('tab1-current-plot-label').textContent = plotId === 'plot1' ? 'Plot 1' : 'Plot 2'
   document.getElementById('tab1-plot1').classList.toggle('active', plotId === 'plot1')
   document.getElementById('tab1-plot2').classList.toggle('active', plotId === 'plot2')
 
