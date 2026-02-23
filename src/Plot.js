@@ -685,8 +685,9 @@ export class Plot {
         }
         layer.draw(props)
       }
+      var pixels;
       try {
-        const pixels = this.regl.read({ x: glX, y: glY, width: 1, height: 1 })
+        pixels = this.regl.read({ x: glX, y: glY, width: 1, height: 1 })
       } catch (e) {
         pixels = [0];
       }

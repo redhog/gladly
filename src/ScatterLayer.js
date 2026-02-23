@@ -191,12 +191,12 @@ class ScatterLayerType extends LayerType {
         },
         vData: {
           type: "string",
-          enum: dataProperties,
+          enum: ["none"].concat(dataProperties),
           description: "Primary property name in data object for color values"
         },
         vData2: {
           type: "string",
-          enum: dataProperties,
+          enum: ["none"].concat(dataProperties),
           description: "Optional secondary property name for 2D color mapping"
         },
         xAxis: {
@@ -247,7 +247,7 @@ class ScatterLayerType extends LayerType {
   _createLayer(parameters, data) {
     const d = Data.wrap(data)
     const {
-      xData, yData, vData, vData2,
+      xData, yData, vData: vDataOrig, vData2: vData2Orig,
       alphaBlend = false,
       mode = "points",
       lineSegmentIdData,
@@ -255,28 +255,37 @@ class ScatterLayerType extends LayerType {
       lineWidth = 1.0,
     } = parameters
 
+    const vData = vDataOrig == "none" ? null : vDataOrig
+    const vData2 = vData2Orig == "none" ? null : vData2Orig
+
     const xQK = d.getQuantityKind(xData) ?? xData
     const yQK = d.getQuantityKind(yData) ?? yData
-    const vQK = d.getQuantityKind(vData) ?? vData
+    const vQK = vData ? (d.getQuantityKind(vData) ?? vData) : null
     const vQK2 = vData2 ? (d.getQuantityKind(vData2) ?? vData2) : null
 
     const srcX = d.getData(xData)
     const srcY = d.getData(yData)
-    const srcV = d.getData(vData)
+    const srcV = vData ? d.getData(vData) : null
     const srcV2 = vData2 ? d.getData(vData2) : null
 
     if (!srcX) throw new Error(`Data column '${xData}' not found`)
     if (!srcY) throw new Error(`Data column '${yData}' not found`)
-    if (!srcV) throw new Error(`Data column '${vData}' not found`)
+    if (vData && !srcV) throw new Error(`Data column '${vData}' not found`)
     if (vData2 && !srcV2) throw new Error(`Data column '${vData2}' not found`)
 
     const domains = {}
+    
     const xDomain = d.getDomain(xData)
-    const yDomain = d.getDomain(yData)
-    const vDomain = d.getDomain(vData)
     if (xDomain) domains[xQK] = xDomain
+
+    const yDomain = d.getDomain(yData)
     if (yDomain) domains[yQK] = yDomain
-    if (vDomain) domains[vQK] = vDomain
+
+    if (vData) {
+      const vDomain = d.getDomain(vData)
+      if (vDomain) domains[vQK] = vDomain
+    }
+    
     if (vData2) {
       const vDomain2 = d.getDomain(vData2)
       if (vDomain2) domains[vQK2] = vDomain2
@@ -303,8 +312,8 @@ class ScatterLayerType extends LayerType {
           a_x1: srcX.subarray(1, N),
           a_y0: srcY.subarray(0, N - 1),
           a_y1: srcY.subarray(1, N),
-          a_v0: srcV.subarray(0, N - 1),
-          a_v1: srcV.subarray(1, N),
+          a_v0: vData ? srcV.subarray(0, N - 1) : new Float32Array(N - 1),
+          a_v1: vData ? srcV.subarray(1, N) : new Float32Array(N - 1),
           a_v20: vData2 ? srcV2.subarray(0, N - 1) : new Float32Array(N - 1),
           a_v21: vData2 ? srcV2.subarray(1, N) : new Float32Array(N - 1),
           a_seg0: seg0,
@@ -321,11 +330,15 @@ class ScatterLayerType extends LayerType {
           alphaBlend: alphaBlend ? 1.0 : 0.0,
           u_lineColorMode: lineColorMode === "midpoint" ? 1.0 : 0.0,
           u_useSecondColor: useSecond,
+          ...(vData ? {} : {colorscale: 0, color_range: [0, 1], color_scale_type: 0.0}),
+          ...(vData2 ? {} : {colorscale2: 0, color_range2: [0, 1], color_scale_type2: 0.0}) 
         },
         nameMap: {
-          [`colorscale_${vQK}`]: 'colorscale',
-          [`color_range_${vQK}`]: 'color_range',
-          [`color_scale_type_${vQK}`]: 'color_scale_type',
+          ...(vData ? {
+            [`colorscale_${vQK}`]: 'colorscale',
+            [`color_range_${vQK}`]: 'color_range',
+            [`color_scale_type_${vQK}`]: 'color_scale_type',
+          } : {}),
           ...(vData2 ? {
             [`colorscale_${vQK2}`]: 'colorscale2',
             [`color_range_${vQK2}`]: 'color_range2',
@@ -345,20 +358,22 @@ class ScatterLayerType extends LayerType {
       attributes: {
         x: srcX,
         y: srcY,
-        [vQK]: srcV,
-        [vQK2]: vData2 ? srcV2 : new Float32Array(srcX.length),
+        color_data: vData ? srcV : new Float32Array(srcX.length),
+        color_data2: vData2 ? srcV2 : new Float32Array(srcX.length),
       },
       uniforms: {
         alphaBlend: alphaBlend ? 1.0 : 0.0,
         u_useSecondColor: useSecond,
+        ...(vData ? {} : {colorscale: 0, color_range: [0, 1], color_scale_type: 0.0}),
+        ...(vData2 ? {} : {colorscale2: 0, color_range2: [0, 1], color_scale_type2: 0.0}) 
       },
       domains,
       nameMap: {
-        [vQK]: 'color_data',
-        ...(vData2 ? { [vQK2]: 'color_data2' } : {}),
-        [`colorscale_${vQK}`]: 'colorscale',
-        [`color_range_${vQK}`]: 'color_range',
-        [`color_scale_type_${vQK}`]: 'color_scale_type',
+        ...(vData ? {
+          [`colorscale_${vQK}`]: 'colorscale',
+          [`color_range_${vQK}`]: 'color_range',
+          [`color_scale_type_${vQK}`]: 'color_scale_type',
+        } : {}),
         ...(vData2 ? {
           [`colorscale_${vQK2}`]: 'colorscale2',
           [`color_range_${vQK2}`]: 'color_range2',
