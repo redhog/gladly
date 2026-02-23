@@ -8,17 +8,20 @@ const POINTS_VERT = `
   attribute float x;
   attribute float y;
   attribute float color_data;
+  attribute float color_data2;
   uniform vec2 xDomain;
   uniform vec2 yDomain;
   uniform float xScaleType;
   uniform float yScaleType;
   varying float value;
+  varying float value2;
   void main() {
     float nx = normalize_axis(x, xDomain, xScaleType);
     float ny = normalize_axis(y, yDomain, yScaleType);
     gl_Position = vec4(nx*2.0-1.0, ny*2.0-1.0, 0, 1);
     gl_PointSize = 4.0;
     value = color_data;
+    value2 = color_data2;
   }
 `
 
@@ -27,10 +30,29 @@ const POINTS_FRAG = `
   uniform int colorscale;
   uniform vec2 color_range;
   uniform float color_scale_type;
+
+  uniform int colorscale2;
+  uniform vec2 color_range2;
+  uniform float color_scale_type2;
+
   uniform float alphaBlend;
+  uniform float u_useSecondColor;
+
   varying float value;
+  varying float value2;
+
   void main() {
-    gl_FragColor = map_color_s(colorscale, color_range, value, color_scale_type, alphaBlend);
+    if (u_useSecondColor > 0.5) {
+      gl_FragColor = map_color_s_2d(
+        colorscale, color_range, value, color_scale_type,
+        colorscale2, color_range2, value2, color_scale_type2
+      );
+      if (alphaBlend > 0.5) {
+        gl_FragColor.a *= gl_FragColor.a;
+      }
+    } else {
+      gl_FragColor = map_color_s(colorscale, color_range, value, color_scale_type, alphaBlend);
+    }
   }
 `
 
@@ -51,43 +73,82 @@ const LINES_VERT = `
   attribute float a_x0, a_y0;
   attribute float a_x1, a_y1;
   attribute float a_v0, a_v1;
+  attribute float a_v20, a_v21;
   attribute float a_seg0, a_seg1;
+
   uniform vec2 xDomain;
   uniform vec2 yDomain;
   uniform float xScaleType;
   uniform float yScaleType;
+
   varying float v_color_start;
   varying float v_color_end;
+  varying float v_color2_start;
+  varying float v_color2_end;
   varying float v_t;
+
   void main() {
     float same_seg = abs(a_seg0 - a_seg1) < 0.5 ? 1.0 : 0.0;
     float t = same_seg * a_endPoint;
+
     float x = mix(a_x0, a_x1, t);
     float y = mix(a_y0, a_y1, t);
+
     float nx = normalize_axis(x, xDomain, xScaleType);
     float ny = normalize_axis(y, yDomain, yScaleType);
+
     gl_Position = vec4(nx * 2.0 - 1.0, ny * 2.0 - 1.0, 0, 1);
-    v_color_start = a_v0;
-    v_color_end   = a_v1;
+
+    v_color_start  = a_v0;
+    v_color_end    = a_v1;
+    v_color2_start = a_v20;
+    v_color2_end   = a_v21;
     v_t = a_endPoint;
   }
 `
 
 const LINES_FRAG = `
   precision mediump float;
+
   uniform int colorscale;
   uniform vec2 color_range;
   uniform float color_scale_type;
+
+  uniform int colorscale2;
+  uniform vec2 color_range2;
+  uniform float color_scale_type2;
+
   uniform float alphaBlend;
   uniform float u_lineColorMode;
+  uniform float u_useSecondColor;
+
   varying float v_color_start;
   varying float v_color_end;
+  varying float v_color2_start;
+  varying float v_color2_end;
   varying float v_t;
+
   void main() {
     float value = u_lineColorMode > 0.5
       ? (v_t < 0.5 ? v_color_start : v_color_end)
       : mix(v_color_start, v_color_end, v_t);
-    gl_FragColor = map_color_s(colorscale, color_range, value, color_scale_type, alphaBlend);
+
+    if (u_useSecondColor > 0.5) {
+      float value2 = u_lineColorMode > 0.5
+        ? (v_t < 0.5 ? v_color2_start : v_color2_end)
+        : mix(v_color2_start, v_color2_end, v_t);
+
+      gl_FragColor = map_color_s_2d(
+        colorscale, color_range, value, color_scale_type,
+        colorscale2, color_range2, value2, color_scale_type2
+      );
+
+      if (alphaBlend > 0.5) {
+        gl_FragColor.a *= gl_FragColor.a;
+      }
+    } else {
+      gl_FragColor = map_color_s(colorscale, color_range, value, color_scale_type, alphaBlend);
+    }
   }
 `
 
@@ -98,13 +159,17 @@ class ScatterLayerType extends LayerType {
 
   _getAxisConfig(parameters, data) {
     const d = Data.wrap(data)
-    const { xData, yData, vData, xAxis, yAxis } = parameters
+    const { xData, yData, vData, vData2, xAxis, yAxis } = parameters
+    const colorAxisQuantityKinds = [d.getQuantityKind(vData) ?? vData]
+    if (vData2) {
+      colorAxisQuantityKinds.push(d.getQuantityKind(vData2) ?? vData2)
+    }
     return {
       xAxis,
       xAxisQuantityKind: d.getQuantityKind(xData) ?? xData,
       yAxis,
       yAxisQuantityKind: d.getQuantityKind(yData) ?? yData,
-      colorAxisQuantityKinds: [d.getQuantityKind(vData) ?? vData],
+      colorAxisQuantityKinds,
     }
   }
 
@@ -127,7 +192,12 @@ class ScatterLayerType extends LayerType {
         vData: {
           type: "string",
           enum: dataProperties,
-          description: "Property name in data object for color values; also used as the color axis quantity kind"
+          description: "Primary property name in data object for color values"
+        },
+        vData2: {
+          type: "string",
+          enum: dataProperties,
+          description: "Optional secondary property name for 2D color mapping"
         },
         xAxis: {
           type: "string",
@@ -177,7 +247,7 @@ class ScatterLayerType extends LayerType {
   _createLayer(parameters, data) {
     const d = Data.wrap(data)
     const {
-      xData, yData, vData,
+      xData, yData, vData, vData2,
       alphaBlend = false,
       mode = "points",
       lineSegmentIdData,
@@ -188,14 +258,17 @@ class ScatterLayerType extends LayerType {
     const xQK = d.getQuantityKind(xData) ?? xData
     const yQK = d.getQuantityKind(yData) ?? yData
     const vQK = d.getQuantityKind(vData) ?? vData
+    const vQK2 = vData2 ? (d.getQuantityKind(vData2) ?? vData2) : null
 
     const srcX = d.getData(xData)
     const srcY = d.getData(yData)
     const srcV = d.getData(vData)
+    const srcV2 = vData2 ? d.getData(vData2) : null
 
     if (!srcX) throw new Error(`Data column '${xData}' not found`)
     if (!srcY) throw new Error(`Data column '${yData}' not found`)
     if (!srcV) throw new Error(`Data column '${vData}' not found`)
+    if (vData2 && !srcV2) throw new Error(`Data column '${vData2}' not found`)
 
     const domains = {}
     const xDomain = d.getDomain(xData)
@@ -204,16 +277,21 @@ class ScatterLayerType extends LayerType {
     if (xDomain) domains[xQK] = xDomain
     if (yDomain) domains[yQK] = yDomain
     if (vDomain) domains[vQK] = vDomain
+    if (vData2) {
+      const vDomain2 = d.getDomain(vData2)
+      if (vDomain2) domains[vQK2] = vDomain2
+    }
 
     const blendConfig = alphaBlend ? {
       enable: true,
       func: { srcRGB: 'src alpha', dstRGB: 'one minus src alpha', srcAlpha: 0, dstAlpha: 1 },
     } : null
 
+    const useSecond = vData2 ? 1.0 : 0.0
+
     if (mode === "lines") {
       const N = srcX.length
       const segIds = lineSegmentIdData ? d.getData(lineSegmentIdData) : null
-      // Zero-init array used when no segment IDs: abs(0-0) < 0.5 → always same segment
       const zeroSegs = new Float32Array(N - 1)
       const seg0 = segIds ? segIds.subarray(0, N - 1) : zeroSegs
       const seg1 = segIds ? segIds.subarray(1, N) : zeroSegs
@@ -227,6 +305,8 @@ class ScatterLayerType extends LayerType {
           a_y1: srcY.subarray(1, N),
           a_v0: srcV.subarray(0, N - 1),
           a_v1: srcV.subarray(1, N),
+          a_v20: vData2 ? srcV2.subarray(0, N - 1) : new Float32Array(N - 1),
+          a_v21: vData2 ? srcV2.subarray(1, N) : new Float32Array(N - 1),
           a_seg0: seg0,
           a_seg1: seg1,
         },
@@ -234,16 +314,23 @@ class ScatterLayerType extends LayerType {
           a_x0: 1, a_x1: 1,
           a_y0: 1, a_y1: 1,
           a_v0: 1, a_v1: 1,
+          a_v20: 1, a_v21: 1,
           a_seg0: 1, a_seg1: 1,
         },
         uniforms: {
           alphaBlend: alphaBlend ? 1.0 : 0.0,
           u_lineColorMode: lineColorMode === "midpoint" ? 1.0 : 0.0,
+          u_useSecondColor: useSecond,
         },
         nameMap: {
           [`colorscale_${vQK}`]: 'colorscale',
           [`color_range_${vQK}`]: 'color_range',
           [`color_scale_type_${vQK}`]: 'color_scale_type',
+          ...(vData2 ? {
+            [`colorscale_${vQK2}`]: 'colorscale2',
+            [`color_range_${vQK2}`]: 'color_range2',
+            [`color_scale_type_${vQK2}`]: 'color_scale_type2',
+          } : {})
         },
         domains,
         primitive: "lines",
@@ -254,23 +341,34 @@ class ScatterLayerType extends LayerType {
       }]
     }
 
-    // Points mode — existing behaviour
     return [{
-      attributes: { x: srcX, y: srcY, [vQK]: srcV },
-      uniforms: { alphaBlend: alphaBlend ? 1.0 : 0.0 },
+      attributes: {
+        x: srcX,
+        y: srcY,
+        [vQK]: srcV,
+        [vQK2]: vData2 ? srcV2 : new Float32Array(srcX.length),
+      },
+      uniforms: {
+        alphaBlend: alphaBlend ? 1.0 : 0.0,
+        u_useSecondColor: useSecond,
+      },
       domains,
       nameMap: {
         [vQK]: 'color_data',
+        ...(vData2 ? { [vQK2]: 'color_data2' } : {}),
         [`colorscale_${vQK}`]: 'colorscale',
         [`color_range_${vQK}`]: 'color_range',
         [`color_scale_type_${vQK}`]: 'color_scale_type',
+        ...(vData2 ? {
+          [`colorscale_${vQK2}`]: 'colorscale2',
+          [`color_range_${vQK2}`]: 'color_range2',
+          [`color_scale_type_${vQK2}`]: 'color_scale_type2',
+        } : {})
       },
       blend: blendConfig,
     }]
   }
 
-  // Swap vert/frag to the lines variants before letting the parent build the draw command,
-  // then restore. JS is single-threaded so the temporary swap is safe.
   createDrawCommand(regl, layer) {
     if (layer.primitive === "lines") {
       this.vert = LINES_VERT
@@ -285,3 +383,4 @@ class ScatterLayerType extends LayerType {
 
 export const scatterLayerType = new ScatterLayerType()
 registerLayerType("scatter", scatterLayerType)
+

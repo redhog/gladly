@@ -46,16 +46,69 @@ const plot2 = new Plot(document.getElementById('tab1-plot2'))
 linkAxes(plot1.axes.xaxis_bottom, plot2.axes.xaxis_top)
 
 let plot1Config = {
-  layers: [
-    { "scatter-mv": { xData: "x1", yData: "y1", vData: "v1", fData: "f1", xAxis: "xaxis_bottom", yAxis: "yaxis_left" } }
+  "layers": [
+    {
+      "scatter": {
+        "xData": "x1",
+        "yData": "y1",
+        "vData": "v1",
+        "vData2": "v2",
+        "xAxis": "xaxis_bottom",
+        "yAxis": "yaxis_left",
+        "alphaBlend": false,
+        "mode": "points",
+        "lineSegmentIdData": "x1",
+        "lineColorMode": "gradient",
+        "lineWidth": 1
+      }
+    }
   ],
-  axes: {
-    xaxis_bottom: { min: 0, max: 10 },
-    yaxis_left: { min: 0, max: 5 },
-    reflectance_au: { min: 0, max: 1, colorbar: "vertical" },
-    incidence_angle_rad: { min: -1.5, max: 1.5 },
-  }
+  "axes": {
+    "yaxis_left": {
+      "min": 0,
+      "max": 5,
+      "label": "Voltage (V)",
+      "scale": "linear",
+    },
+    "xaxis_bottom": {
+      "min": 0,
+      "max": 10,
+      "label": "Distance (m)",
+      "scale": "linear",
+    },
+    "temperature_K": {
+      "min": 0,
+      "max": 1,
+      "label": "Temperature (K)",
+      "scale": "linear",
+      "colorscale": "coolwarm",
+      "colorbar": "none"
+    },
+    "reflectance_au": {
+      "min": 0,
+      "max": 1,
+      "label": "Reflectance (a.u.)",
+      "scale": "linear",
+      "colorscale": "magma",
+      "colorbar": "none"
+    },
+    "incidence_angle_rad": {
+      "min": -1.5,
+      "max": 1.5,
+      "label": "Incidence angle (rad)",
+      "scale": "linear",
+      "filterbar": "none"
+    }
+  },
+  "colorbars": [
+    {
+      "xAxis": "temperature_K",
+      "yAxis": "reflectance_au",
+      "colorscale": "hsv_phase_magnitude"
+    }
+  ]
 }
+    
 let plot2Config = {
   layers: [
     { "scatter-sa": { xData: "x2", yData: "y2", vData: "v2", fData: "f2", xAxis: "xaxis_top", yAxis: "yaxis_left" } }
