@@ -1,3 +1,5 @@
+import { getScaleTypeFloat } from './AxisQuantityKindRegistry.js'
+
 export class FilterAxisRegistry {
   constructor() {
     // quantityKind -> { min: number|null, max: number|null, dataExtent: [number,number]|null }
@@ -56,6 +58,67 @@ export class FilterAxisRegistry {
 
   getQuantityKinds() {
     return Array.from(this._axes.keys())
+  }
+
+  applyAutoDomainsFromLayers(layers, axesOverrides) {
+    for (const quantityKind of this.getQuantityKinds()) {
+      let extMin = Infinity, extMax = -Infinity
+
+      for (const layer of layers) {
+        for (const qk of layer.filterAxes) {
+          if (qk !== quantityKind) continue
+          if (layer.domains[qk] !== undefined) {
+            const [dMin, dMax] = layer.domains[qk]
+            if (dMin < extMin) extMin = dMin
+            if (dMax > extMax) extMax = dMax
+          } else {
+            const data = layer.attributes[qk]
+            if (!data) continue
+            for (let i = 0; i < data.length; i++) {
+              if (data[i] < extMin) extMin = data[i]
+              if (data[i] > extMax) extMax = data[i]
+            }
+          }
+        }
+      }
+
+      if (extMin !== Infinity) this.setDataExtent(quantityKind, extMin, extMax)
+
+      if (axesOverrides[quantityKind]) {
+        const override = axesOverrides[quantityKind]
+        this.setRange(
+          quantityKind,
+          override.min !== undefined ? override.min : null,
+          override.max !== undefined ? override.max : null
+        )
+      }
+    }
+
+    for (const quantityKind of this.getQuantityKinds()) {
+      if (getScaleTypeFloat(quantityKind, axesOverrides) <= 0.5) continue
+      const extent = this.getDataExtent(quantityKind)
+      if (extent && extent[0] <= 0) {
+        throw new Error(
+          `Filter axis '${quantityKind}' uses log scale but data minimum is ${extent[0]}. ` +
+          `All data values must be > 0 for log scale.`
+        )
+      }
+      const filterRange = this.getRange(quantityKind)
+      if (filterRange) {
+        if (filterRange.min !== null && filterRange.min <= 0) {
+          throw new Error(
+            `Filter axis '${quantityKind}' uses log scale but min is ${filterRange.min}. ` +
+            `min must be > 0 for log scale.`
+          )
+        }
+        if (filterRange.max !== null && filterRange.max <= 0) {
+          throw new Error(
+            `Filter axis '${quantityKind}' uses log scale but max is ${filterRange.max}. ` +
+            `max must be > 0 for log scale.`
+          )
+        }
+      }
+    }
   }
 }
 

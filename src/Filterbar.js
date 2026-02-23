@@ -1,6 +1,9 @@
 import { Plot } from "./Plot.js"
+import { getScaleTypeFloat } from "./AxisQuantityKindRegistry.js"
 import { linkAxes } from "./AxisLink.js"
 import "./FilterbarLayer.js"
+
+const DRAG_BAR_HEIGHT = 12
 
 const DEFAULT_MARGINS = {
   horizontal: { top: 5, right: 40, bottom: 45, left: 40 },
@@ -124,7 +127,7 @@ export class Filterbar extends Plot {
           if (this._maxInput) this._maxInput.checked = range.max === null
         }
       }
-      const scaleType = this._targetPlot._getScaleTypeFloat(this._filterAxisName) > 0.5 ? "log" : "linear"
+      const scaleType = getScaleTypeFloat(this._filterAxisName, this._targetPlot.currentConfig?.axes) > 0.5 ? "log" : "linear"
       this.axisRegistry.setScaleType(this._spatialAxis, scaleType)
     }
     super.render()
@@ -136,3 +139,14 @@ export class Filterbar extends Plot {
     super.destroy()
   }
 }
+
+// Register the filterbar float factory so Plot._syncFloats can create filterbar floats.
+Plot.registerFloatFactory('filterbar', {
+  factory: (parentPlot, container, opts) =>
+    new Filterbar(container, parentPlot, opts.axisName, { orientation: opts.orientation }),
+  defaultSize: (opts) => {
+    const h = opts.orientation === 'horizontal' ? 70 + DRAG_BAR_HEIGHT : 220 + DRAG_BAR_HEIGHT
+    const w = opts.orientation === 'horizontal' ? 220 : 80
+    return { width: w, height: h }
+  }
+})

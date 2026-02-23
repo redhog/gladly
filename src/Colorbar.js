@@ -1,6 +1,9 @@
 import { Plot } from "./Plot.js"
+import { getScaleTypeFloat } from "./AxisQuantityKindRegistry.js"
 import { linkAxes } from "./AxisLink.js"
 import "./ColorbarLayer.js"
+
+const DRAG_BAR_HEIGHT = 12
 
 const DEFAULT_MARGINS = {
   horizontal: { top: 5, right: 40, bottom: 45, left: 40 },
@@ -34,7 +37,7 @@ export class Colorbar extends Plot {
 
   _getScaleTypeFloat(quantityKind) {
     if (quantityKind === this._colorAxisName && this._targetPlot) {
-      return this._targetPlot._getScaleTypeFloat(quantityKind)
+      return getScaleTypeFloat(quantityKind, this._targetPlot.currentConfig?.axes)
     }
     return super._getScaleTypeFloat(quantityKind)
   }
@@ -50,7 +53,7 @@ export class Colorbar extends Plot {
       }
       const colorscale = this._targetPlot.colorAxisRegistry?.getColorscale(this._colorAxisName)
       if (colorscale) this.colorAxisRegistry.ensureColorAxis(this._colorAxisName, colorscale)
-      const scaleType = this._targetPlot._getScaleTypeFloat(this._colorAxisName) > 0.5 ? "log" : "linear"
+      const scaleType = getScaleTypeFloat(this._colorAxisName, this._targetPlot.currentConfig?.axes) > 0.5 ? "log" : "linear"
       this.axisRegistry.setScaleType(this._spatialAxis, scaleType)
     }
     super.render()
@@ -62,3 +65,14 @@ export class Colorbar extends Plot {
     super.destroy()
   }
 }
+
+// Register the colorbar float factory so Plot._syncFloats can create colorbar floats.
+Plot.registerFloatFactory('colorbar', {
+  factory: (parentPlot, container, opts) =>
+    new Colorbar(container, parentPlot, opts.axisName, { orientation: opts.orientation }),
+  defaultSize: (opts) => {
+    const h = opts.orientation === 'horizontal' ? 70 + DRAG_BAR_HEIGHT : 220 + DRAG_BAR_HEIGHT
+    const w = opts.orientation === 'horizontal' ? 220 : 70
+    return { width: w, height: h }
+  }
+})

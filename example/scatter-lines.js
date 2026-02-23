@@ -32,26 +32,65 @@ import { data as dataPromise } from "./shared.js"
 dataPromise.then(data => {
 
 const plotConfig = {
-  layers: [
-    { "scatter-sa": { xData: "x2", yData: "y2", vData: "v2", fData: "f2", xAxis: "xaxis_bottom", yAxis: "yaxis_left" } },
-    { "multi-line": {
-      xData: "time_s",
-      filterData: "quality_flag",
-      cutoff: 0.5,
-      badColor: [0.7, 0.7, 0.7, 1.0],
-      xAxis: "xaxis_top",
-      yAxis: "yaxis_right",
-    } }
+  "layers": [
+    {
+      "scatter": {
+        "xData": "x2",
+        "yData": "y2",
+        "vData": "v2",
+        "vData2": "none",
+        "xAxis": "xaxis_bottom",
+        "yAxis": "yaxis_left",
+        "alphaBlend": false,
+        "mode": "points",
+        "lineSegmentIdData": "x1",
+        "lineColorMode": "gradient",
+        "lineWidth": 1
+      }
+    },
+    {
+      "multi-line": {
+        "xData": "time_s",
+        "filterData": "quality_flag",
+        "cutoff": 0.5,
+        "badColor": [
+          0.7,
+          0.7,
+          0.7,
+          1
+        ],
+        "xAxis": "xaxis_top",
+        "yAxis": "yaxis_right"
+      }
+    }
   ],
-  axes: {
-    xaxis_bottom: { min: 0, max: 100 },
-    yaxis_right: { min: -2, max: 4 },
-    yaxis_left: { min: 10, max: 50 },
-    temperature_K: { min: 0, max: 1, colorbar: "vertical" },
-    velocity_ms: { min: -2, max: 2, filterbar: "horizontal" }
-  }
+  "axes": {
+    "xaxis_bottom": {
+      "min": 0,
+      "max": 100
+    },
+    "yaxis_left": {
+      "min": 10,
+      "max": 50
+    },
+    "yaxis_right": {
+      "min": -2,
+      "max": 4
+    },
+    "temperature_K": {
+      "min": 0,
+      "max": 1,
+      "colorbar": "vertical"
+    },
+    "velocity_ms": {
+      "min": -2,
+      "max": 2,
+      "filterbar": "horizontal"
+    }
+  },
+  "colorbars": []
 }
-
+  
 const plot = new Plot(document.getElementById('tab2-plot1'))
 
 let currentPlotConfig = plotConfig

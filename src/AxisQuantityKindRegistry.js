@@ -21,3 +21,10 @@ export function getAxisQuantityKind(name) {
 export function getRegisteredAxisQuantityKinds() {
   return Array.from(registry.keys())
 }
+
+// Returns 1.0 for log scale, 0.0 for linear. axesConfig is the `axes` sub-object of plot config.
+export function getScaleTypeFloat(quantityKind, axesConfig) {
+  const configScale = axesConfig?.[quantityKind]?.scale
+  const defScale = getAxisQuantityKind(quantityKind).scale
+  return (configScale ?? defScale) === "log" ? 1.0 : 0.0
+}
