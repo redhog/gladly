@@ -1,7 +1,7 @@
-import { LayerType } from "../../src/LayerType.js"
-import { AXES } from "../../src/AxisRegistry.js"
-import { registerLayerType } from "../../src/LayerTypeRegistry.js"
-import { Data } from "../../src/Data.js"
+import { LayerType } from "../../src/core/LayerType.js"
+import { AXES } from "../../src/axes/AxisRegistry.js"
+import { registerLayerType } from "../../src/core/LayerTypeRegistry.js"
+import { Data } from "../../src/core/Data.js"
 
 // Per-vertex quad corner coordinates for two CCW triangles: BL-BR-TR, BL-TR-TL
 const QUAD_CX = new Float32Array([0, 1, 1, 0, 1, 0])

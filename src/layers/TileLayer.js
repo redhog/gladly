@@ -1,8 +1,8 @@
 import proj4 from 'proj4'
-import { LayerType } from './LayerType.js'
-import { AXES } from './AxisRegistry.js'
-import { registerLayerType } from './LayerTypeRegistry.js'
-import { parseCrsCode, crsToQkX, crsToQkY, ensureCrsDefined } from './EpsgUtils.js'
+import { LayerType } from '../core/LayerType.js'
+import { AXES } from '../axes/AxisRegistry.js'
+import { registerLayerType } from '../core/LayerTypeRegistry.js'
+import { parseCrsCode, crsToQkX, crsToQkY, ensureCrsDefined } from '../geo/EpsgUtils.js'
 
 // ─── Tile math (standard Web Mercator / "slippy map" grid) ────────────────────
 

@@ -1,7 +1,7 @@
-import { LayerType } from "../../src/LayerType.js"
-import { registerLayerType } from "../../src/LayerTypeRegistry.js"
-import { AXES } from "../../src/AxisRegistry.js"
-import { Data } from "../../src/Data.js"
+import { LayerType } from "../../src/core/LayerType.js"
+import { registerLayerType } from "../../src/core/LayerTypeRegistry.js"
+import { AXES } from "../../src/axes/AxisRegistry.js"
+import { Data } from "../../src/core/Data.js"
 
 export const multiLineLayerType = new LayerType({
   name: "multi-line",

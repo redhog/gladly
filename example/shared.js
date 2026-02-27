@@ -1,7 +1,7 @@
 import { registerAxisQuantityKind } from "../src/index.js"
-import { } from "../src/PointsLayer.js"
-import { } from "../src/LinesLayer.js"
-import { } from "../src/Filterbar.js"
+import { } from "../src/layers/PointsLayer.js"
+import { } from "../src/layers/LinesLayer.js"
+import { } from "../src/floats/Filterbar.js"
 import { } from "./layer-types/MultiLineLayer.js"
 
 export { data } from "./data/sampleData.js"

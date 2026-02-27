@@ -1,6 +1,6 @@
 import { ScatterLayerTypeBase } from "./ScatterShared.js"
-import { Data } from "./Data.js"
-import { registerLayerType } from "./LayerTypeRegistry.js"
+import { Data } from "../core/Data.js"
+import { registerLayerType } from "../core/LayerTypeRegistry.js"
 
 const POINTS_VERT = `
   precision mediump float;
