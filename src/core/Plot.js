@@ -589,6 +589,10 @@ export class Plot {
     const axesConfig = this.currentConfig?.axes
 
     for (const layer of this.layers) {
+      if (layer._axisUpdaters) {
+        for (const updater of layer._axisUpdaters) updater.refreshIfNeeded(this)
+      }
+
       const xIsLog = layer.xAxis ? this.axisRegistry.isLogScale(layer.xAxis) : false
       const yIsLog = layer.yAxis ? this.axisRegistry.isLogScale(layer.yAxis) : false
       const props = {
@@ -674,6 +678,10 @@ export class Plot {
       }
       for (let i = 0; i < this.layers.length; i++) {
         const layer = this.layers[i]
+        if (layer._axisUpdaters) {
+          for (const updater of layer._axisUpdaters) updater.refreshIfNeeded(this)
+        }
+
         const xIsLog = layer.xAxis ? this.axisRegistry.isLogScale(layer.xAxis) : false
         const yIsLog = layer.yAxis ? this.axisRegistry.isLogScale(layer.yAxis) : false
         const props = {

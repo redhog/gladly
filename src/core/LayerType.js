@@ -96,7 +96,7 @@ export class LayerType {
     if (createDrawCommand) this.createDrawCommand = createDrawCommand
   }
 
-  createDrawCommand(regl, layer) {
+  createDrawCommand(regl, layer, plot) {
     const nm = layer.nameMap
     // Rename an internal name to the shader-visible name via nameMap (identity if absent).
     const shaderName = (internalName) => nm[internalName] ?? internalName
@@ -111,9 +111,10 @@ export class LayerType {
     const allScalarUniforms = {}
     const allGlobalDecls = []
     const mainInjections = []
+    const allAxisUpdaters = []
 
     for (const [key, expr] of Object.entries(layer.attributes)) {
-      const result = resolveAttributeExpr(regl, expr, shaderName(key))
+      const result = resolveAttributeExpr(regl, expr, shaderName(key), plot)
       if (result.kind === 'buffer') {
         originalBufferAttrs[key] = result.value
       } else {
@@ -123,8 +124,11 @@ export class LayerType {
         Object.assign(allScalarUniforms, result.context.scalarUniforms)
         allGlobalDecls.push(...result.context.globalDecls)
         mainInjections.push(`float ${shaderName(key)} = ${result.glslExpr};`)
+        allAxisUpdaters.push(...result.context.axisUpdaters)
       }
     }
+
+    layer._axisUpdaters = allAxisUpdaters
 
     if (mainInjections.length > 0) {
       vertSrc = injectIntoMainStart(vertSrc, mainInjections.join('\n  '))
