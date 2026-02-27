@@ -1,3 +1,5 @@
+import { registerTextureComputation } from "./ComputationRegistry.js"
+
 /* ============================================================
    Utilities
    ============================================================ */
@@ -251,3 +253,8 @@ export function fftConvolution(regl, signal, kernel) {
   // inverse FFT
   return fft1d(regl, new Float32Array(N), true);
 }
+
+// fft1d: output is a complex texture — R = real part, G = imaginary part.
+// Use a downstream computation (e.g. magnitude) to get a single scalar per bin.
+registerTextureComputation('fft1d', (regl, params) => fft1d(regl, params.input, params.inverse ?? false))
+registerTextureComputation('fftConvolution', (regl, params) => fftConvolution(regl, params.signal, params.kernel))

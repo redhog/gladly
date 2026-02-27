@@ -1,3 +1,5 @@
+import { registerTextureComputation } from "./ComputationRegistry.js"
+
 /**
  * Auto-select number of histogram bins using Scott's rule.
  * For large datasets, uses a random subset to estimate std for speed.
@@ -101,17 +103,20 @@ export default function makeHistogram(regl, input, options = {}) {
   const histFBO = regl.framebuffer({ color: histTex });
 
   // Clear histogram
-  regl({ framebuffer: histFBO, clearColor: [0, 0, 0, 0] })(() => {});
+  regl.clear({ color: [0, 0, 0, 0], framebuffer: histFBO });
 
   if (input instanceof Float32Array && !useGPU) {
-    // CPU histogram
+    // CPU histogram — pack counts into the R channel of each RGBA texel
     const histData = new Float32Array(bins);
     const N = input.length;
     for (let i = 0; i < N; i++) {
       const b = Math.floor(input[i] * bins);
       histData[Math.min(b, bins - 1)] += 1;
     }
-    histTex.subimage({ data: histData, width: bins, height: 1 });
+    // RGBA format: 4 floats per texel. Store count in R, leave G/B/A as 0.
+    const packedData = new Float32Array(bins * 4);
+    for (let i = 0; i < bins; i++) packedData[i * 4] = histData[i];
+    histTex.subimage({ data: packedData, width: bins, height: 1 });
 
   } else {
     // GPU histogram
@@ -152,3 +157,7 @@ export default function makeHistogram(regl, input, options = {}) {
 
   return histTex;
 }
+
+// params: { input: Float32Array (values in [0,1]), bins?: number }
+registerTextureComputation('histogram', (regl, params) =>
+  makeHistogram(regl, params.input, { bins: params.bins }))

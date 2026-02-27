@@ -68,9 +68,12 @@ function resolveToGlslExpr(regl, expr, path, context) {
 
   if (isTexture(expr)) {
     const uniformName = `u_cgen_${path}`
+    const widthName = `u_cgen_${path}_width`
     context.textureUniforms[uniformName] = expr
+    context.scalarUniforms[widthName] = expr.width
     context.globalDecls.push(`uniform sampler2D ${uniformName};`)
-    return `texelFetch(${uniformName}, ivec2(int(a_pickId), 0), 0).r`
+    context.globalDecls.push(`uniform float ${widthName};`)
+    return `texture2D(${uniformName}, vec2((a_pickId + 0.5) / ${widthName}, 0.5)).r`
   }
 
   if (typeof expr === 'number') {
@@ -92,9 +95,12 @@ function resolveToGlslExpr(regl, expr, path, context) {
         const resolvedParams = resolveToRawValue(regl, params, path)
         const texture = comp.fn(regl, resolvedParams)
         const uniformName = `u_cgen_${path}`
+        const widthName = `u_cgen_${path}_width`
         context.textureUniforms[uniformName] = texture
+        context.scalarUniforms[widthName] = texture.width
         context.globalDecls.push(`uniform sampler2D ${uniformName};`)
-        return `texelFetch(${uniformName}, ivec2(int(a_pickId), 0), 0).r`
+        context.globalDecls.push(`uniform float ${widthName};`)
+        return `texture2D(${uniformName}, vec2((a_pickId + 0.5) / ${widthName}, 0.5)).r`
       }
 
       if (glslComputations.has(compName)) {

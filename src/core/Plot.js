@@ -312,7 +312,20 @@ export class Plot {
   _initialize() {
     const { layers = [], axes = {}, colorbars = [] } = this.currentConfig
 
-    this.regl = reglInit({ canvas: this.canvas, extensions: ['ANGLE_instanced_arrays'] })
+    this.regl = reglInit({
+      canvas: this.canvas,
+      extensions: [
+        'ANGLE_instanced_arrays',
+        'OES_texture_float',
+        'OES_texture_float_linear',
+      ],
+      optionalExtensions: [
+        // WebGL1: render to float framebuffers (needed by compute passes)
+        'WEBGL_color_buffer_float',
+        // WebGL2: render to float framebuffers (standard but must be opted in)
+        'EXT_color_buffer_float',
+      ]
+    })
 
     this.layers = []
 
