@@ -584,7 +584,7 @@ export class Plot {
         xScaleType: xIsLog ? 1.0 : 0.0,
         yScaleType: yIsLog ? 1.0 : 0.0,
         viewport: viewport,
-        count: layer.vertexCount ?? layer.attributes.x?.length ?? 0,
+        count: layer.vertexCount ?? Object.values(layer.attributes).find(v => v instanceof Float32Array)?.length ?? 0,
         u_pickingMode: 0.0,
         u_pickLayerIndex: 0.0,
       }
@@ -669,7 +669,7 @@ export class Plot {
           xScaleType: xIsLog ? 1.0 : 0.0,
           yScaleType: yIsLog ? 1.0 : 0.0,
           viewport,
-          count: layer.vertexCount ?? layer.attributes.x?.length ?? 0,
+          count: layer.vertexCount ?? Object.values(layer.attributes).find(v => v instanceof Float32Array)?.length ?? 0,
           u_pickingMode: 1.0,
           u_pickLayerIndex: i,
         }

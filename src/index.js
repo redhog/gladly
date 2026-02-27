@@ -21,6 +21,7 @@ export { Filterbar } from "./floats/Filterbar.js"
 export { filterbarLayerType } from "./layers/FilterbarLayer.js"
 export { tileLayerType, TileLayerType } from "./layers/TileLayer.js"
 export { registerEpsgDef, parseCrsCode, crsToQkX, crsToQkY, qkToEpsgCode, reproject } from "./geo/EpsgUtils.js"
+export { registerTextureComputation, registerGlslComputation, isTexture } from "./compute/ComputationRegistry.js"
 
 // Register all matplotlib colorscales (side-effect import)
 import "./colorscales/MatplotlibColorscales.js"

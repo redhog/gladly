@@ -1,6 +1,7 @@
 import { Layer } from "./Layer.js"
 import { buildColorGlsl } from "../colorscales/ColorscaleRegistry.js"
 import { buildFilterGlsl } from "../axes/FilterAxisRegistry.js"
+import { resolveAttributeExpr } from "../compute/ComputationRegistry.js"
 
 function buildSpatialGlsl() {
   return `float normalize_axis(float v, vec2 domain, float scaleType) {
@@ -28,6 +29,22 @@ vec4 gladly_apply_color(vec4 color) {
   }
   return color;
 }`
+}
+
+// Removes `attribute [precision] type varName;` from GLSL source.
+function removeAttributeDecl(src, varName) {
+  return src.replace(
+    new RegExp(`[ \\t]*attribute\\s+(?:(?:lowp|mediump|highp)\\s+)?\\w+\\s+${varName}\\s*;[ \\t]*\\n?`, 'g'),
+    ''
+  )
+}
+
+// Injects code immediately after `void main() {`.
+function injectIntoMainStart(src, code) {
+  return src.replace(
+    /void\s+main\s*\(\s*(?:void\s*)?\)\s*\{/,
+    match => `${match}\n  ${code}`
+  )
 }
 
 function injectPickIdAssignment(src) {
@@ -86,22 +103,64 @@ export class LayerType {
     // Build a single-entry uniform object with renamed key reading from the internal prop name.
     const u = (internalName) => ({ [shaderName(internalName)]: regl.prop(internalName) })
 
+    // --- Resolve computed attributes ---
+    let vertSrc = this.vert
+    const originalBufferAttrs = {}   // internal_name → Float32Array
+    const computedBufferAttrs = {}   // shader_name   → Float32Array  (from context.bufferAttrs)
+    const allTextureUniforms = {}
+    const allScalarUniforms = {}
+    const allGlobalDecls = []
+    const mainInjections = []
+
+    for (const [key, expr] of Object.entries(layer.attributes)) {
+      const result = resolveAttributeExpr(regl, expr, shaderName(key))
+      if (result.kind === 'buffer') {
+        originalBufferAttrs[key] = result.value
+      } else {
+        vertSrc = removeAttributeDecl(vertSrc, shaderName(key))
+        Object.assign(computedBufferAttrs, result.context.bufferAttrs)
+        Object.assign(allTextureUniforms, result.context.textureUniforms)
+        Object.assign(allScalarUniforms, result.context.scalarUniforms)
+        allGlobalDecls.push(...result.context.globalDecls)
+        mainInjections.push(`float ${shaderName(key)} = ${result.glslExpr};`)
+      }
+    }
+
+    if (mainInjections.length > 0) {
+      vertSrc = injectIntoMainStart(vertSrc, mainInjections.join('\n  '))
+    }
+
+    // Merged buffer attrs by shader name — used for vertex count fallback.
+    const allShaderBuffers = {
+      ...Object.fromEntries(Object.entries(originalBufferAttrs).map(([k, v]) => [shaderName(k), v])),
+      ...computedBufferAttrs
+    }
+
     const isInstanced = layer.instanceCount !== null
-    const pickCount = isInstanced ? layer.instanceCount : (layer.vertexCount ?? layer.attributes.x?.length ?? 0)
+    const pickCount = isInstanced ? layer.instanceCount :
+      (layer.vertexCount ?? allShaderBuffers[shaderName('x')]?.length
+        ?? Object.values(layer.attributes).find(v => v instanceof Float32Array)?.length ?? 0)
     const pickIds = new Float32Array(pickCount)
     for (let i = 0; i < pickCount; i++) pickIds[i] = i
 
+    // --- Build regl attributes ---
     const attributes = {
+      // Original buffer attrs with possible divisors
       ...Object.fromEntries(
-        Object.entries(layer.attributes).map(([key, buffer]) => {
+        Object.entries(originalBufferAttrs).map(([key, buffer]) => {
           const divisor = layer.attributeDivisors[key]
           const attrObj = divisor !== undefined ? { buffer, divisor } : { buffer }
           return [shaderName(key), attrObj]
         })
       ),
+      // Computed buffer attrs (no divisors; already shader-named)
+      ...Object.fromEntries(
+        Object.entries(computedBufferAttrs).map(([shaderKey, buffer]) => [shaderKey, { buffer }])
+      ),
       a_pickId: isInstanced ? { buffer: regl.buffer(pickIds), divisor: 1 } : regl.buffer(pickIds)
     }
 
+    // --- Build uniforms ---
     const uniforms = {
       ...u("xDomain"),
       ...u("yDomain"),
@@ -111,7 +170,9 @@ export class LayerType {
       u_pickLayerIndex: regl.prop('u_pickLayerIndex'),
       ...Object.fromEntries(
         Object.entries(layer.uniforms).map(([key, value]) => [shaderName(key), value])
-      )
+      ),
+      ...allTextureUniforms,
+      ...allScalarUniforms
     }
 
     // Add per-color-axis uniforms (colorscale index + range + scale type), keyed by quantity kind
@@ -131,7 +192,7 @@ export class LayerType {
     const pickVertDecls = `attribute float a_pickId;\nvarying float v_pickId;`
 
     const drawConfig = {
-      vert: injectPickIdAssignment(injectInto(this.vert, [spatialGlsl, filterGlsl, pickVertDecls])),
+      vert: injectPickIdAssignment(injectInto(vertSrc, [spatialGlsl, filterGlsl, pickVertDecls, ...allGlobalDecls])),
       frag: injectInto(this.frag, [buildApplyColorGlsl(), colorGlsl, filterGlsl]),
       attributes,
       uniforms,
