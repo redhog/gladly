@@ -8,8 +8,9 @@ This page describes how data moves through Gladly at runtime: the declarative se
 
 ```
 1. Register layer types (once at startup)
-   └─> registerLayerType("scatter", scatterLayerType)
-       └─> LayerTypeRegistry.set("scatter", scatterLayerType)
+   └─> registerLayerType("points", pointsLayerType)  // side-effect import of PointsLayer.js
+       └─> registerLayerType("lines", linesLayerType)   // side-effect import of LinesLayer.js
+           └─> LayerTypeRegistry.set(...)
 
 2. Prepare data
    └─> const data = { x: Float32Array, y: Float32Array, v: Float32Array }

@@ -1,14 +1,14 @@
 # Built-in Layer Types
 
-Gladly ships four pre-registered layer types. For writing custom layer types see [Writing Layer Types](LayerTypes.md).
+Gladly ships five pre-registered layer types. For writing custom layer types see [Writing Layer Types](LayerTypes.md).
 
 ---
 
-## `scatter`
+## `points`
 
-A scatter plot that renders points coloured by a per-point value mapped through a colorscale.
+A scatter plot that renders individual points coloured by a per-point value mapped through a colorscale.
 
-**Auto-registered** on import. `scatterLayerType` is also exported if you need the `LayerType` object directly (e.g. to inspect its schema).
+**Auto-registered** on import of `PointsLayer.js`. `pointsLayerType` is also exported if you need the `LayerType` object directly (e.g. to inspect its schema).
 
 **Parameters:**
 
@@ -16,7 +16,8 @@ A scatter plot that renders points coloured by a per-point value mapped through 
 |-----------|----------|---------|-------------|
 | `xData` | yes | — | Data key for x coordinates; also used as the x-axis quantity kind |
 | `yData` | yes | — | Data key for y coordinates; also used as the y-axis quantity kind |
-| `vData` | yes | — | Data key for color values; also used as the color axis quantity kind |
+| `vData` | yes | — | Data key for primary color values; also used as the color axis quantity kind |
+| `vData2` | no | — | Data key for secondary color values for 2D colorscale mapping |
 | `xAxis` | no | `"xaxis_bottom"` | x-axis position |
 | `yAxis` | no | `"yaxis_left"` | y-axis position |
 | `alphaBlend` | no | `false` | When `true`, the normalized color value is used as the fragment alpha, so points at the bottom of the color range fade to fully transparent rather than rendering the colorscale's zero color. RGB blending uses standard `src alpha` / `one minus src alpha`; the framebuffer alpha channel is left unchanged. Useful for density or heatmap-style overlays where the absence of data should be invisible. |
@@ -36,7 +37,7 @@ plot.update({
   data: { x, y, temperature },
   config: {
     layers: [
-      { scatter: { xData: "x", yData: "y", vData: "temperature" } }
+      { points: { xData: "x", yData: "y", vData: "temperature" } }
     ],
     axes: {
       temperature: { min: 0, max: 100, colorscale: "plasma" }
@@ -57,11 +58,55 @@ plot.update({
   },
   config: {
     layers: [
-      { scatter: { xData: "x", yData: "y", vData: "temperature" } }
+      { points: { xData: "x", yData: "y", vData: "temperature" } }
     ],
     axes: {
       // key is the resolved quantity kind, not the column name "temperature"
       temperature_K: { min: 0, max: 100, colorscale: "plasma" }
+    }
+  }
+})
+```
+
+---
+
+## `lines`
+
+A connected-line plot that renders segments between consecutive points, with per-point color mapped through a colorscale. Uses instanced rendering: segment endpoints are uploaded once as per-instance data and a two-vertex template is replicated for each segment.
+
+**Auto-registered** on import of `LinesLayer.js`. `linesLayerType` is also exported if you need the `LayerType` object directly.
+
+**Parameters:**
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `xData` | yes | — | Data key for x coordinates |
+| `yData` | yes | — | Data key for y coordinates |
+| `vData` | yes | — | Data key for primary color values |
+| `vData2` | no | — | Data key for secondary color values for 2D colorscale mapping |
+| `xAxis` | no | `"xaxis_bottom"` | x-axis position |
+| `yAxis` | no | `"yaxis_left"` | y-axis position |
+| `alphaBlend` | no | `false` | Alpha blending — see `points` description |
+| `lineSegmentIdData` | no | — | Column of segment IDs; only consecutive points sharing the same ID are connected. Segments with mismatched IDs produce a zero-length degenerate line that the rasterizer discards |
+| `lineColorMode` | no | `"gradient"` | `"gradient"` — color interpolated linearly along each segment; `"midpoint"` — each half of the segment uses the color of the nearest endpoint |
+| `lineWidth` | no | `1.0` | Line width in pixels (browsers typically clamp values above 1) |
+
+**Behavior:**
+- Uses instanced rendering: one instance per segment (N−1 instances for N points)
+- Segment boundary handling: when `lineSegmentIdData` is used and two adjacent points have different IDs, both template vertices collapse to the same position, producing a zero-length segment the rasterizer discards
+- Same quantity kind resolution as `points`
+
+**Example:**
+
+```javascript
+plot.update({
+  data: { x, y, temperature },
+  config: {
+    layers: [
+      { lines: { xData: "x", yData: "y", vData: "temperature", lineColorMode: "gradient" } }
+    ],
+    axes: {
+      temperature: { min: 0, max: 100, colorscale: "plasma" }
     }
   }
 })
@@ -161,7 +206,7 @@ plot.update({
           opacity: 0.9,
         },
       },
-      { scatter: { xData: 'lon', yData: 'lat', vData: 'cityIdx' } },
+      { points: { xData: 'lon', yData: 'lat', vData: 'cityIdx' } },
     ],
     axes: {
       xaxis_bottom: { min: -180, max: 180 },

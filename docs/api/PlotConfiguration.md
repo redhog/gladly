@@ -7,9 +7,8 @@ This page covers everything needed to create and configure plots. For writing cu
 ## Basic Usage
 
 ```javascript
-import { Plot, registerLayerType, scatterLayerType } from './src/index.js'
-
-registerLayerType("scatter", scatterLayerType)
+import { Plot } from './src/index.js'
+import './src/PointsLayer.js'  // auto-registers "points" layer type
 
 const x = new Float32Array([10, 20, 30, 40, 50])
 const y = new Float32Array([15, 25, 35, 25, 45])
@@ -21,7 +20,7 @@ plot.update({
   data: { x, y, v },
   config: {
     layers: [
-      { scatter: { xData: "x", yData: "y", vData: "v" } }
+      { points: { xData: "x", yData: "y", vData: "v" } }
     ],
     axes: {
       xaxis_bottom: { min: 0, max: 60 },
@@ -45,7 +44,7 @@ config: {
 }
 ```
 
-The parameters accepted by each layer type are defined by its JSON Schema. The built-in `scatter` type accepts:
+The parameters accepted by each layer type are defined by its JSON Schema. See [Built-in Layer Types](BuiltInLayerTypes.md) for the full parameter tables. The built-in `points` type accepts at minimum:
 
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|
@@ -105,7 +104,7 @@ Omit an axis entirely to have its range auto-calculated from the data.
 
 ### Color Axes
 
-The key is the **quantity kind** string declared by the layer type (for the built-in scatter type this is the value of `vData`, e.g. `"v"`). Each entry accepts:
+The key is the **quantity kind** string declared by the layer type (for the built-in `points` and `lines` types this is the value of `vData`, e.g. `"v"`). Each entry accepts:
 
 | Property | Description |
 |----------|-------------|
@@ -163,7 +162,7 @@ plot.update({
   data: { x, y, v },
   config: {
     layers: [
-      { scatter: { xData: "x", yData: "y", vData: "v" } }
+      { points: { xData: "x", yData: "y", vData: "v" } }
     ]
     // No axes — ranges auto-calculated from data
   }
@@ -181,8 +180,8 @@ plot.update({
   data: { x1, y1, v1, x2, y2, v2 },
   config: {
     layers: [
-      { scatter: { xData: "x1", yData: "y1", vData: "v1", xAxis: "xaxis_bottom", yAxis: "yaxis_left" } },
-      { scatter: { xData: "x2", yData: "y2", vData: "v2", xAxis: "xaxis_top",    yAxis: "yaxis_right" } }
+      { points: { xData: "x1", yData: "y1", vData: "v1", xAxis: "xaxis_bottom", yAxis: "yaxis_left" } },
+      { points: { xData: "x2", yData: "y2", vData: "v2", xAxis: "xaxis_top",    yAxis: "yaxis_right" } }
     ],
     axes: {
       xaxis_bottom: { min: 0, max: 10 },
@@ -307,13 +306,11 @@ for (let i = 0; i < N; i++) {
   v[i] = Math.random()
 }
 
-registerLayerType("scatter", scatterLayerType)
-
 const plot = new Plot(document.getElementById("plot-container"))
 plot.update({
   data: { x, y, v },
   config: {
-    layers: [{ scatter: { xData: "x", yData: "y", vData: "v" } }]
+    layers: [{ points: { xData: "x", yData: "y", vData: "v" } }]
     // Ranges auto-calculated from data
   }
 })
@@ -337,9 +334,8 @@ plot.update({
   <div id="plot-container"></div>
 
   <script type="module">
-    import { Plot, registerLayerType, scatterLayerType } from './src/index.js'
-
-    registerLayerType("scatter", scatterLayerType)
+    import { Plot } from './src/index.js'
+    import './src/PointsLayer.js'  // auto-registers "points" layer type
 
     const N = 5000
     const x = new Float32Array(N)
@@ -357,7 +353,7 @@ plot.update({
       data: { x, y, v },
       config: {
         layers: [
-          { scatter: { xData: "x", yData: "y", vData: "v" } }
+          { points: { xData: "x", yData: "y", vData: "v" } }
         ],
         axes: {
           xaxis_bottom: { min: 0, max: 100 },

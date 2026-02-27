@@ -107,7 +107,7 @@ plot.update({
   config: {
     layers: [
       // Each entry: { layerTypeName: { ...parameters } }
-      { scatter: { xData: "x", yData: "y", vData: "v" } }
+      { points: { xData: "x", yData: "y", vData: "v" } }
     ],
     axes: {
       // Spatial axes — omit for auto-calculated range
@@ -130,5 +130,5 @@ plot.update({
 - **[Configuring Plots](api/PlotConfiguration.md)** — `plot.update()`, axes config, auto-range, multi-layer, interaction, examples
 - **[Colorbars and Filterbars](api/ColorbarsAndFilterbars.md)** — floating color/filter widgets, auto-creation via config, manual placement
 - **[Writing Layer Types](api/LayerTypes.md)** — `LayerType` constructor, shaders, color axes, filter axes, GLSL helpers, constants
-- **[Built-in Layer Types](api/BuiltInLayerTypes.md)** — `scatter`, `colorbar`, `filterbar` layer type reference
+- **[Built-in Layer Types](api/BuiltInLayerTypes.md)** — `points`, `lines`, `colorbar`, `filterbar` layer type reference
 - **[API Reference](api/Reference.md)** — `Plot`, `registerLayerType`, `getLayerType`, `Data` and other public API entries

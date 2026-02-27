@@ -34,18 +34,14 @@ dataPromise.then(data => {
 const plotConfig = {
   "layers": [
     {
-      "scatter": {
+      "points": {
         "xData": "x2",
         "yData": "y2",
         "vData": "v2",
         "vData2": "none",
         "xAxis": "xaxis_bottom",
         "yAxis": "yaxis_left",
-        "alphaBlend": false,
-        "mode": "points",
-        "lineSegmentIdData": "x1",
-        "lineColorMode": "gradient",
-        "lineWidth": 1
+        "alphaBlend": false
       }
     },
     {
