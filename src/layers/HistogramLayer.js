@@ -3,8 +3,9 @@ import { Data } from "../core/Data.js"
 import { registerLayerType } from "../core/LayerTypeRegistry.js"
 import { AXES } from "../axes/AxisRegistry.js"
 
-// Ensure the 'histogram' texture computation is registered (side-effect import).
+// Ensure the 'histogram' and 'filteredHistogram' texture computations are registered.
 import "../compute/hist.js"
+import "../compute/axisFilter.js"
 
 // Each bar is a quad drawn as a triangle strip (4 vertices).
 // Per-instance: x_center (bin centre in data space), a_pickId (bin index).
@@ -55,12 +56,15 @@ class HistogramLayerType extends LayerType {
 
   _getAxisConfig(parameters, data) {
     const d = Data.wrap(data)
-    const { vData, xAxis = "xaxis_bottom", yAxis = "yaxis_left" } = parameters
+    const { vData, xAxis = "xaxis_bottom", yAxis = "yaxis_left", filterColumn } = parameters
+    const activeFilter = filterColumn && filterColumn !== "none" ? filterColumn : null
+    const filterQK = activeFilter ? (d.getQuantityKind(activeFilter) ?? activeFilter) : null
     return {
       xAxis,
       xAxisQuantityKind: d.getQuantityKind(vData) ?? vData,
       yAxis,
       yAxisQuantityKind: "count",
+      ...(filterQK ? { filterAxisQuantityKinds: [filterQK] } : {}),
     }
   }
 
@@ -74,6 +78,11 @@ class HistogramLayerType extends LayerType {
           type: "string",
           enum: dataProperties,
           description: "Data column to histogram"
+        },
+        filterColumn: {
+          type: "string",
+          enum: ["none", ...dataProperties],
+          description: "Data column used to filter points via its filter axis, or 'none'"
         },
         bins: {
           type: "integer",
@@ -98,7 +107,7 @@ class HistogramLayerType extends LayerType {
           default: "yaxis_left"
         }
       },
-      required: ["vData"]
+      required: ["vData", "filterColumn"]
     }
   }
 
@@ -108,11 +117,18 @@ class HistogramLayerType extends LayerType {
       vData,
       bins: requestedBins = null,
       color = [0.2, 0.5, 0.8, 1.0],
+      filterColumn = "none",
     } = parameters
 
     const srcV = d.getData(vData)
     if (!srcV) throw new Error(`Data column '${vData}' not found`)
     const vQK = d.getQuantityKind(vData) ?? vData
+
+    // --- Optional filter column ---
+    const activeFilter = filterColumn && filterColumn !== "none" ? filterColumn : null
+    const filterQK = activeFilter ? (d.getQuantityKind(activeFilter) ?? activeFilter) : null
+    const srcF = activeFilter ? d.getData(activeFilter) : null
+    if (activeFilter && !srcF) throw new Error(`Data column '${activeFilter}' not found`)
 
     // --- Compute min/max for normalization ---
     let min = Infinity, max = -Infinity
@@ -123,7 +139,7 @@ class HistogramLayerType extends LayerType {
     const range = max - min || 1
 
     // --- Choose bin count ---
-    const bins = requestedBins ?? Math.max(10, Math.min(200, Math.ceil(Math.sqrt(srcV.length))))
+    const bins = requestedBins || Math.max(10, Math.min(200, Math.ceil(Math.sqrt(srcV.length))))
     const binWidth = range / bins
 
     // --- Normalize data to [0, 1] for the histogram computation ---
@@ -133,6 +149,7 @@ class HistogramLayerType extends LayerType {
     }
 
     // --- CPU histogram for domain (y-axis range) estimation ---
+    // Uses unfiltered data so the y-axis scale stays stable while the filter moves.
     const histCpu = new Float32Array(bins)
     for (let i = 0; i < srcV.length; i++) {
       const b = Math.min(Math.floor(normalized[i] * bins), bins - 1)
@@ -149,12 +166,30 @@ class HistogramLayerType extends LayerType {
     // --- Per-vertex: corner indices 0–3 (triangle-strip quad) ---
     const a_corner = new Float32Array([0, 1, 2, 3])
 
+    // --- Build count attribute expression ---
+    // When a filter column is provided, use filteredHistogram so the computation
+    // re-runs whenever the filter axis domain changes.
+    const countAttr = filterQK
+      ? { filteredHistogram: { input: normalized, filterValues: srcF, filterAxisId: filterQK, bins } }
+      : { histogram: { input: normalized, bins } }
+
+    // --- Compute filter column extent for the filterbar display range ---
+    const filterDomains = {}
+    if (filterQK && srcF) {
+      let fMin = Infinity, fMax = -Infinity
+      for (let i = 0; i < srcF.length; i++) {
+        if (srcF[i] < fMin) fMin = srcF[i]
+        if (srcF[i] > fMax) fMax = srcF[i]
+      }
+      filterDomains[filterQK] = [fMin, fMax]
+    }
+
     return [{
       attributes: {
         a_corner,          // per-vertex (no divisor)
         x_center,          // per-instance (divisor 1)
         // GPU histogram via computed attribute; sampled at a_pickId (= bin index)
-        count: { histogram: { input: normalized, bins } },
+        count: countAttr,
       },
       attributeDivisors: { x_center: 1 },
       uniforms: {
@@ -167,6 +202,7 @@ class HistogramLayerType extends LayerType {
       domains: {
         [vQK]: [min, max],
         count:  [0, maxCount],
+        ...filterDomains,
       },
     }]
   }

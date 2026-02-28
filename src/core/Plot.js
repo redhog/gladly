@@ -596,8 +596,8 @@ export class Plot {
       const xIsLog = layer.xAxis ? this.axisRegistry.isLogScale(layer.xAxis) : false
       const yIsLog = layer.yAxis ? this.axisRegistry.isLogScale(layer.yAxis) : false
       const props = {
-        xDomain: layer.xAxis ? this.axisRegistry.getScale(layer.xAxis).domain() : [0, 1],
-        yDomain: layer.yAxis ? this.axisRegistry.getScale(layer.yAxis).domain() : [0, 1],
+        xDomain: layer.xAxis ? (this.axisRegistry.getScale(layer.xAxis)?.domain() ?? [0, 1]) : [0, 1],
+        yDomain: layer.yAxis ? (this.axisRegistry.getScale(layer.yAxis)?.domain() ?? [0, 1]) : [0, 1],
         xScaleType: xIsLog ? 1.0 : 0.0,
         yScaleType: yIsLog ? 1.0 : 0.0,
         viewport: viewport,
@@ -685,8 +685,8 @@ export class Plot {
         const xIsLog = layer.xAxis ? this.axisRegistry.isLogScale(layer.xAxis) : false
         const yIsLog = layer.yAxis ? this.axisRegistry.isLogScale(layer.yAxis) : false
         const props = {
-          xDomain: layer.xAxis ? this.axisRegistry.getScale(layer.xAxis).domain() : [0, 1],
-          yDomain: layer.yAxis ? this.axisRegistry.getScale(layer.yAxis).domain() : [0, 1],
+          xDomain: layer.xAxis ? (this.axisRegistry.getScale(layer.xAxis)?.domain() ?? [0, 1]) : [0, 1],
+          yDomain: layer.yAxis ? (this.axisRegistry.getScale(layer.yAxis)?.domain() ?? [0, 1]) : [0, 1],
           xScaleType: xIsLog ? 1.0 : 0.0,
           yScaleType: yIsLog ? 1.0 : 0.0,
           viewport,
