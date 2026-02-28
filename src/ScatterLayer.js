@@ -3,12 +3,14 @@ import { AXES } from "./AxisRegistry.js"
 import { registerLayerType } from "./LayerTypeRegistry.js"
 import { Data } from "./Data.js"
 
-const POINTS_VERT = `
+function makePointsVert(hasFilter) {
+  return `
   precision mediump float;
   attribute float x;
   attribute float y;
   attribute float color_data;
   attribute float color_data2;
+  ${hasFilter ? 'attribute float filter_data;\n  uniform vec4 filter_range;' : ''}
   uniform vec2 xDomain;
   uniform vec2 yDomain;
   uniform float xScaleType;
@@ -16,6 +18,7 @@ const POINTS_VERT = `
   varying float value;
   varying float value2;
   void main() {
+    ${hasFilter ? 'if (!filter_in_range(filter_range, filter_data)) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }' : ''}
     float nx = normalize_axis(x, xDomain, xScaleType);
     float ny = normalize_axis(y, yDomain, yScaleType);
     gl_Position = vec4(nx*2.0-1.0, ny*2.0-1.0, 0, 1);
@@ -24,6 +27,7 @@ const POINTS_VERT = `
     value2 = color_data2;
   }
 `
+}
 
 const POINTS_FRAG = `
   precision mediump float;
@@ -67,7 +71,8 @@ const POINTS_FRAG = `
 // Segment boundary handling: when a_seg0 != a_seg1, collapse both template vertices to
 // (a_x0, a_y0) producing a zero-length degenerate line that the rasterizer discards.
 
-const LINES_VERT = `
+function makeLinesVert(hasFilter) {
+  return `
   precision mediump float;
   attribute float a_endPoint;
   attribute float a_x0, a_y0;
@@ -75,30 +80,25 @@ const LINES_VERT = `
   attribute float a_v0, a_v1;
   attribute float a_v20, a_v21;
   attribute float a_seg0, a_seg1;
-
+  ${hasFilter ? 'attribute float a_f0, a_f1;\n  uniform vec4 filter_range;' : ''}
   uniform vec2 xDomain;
   uniform vec2 yDomain;
   uniform float xScaleType;
   uniform float yScaleType;
-
   varying float v_color_start;
   varying float v_color_end;
   varying float v_color2_start;
   varying float v_color2_end;
   varying float v_t;
-
   void main() {
     float same_seg = abs(a_seg0 - a_seg1) < 0.5 ? 1.0 : 0.0;
+    ${hasFilter ? 'if (!filter_in_range(filter_range, a_f0) || !filter_in_range(filter_range, a_f1)) same_seg = 0.0;' : ''}
     float t = same_seg * a_endPoint;
-
     float x = mix(a_x0, a_x1, t);
     float y = mix(a_y0, a_y1, t);
-
     float nx = normalize_axis(x, xDomain, xScaleType);
     float ny = normalize_axis(y, yDomain, yScaleType);
-
     gl_Position = vec4(nx * 2.0 - 1.0, ny * 2.0 - 1.0, 0, 1);
-
     v_color_start  = a_v0;
     v_color_end    = a_v1;
     v_color2_start = a_v20;
@@ -106,6 +106,7 @@ const LINES_VERT = `
     v_t = a_endPoint;
   }
 `
+}
 
 const LINES_FRAG = `
   precision mediump float;
@@ -154,22 +155,24 @@ const LINES_FRAG = `
 
 class ScatterLayerType extends LayerType {
   constructor() {
-    super({ name: "scatter", vert: POINTS_VERT, frag: POINTS_FRAG })
+    super({ name: "scatter", vert: makePointsVert(false), frag: POINTS_FRAG })
   }
 
   _getAxisConfig(parameters, data) {
     const d = Data.wrap(data)
-    const { xData, yData, vData, vData2, xAxis, yAxis } = parameters
+    const { xData, yData, vData, vData2, fData, xAxis, yAxis } = parameters
     const colorAxisQuantityKinds = [d.getQuantityKind(vData) ?? vData]
     if (vData2) {
       colorAxisQuantityKinds.push(d.getQuantityKind(vData2) ?? vData2)
     }
+    const filterAxisQuantityKinds = fData ? [d.getQuantityKind(fData) ?? fData] : []
     return {
       xAxis,
       xAxisQuantityKind: d.getQuantityKind(xData) ?? xData,
       yAxis,
       yAxisQuantityKind: d.getQuantityKind(yData) ?? yData,
       colorAxisQuantityKinds,
+      filterAxisQuantityKinds,
     }
   }
 
@@ -198,6 +201,11 @@ class ScatterLayerType extends LayerType {
           type: "string",
           enum: ["none"].concat(dataProperties),
           description: "Optional secondary property name for 2D color mapping"
+        },
+        fData: {
+          type: "string",
+          enum: ["none"].concat(dataProperties),
+          description: "Optional property name for filter axis values"
         },
         xAxis: {
           type: "string",
@@ -247,7 +255,7 @@ class ScatterLayerType extends LayerType {
   _createLayer(parameters, data) {
     const d = Data.wrap(data)
     const {
-      xData, yData, vData: vDataOrig, vData2: vData2Orig,
+      xData, yData, vData: vDataOrig, vData2: vData2Orig, fData: fDataOrig,
       alphaBlend = false,
       mode = "points",
       lineSegmentIdData,
@@ -257,24 +265,28 @@ class ScatterLayerType extends LayerType {
 
     const vData = vDataOrig == "none" ? null : vDataOrig
     const vData2 = vData2Orig == "none" ? null : vData2Orig
+    const fData = fDataOrig == "none" ? null : fDataOrig
 
     const xQK = d.getQuantityKind(xData) ?? xData
     const yQK = d.getQuantityKind(yData) ?? yData
     const vQK = vData ? (d.getQuantityKind(vData) ?? vData) : null
     const vQK2 = vData2 ? (d.getQuantityKind(vData2) ?? vData2) : null
+    const fQK = fData ? (d.getQuantityKind(fData) ?? fData) : null
 
     const srcX = d.getData(xData)
     const srcY = d.getData(yData)
     const srcV = vData ? d.getData(vData) : null
     const srcV2 = vData2 ? d.getData(vData2) : null
+    const srcF = fData ? d.getData(fData) : null
 
     if (!srcX) throw new Error(`Data column '${xData}' not found`)
     if (!srcY) throw new Error(`Data column '${yData}' not found`)
     if (vData && !srcV) throw new Error(`Data column '${vData}' not found`)
     if (vData2 && !srcV2) throw new Error(`Data column '${vData2}' not found`)
+    if (fData && !srcF) throw new Error(`Data column '${fData}' not found`)
 
     const domains = {}
-    
+
     const xDomain = d.getDomain(xData)
     if (xDomain) domains[xQK] = xDomain
 
@@ -285,7 +297,7 @@ class ScatterLayerType extends LayerType {
       const vDomain = d.getDomain(vData)
       if (vDomain) domains[vQK] = vDomain
     }
-    
+
     if (vData2) {
       const vDomain2 = d.getDomain(vData2)
       if (vDomain2) domains[vQK2] = vDomain2
@@ -318,6 +330,10 @@ class ScatterLayerType extends LayerType {
           a_v21: vData2 ? srcV2.subarray(1, N) : new Float32Array(N - 1),
           a_seg0: seg0,
           a_seg1: seg1,
+          ...(fData ? {
+            a_f0: srcF.subarray(0, N - 1),
+            a_f1: srcF.subarray(1, N),
+          } : {}),
         },
         attributeDivisors: {
           a_x0: 1, a_x1: 1,
@@ -325,13 +341,14 @@ class ScatterLayerType extends LayerType {
           a_v0: 1, a_v1: 1,
           a_v20: 1, a_v21: 1,
           a_seg0: 1, a_seg1: 1,
+          ...(fData ? { a_f0: 1, a_f1: 1 } : {}),
         },
         uniforms: {
           alphaBlend: alphaBlend ? 1.0 : 0.0,
           u_lineColorMode: lineColorMode === "midpoint" ? 1.0 : 0.0,
           u_useSecondColor: useSecond,
           ...(vData ? {} : {colorscale: 0, color_range: [0, 1], color_scale_type: 0.0}),
-          ...(vData2 ? {} : {colorscale2: 0, color_range2: [0, 1], color_scale_type2: 0.0}) 
+          ...(vData2 ? {} : {colorscale2: 0, color_range2: [0, 1], color_scale_type2: 0.0})
         },
         nameMap: {
           ...(vData ? {
@@ -343,7 +360,8 @@ class ScatterLayerType extends LayerType {
             [`colorscale_${vQK2}`]: 'colorscale2',
             [`color_range_${vQK2}`]: 'color_range2',
             [`color_scale_type_${vQK2}`]: 'color_scale_type2',
-          } : {})
+          } : {}),
+          ...(fData ? { [`filter_range_${fQK}`]: 'filter_range' } : {}),
         },
         domains,
         primitive: "lines",
@@ -360,12 +378,13 @@ class ScatterLayerType extends LayerType {
         y: srcY,
         color_data: vData ? srcV : new Float32Array(srcX.length),
         color_data2: vData2 ? srcV2 : new Float32Array(srcX.length),
+        ...(fData ? { filter_data: srcF } : {}),
       },
       uniforms: {
         alphaBlend: alphaBlend ? 1.0 : 0.0,
         u_useSecondColor: useSecond,
         ...(vData ? {} : {colorscale: 0, color_range: [0, 1], color_scale_type: 0.0}),
-        ...(vData2 ? {} : {colorscale2: 0, color_range2: [0, 1], color_scale_type2: 0.0}) 
+        ...(vData2 ? {} : {colorscale2: 0, color_range2: [0, 1], color_scale_type2: 0.0})
       },
       domains,
       nameMap: {
@@ -378,18 +397,20 @@ class ScatterLayerType extends LayerType {
           [`colorscale_${vQK2}`]: 'colorscale2',
           [`color_range_${vQK2}`]: 'color_range2',
           [`color_scale_type_${vQK2}`]: 'color_scale_type2',
-        } : {})
+        } : {}),
+        ...(fData ? { [`filter_range_${fQK}`]: 'filter_range' } : {}),
       },
       blend: blendConfig,
     }]
   }
 
   createDrawCommand(regl, layer) {
+    const hasFilter = layer.filterAxes.length > 0
     if (layer.primitive === "lines") {
-      this.vert = LINES_VERT
+      this.vert = makeLinesVert(hasFilter)
       this.frag = LINES_FRAG
     } else {
-      this.vert = POINTS_VERT
+      this.vert = makePointsVert(hasFilter)
       this.frag = POINTS_FRAG
     }
     return super.createDrawCommand(regl, layer)
@@ -398,4 +419,3 @@ class ScatterLayerType extends LayerType {
 
 export const scatterLayerType = new ScatterLayerType()
 registerLayerType("scatter", scatterLayerType)
-

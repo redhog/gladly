@@ -39,6 +39,7 @@ const plotConfig = {
         "yData": "y2",
         "vData": "v2",
         "vData2": "none",
+        "fData": "f2",
         "xAxis": "xaxis_bottom",
         "yAxis": "yaxis_left",
         "alphaBlend": false,
