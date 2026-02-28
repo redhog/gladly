@@ -20,9 +20,17 @@ export { Float } from "./floats/Float.js"
 export { Filterbar } from "./floats/Filterbar.js"
 export { filterbarLayerType } from "./layers/FilterbarLayer.js"
 export { tileLayerType, TileLayerType } from "./layers/TileLayer.js"
+export { histogramLayerType } from "./layers/HistogramLayer.js"
 export { registerEpsgDef, parseCrsCode, crsToQkX, crsToQkY, qkToEpsgCode, reproject } from "./geo/EpsgUtils.js"
 export { registerTextureComputation, registerGlslComputation, isTexture } from "./compute/ComputationRegistry.js"
 
 // Register all matplotlib colorscales (side-effect import)
 import "./colorscales/MatplotlibColorscales.js"
 import "./colorscales/BivariateColorscales.js"
+
+// Register all compute texture computations (side-effect imports)
+import "./compute/filter.js"
+import "./compute/kde.js"
+import "./compute/fft.js"
+import "./compute/conv.js"
+import "./compute/hist.js"

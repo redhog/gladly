@@ -1,3 +1,5 @@
+import { registerTextureComputation } from "./ComputationRegistry.js"
+
 function toTexture(regl, input, length) {
   if (input instanceof Float32Array) {
     return regl.texture({ data: input, shape: [length, 1], type: 'float', format: 'rgba' });
@@ -149,3 +151,10 @@ function bandPass(regl, input, sigmaLow, sigmaHigh) {
   const lowLow = lowPass(regl, input, sigmaLow);
   return subtractTextures(regl, lowHigh, lowLow);
 }
+
+export { filter1D, gaussianKernel, lowPass, highPass, bandPass }
+
+registerTextureComputation('filter1D', (regl, params) => filter1D(regl, params.input, params.kernel))
+registerTextureComputation('lowPass',  (regl, params) => lowPass(regl, params.input, params.sigma, params.kernelSize))
+registerTextureComputation('highPass', (regl, params) => highPass(regl, params.input, params.sigma, params.kernelSize))
+registerTextureComputation('bandPass', (regl, params) => bandPass(regl, params.input, params.sigmaLow, params.sigmaHigh))

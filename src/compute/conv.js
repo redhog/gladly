@@ -1,4 +1,5 @@
-import { fftConvolution } from "./fft";
+import { fftConvolution } from "./fft.js"
+import { registerTextureComputation } from "./ComputationRegistry.js"
 
 /*
   ============================================================
@@ -209,3 +210,7 @@ export default function adaptiveConvolution(regl, signalArray, kernelArray) {
   // Case 3: FFT
   return fftConvolution(regl, signalArray, kernelArray);
 }
+
+// params: { signal: Float32Array, kernel: Float32Array }
+registerTextureComputation('convolution', (regl, params) =>
+  adaptiveConvolution(regl, params.signal, params.kernel))

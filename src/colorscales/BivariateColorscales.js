@@ -18,6 +18,35 @@ vec4 colorscale_2d_bilinear4corner(vec2 t) {
 }
 `);
 
+register2DColorscale("Gred", `
+vec4 colorscale_2d_Gred(vec2 t) {
+    vec3 c00 = vec3(0.0, 0.0, 0.0);
+    vec3 c10 = vec3(1.0, 0.0, 0.0);
+    vec3 c01 = vec3(0.0, 1.0, 0.0);
+    vec3 c11 = vec3(1.0, 1.0, 1.0);
+    vec3 rgb = (1.0 - t.x)*(1.0 - t.y)*c00 +
+               t.x*(1.0 - t.y)*c10 +
+               (1.0 - t.x)*t.y*c01 +
+               t.x*t.y*c11;
+    return vec4(rgb,1.0);
+}
+`);
+
+register2DColorscale("Reen", `
+vec4 colorscale_2d_Reen(vec2 t) {
+    vec3 c00 = vec3(1.0, 0.0, 0.0);
+    vec3 c10 = vec3(0.0, 0.0, 0.0);
+    vec3 c01 = vec3(1.0, 1.0, 1.0);
+    vec3 c11 = vec3(0.0, 1.0, 0.0);
+    vec3 rgb = (1.0 - t.x)*(1.0 - t.y)*c00 +
+               t.x*(1.0 - t.y)*c10 +
+               (1.0 - t.x)*t.y*c01 +
+               t.x*t.y*c11;
+    return vec4(rgb,1.0);
+}
+`);
+
+
 //////////////////////////////
 // 2. HSV Phase-Magnitude Map
 //////////////////////////////

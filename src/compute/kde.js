@@ -1,3 +1,5 @@
+import { registerTextureComputation } from "./ComputationRegistry.js"
+
 /**
  * Smooth a histogram to produce a KDE texture
  * @param {regl} regl - regl context
@@ -79,3 +81,6 @@ export default function smoothKDE(regl, histInput, options = {}) {
 
   return kdeTex;
 }
+
+registerTextureComputation('kde', (regl, params) =>
+  smoothKDE(regl, params.input, { bins: params.bins, bandwidth: params.bandwidth }))
