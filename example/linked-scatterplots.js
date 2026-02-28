@@ -48,18 +48,14 @@ linkAxes(plot1.axes.xaxis_bottom, plot2.axes.xaxis_top)
 let plot1Config = {
   "layers": [
     {
-      "scatter": {
+      "points": {
         "xData": "x1",
         "yData": "y1",
         "vData": "v1",
         "vData2": "v2",
         "xAxis": "xaxis_bottom",
         "yAxis": "yaxis_left",
-        "alphaBlend": false,
-        "mode": "points",
-        "lineSegmentIdData": "x1",
-        "lineColorMode": "gradient",
-        "lineWidth": 1
+        "alphaBlend": false
       }
     }
   ],
@@ -112,18 +108,14 @@ let plot1Config = {
 let plot2Config = {
   "layers": [
     {
-      "scatter": {
+      "points": {
         "xData": "x1",
         "yData": "y2",
         "vData": "v1",
         "vData2": "none",
         "xAxis": "xaxis_top",
         "yAxis": "yaxis_left",
-        "alphaBlend": false,
-        "mode": "points",
-        "lineSegmentIdData": "x1",
-        "lineColorMode": "gradient",
-        "lineWidth": 1
+        "alphaBlend": false
       }
     }
   ],

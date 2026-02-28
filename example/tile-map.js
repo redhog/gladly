@@ -124,7 +124,7 @@ const plotConfig = {
       },
     },
     {
-      scatter: {
+      points: {
         xData: 'lon',
         yData: 'lat',
         vData: 'popDens',

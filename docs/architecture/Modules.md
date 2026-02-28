@@ -13,7 +13,8 @@ Detailed breakdown of each source module. For the high-level picture see [ARCHIT
 - `LayerType` — class for defining custom layer types
 - `Axis` — first-class axis object (obtained via `plot.axes[name]`)
 - `linkAxes` — cross-plot axis linking
-- `scatterLayerType` — built-in scatter `LayerType`
+- `pointsLayerType` — built-in points `LayerType`
+- `linesLayerType` — built-in lines `LayerType`
 - `colorbarLayerType` — built-in colorbar gradient `LayerType`
 - `filterbarLayerType` — built-in filterbar axis `LayerType`
 - `Colorbar` — colorbar plot (extends `Plot`)
@@ -116,21 +117,53 @@ Detailed breakdown of each source module. For the high-level picture see [ARCHIT
 
 ---
 
-## `ScatterLayer.js`
+## `ScatterShared.js`
 
-**Purpose:** Built-in scatter plot `LayerType` implementation.
+**Purpose:** Base class `ScatterLayerTypeBase` with shared logic for `PointsLayer` and `LinesLayer`.
+
+**Shared methods:**
+- `_getAxisConfig(parameters, data)` — resolves spatial and color axis quantity kinds from column metadata
+- `_commonSchemaProperties(dataProperties)` — returns JSON Schema properties common to both layer types (`xData`, `yData`, `vData`, `vData2`, `xAxis`, `yAxis`, `alphaBlend`)
+- `_resolveColorData(parameters, d)` — strips `"none"` sentinels, validates columns exist, returns resolved data arrays and quantity kinds
+- `_buildDomains(...)` — constructs the `domains` object from data metadata
+- `_buildNameMap(...)` — constructs the `nameMap` that renames per-quantity-kind uniforms to fixed shader names (`colorscale`, `color_range`, `color_scale_type`, and their `2` variants)
+- `_buildBlendConfig(alphaBlend)` — returns a regl blend config or `null`
+
+---
+
+## `PointsLayer.js`
+
+**Purpose:** Built-in `points` `LayerType` — renders data as individual GL points.
 
 **Configuration:**
-- Spatial quantity kinds: dynamic (`x` ← `xData` name, `y` ← `yData` name)
-- Color axis quantity kind ← `vData` name; colorscale from quantity kind registry
+- Registered as `"points"`
 - Point size: 4.0 px
-- Uses `nameMap` to bind the dynamic color axis quantity kind to fixed shader names (`color_data`, `colorscale`, `color_range`, `color_scale_type`)
+- Spatial quantity kinds: dynamic (`x` ← `xData` name, `y` ← `yData` name)
+- Color axis quantity kinds from `vData` (and optionally `vData2`)
 
-**Vertex shader:** Normalises `(x, y)` from data coordinates to clip space `[-1, 1]` using `xDomain`/`yDomain` uniforms; passes the color attribute (`vData`) as a varying.
+**Vertex shader:** Normalises `(x, y)` to clip space; passes `color_data` and `color_data2` as varyings.
 
-**Fragment shader:** Calls `map_color(colorscale_<vData>, color_range_<vData>, value)` to produce RGBA.
+**Fragment shader:** Calls `map_color_s` / `map_color_s_2d` depending on whether `vData2` is active.
 
-**Schema parameters:** `xData`, `yData`, `vData` (required); `xAxis`, `yAxis` (optional).
+**Schema parameters:** `xData`, `yData`, `vData` (required); `vData2`, `xAxis`, `yAxis`, `alphaBlend` (optional).
+
+---
+
+## `LinesLayer.js`
+
+**Purpose:** Built-in `lines` `LayerType` — renders data as connected line segments using instanced rendering.
+
+**Configuration:**
+- Registered as `"lines"`
+- One instance per segment (N−1 instances for N points); two-vertex template with `a_endPoint ∈ {0, 1}`
+- Per-instance attributes carry divisor 1; template vertex `a_endPoint` carries divisor 0
+- Segment boundary collapses: when `a_seg0 ≠ a_seg1`, both vertices map to `(a_x0, a_y0)`, producing a zero-length degenerate line
+
+**Vertex shader:** Selects `(x, y)` via `mix(start, end, t)` where `t = same_seg × a_endPoint`; passes start/end color varyings.
+
+**Fragment shader:** Interpolates or step-selects color based on `u_lineColorMode`; calls `map_color_s` / `map_color_s_2d`.
+
+**Schema parameters:** `xData`, `yData`, `vData` (required); `vData2`, `xAxis`, `yAxis`, `alphaBlend`, `lineSegmentIdData`, `lineColorMode`, `lineWidth` (optional).
 
 ---
 

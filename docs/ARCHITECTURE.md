@@ -30,7 +30,9 @@ gladly/
 │   ├── Plot.js                       # Main rendering orchestrator
 │   ├── Layer.js                      # Data container (DTO)
 │   ├── LayerType.js                  # Shader + metadata + schema + factory
-│   ├── ScatterLayer.js               # Built-in scatter plot LayerType
+│   ├── ScatterShared.js              # Shared base class for points/lines layer types
+│   ├── PointsLayer.js                # Built-in points LayerType
+│   ├── LinesLayer.js                 # Built-in lines LayerType
 │   ├── ColorbarLayer.js              # Built-in colorbar gradient LayerType
 │   ├── FilterbarLayer.js             # Built-in filterbar axis LayerType
 │   ├── Axis.js                       # First-class axis object (stable across update())
@@ -57,7 +59,7 @@ gladly/
     ├── api/
     │   ├── PlotConfiguration.md       # How to configure plots
     │   ├── LayerTypes.md              # How to write layer types
-    │   ├── BuiltInLayerTypes.md       # scatter, colorbar, filterbar layer types
+    │   ├── BuiltInLayerTypes.md       # points, lines, colorbar, filterbar layer types
     │   ├── ColorbarsAndFilterbars.md  # Colorbar, Float, Filterbar, FilterbarFloat
     │   └── Reference.md               # Full public API reference
     └── architecture/

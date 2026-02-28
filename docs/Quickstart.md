@@ -9,7 +9,7 @@ npm install gladly-plot
 ```
 
 ```javascript
-import { Plot, registerLayerType, scatterLayerType } from 'gladly-plot'
+import { Plot, pointsLayerType } from 'gladly-plot'
 ```
 
 ### From source
@@ -21,7 +21,7 @@ npm install regl d3
 ```
 
 ```javascript
-import { Plot, registerLayerType, scatterLayerType } from './src/index.js'
+import { Plot, pointsLayerType } from './src/index.js'
 ```
 
 #### Run the built-in example
@@ -44,10 +44,10 @@ Width and height are auto-detected from `clientWidth`/`clientHeight` and update 
 
 **JavaScript:**
 ```javascript
-import { Plot, registerLayerType, scatterLayerType } from 'gladly-plot'
+import { Plot, pointsLayerType } from 'gladly-plot'
 
 // 1. Register layer types once at startup
-registerLayerType("scatter", scatterLayerType)
+// pointsLayerType is auto-registered on import — no manual registerLayerType call needed
 
 // 2. Prepare data as Float32Arrays
 const x = new Float32Array([10, 20, 30, 40, 50])
@@ -62,7 +62,7 @@ plot.update({
   data: { x, y, v },
   config: {
     layers: [
-      { scatter: { xData: "x", yData: "y", vData: "v" } }
+      { points: { xData: "x", yData: "y", vData: "v" } }
     ],
     axes: {
       xaxis_bottom: { min: 0, max: 60 },

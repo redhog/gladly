@@ -45,7 +45,9 @@ src/
   - Plot.js               # Main rendering orchestrator
   - Layer.js              # Data container (internal)
   - LayerType.js          # Shader definition + schema + factory
-  - ScatterLayer.js       # Scatter plot implementation
+  - ScatterShared.js      # Shared base class for points/lines layer types
+  - PointsLayer.js        # Points (scatter) layer type implementation
+  - LinesLayer.js         # Lines layer type implementation
   - AxisRegistry.js       # Scale management (internal)
   - LayerTypeRegistry.js  # Layer type registration
 example/

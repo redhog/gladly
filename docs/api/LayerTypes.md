@@ -413,7 +413,7 @@ Static declarations and `getAxisConfig` can be mixed freely. Dynamic values (non
 
 > **This is entirely optional.** Nothing in the plotting framework requires it. If your layer type always receives a flat `{ column: Float32Array }` object, just read it directly. `Data.wrap` is a convenience for layer types that want to support richer data shapes.
 
-The built-in `scatter` layer calls `Data.wrap(data)` in both `createLayer` and `getAxisConfig` so that it accepts plain flat objects, per-column rich objects, and the columnar format (see [`Data`](Reference.md#data) for format details). Custom layer types can do the same.
+The built-in `points` and `lines` layers call `Data.wrap(data)` in both `createLayer` and `getAxisConfig` so that they accept plain flat objects, per-column rich objects, and the columnar format (see [`Data`](Reference.md#data) for format details). Custom layer types can do the same.
 
 **Pattern:** replace `data[col]` with `d.getData(col)`, and derive quantity kinds from the data rather than hardcoding them:
 
@@ -772,7 +772,7 @@ new LayerType({ name,
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `name` | string | Type identifier (e.g. `"scatter"`) |
+| `name` | string | Type identifier (e.g. `"points"`) |
 | `xAxis` | string | Static default x-axis position (e.g. `"xaxis_bottom"`). Optional. |
 | `xAxisQuantityKind` | string | Static x-axis quantity kind. Optional. |
 | `yAxis` | string | Static default y-axis position (e.g. `"yaxis_left"`). Optional. |
@@ -953,7 +953,7 @@ All values in `attributes` must be `Float32Array` and are validated at layer con
 
 ### Built-in layer types
 
-The built-in `scatter`, `colorbar`, and `filterbar` layer types are documented in [Built-in Layer Types](BuiltInLayerTypes.md).
+The built-in `points`, `lines`, `colorbar`, and `filterbar` layer types are documented in [Built-in Layer Types](BuiltInLayerTypes.md).
 
 ---
 

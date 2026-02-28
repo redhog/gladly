@@ -381,7 +381,7 @@ The quantity kind labels are looked up from `projnames` (e.g. EPSG:26911 → `"N
 Registers a LayerType under a name for use in `config.layers`.
 
 ```javascript
-registerLayerType("scatter", scatterLayerType)
+registerLayerType("points", pointsLayerType)
 ```
 
 Throws if `name` is already registered.
@@ -529,7 +529,7 @@ Returns `[min, max]` for column `col`, or `undefined` if no domain was specified
 
 ## Built-in Layer Types
 
-Gladly ships four pre-registered layer types — `scatter`, `tile`, `colorbar`, and `filterbar`. See [Built-in Layer Types](BuiltInLayerTypes.md) for full documentation.
+Gladly ships five pre-registered layer types — `points`, `lines`, `tile`, `colorbar`, and `filterbar`. See [Built-in Layer Types](BuiltInLayerTypes.md) for full documentation.
 
 ---
 
