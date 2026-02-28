@@ -31,6 +31,7 @@ function resolveToRawValue(regl, expr, path, getAxisDomain) {
   if (expr instanceof Float32Array) return expr
   if (isTexture(expr)) return expr
   if (typeof expr === 'number') return expr
+  if (typeof expr === 'string') return expr
 
   if (typeof expr === 'object' && expr !== null) {
     const keys = Object.keys(expr)
