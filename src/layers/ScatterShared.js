@@ -1,6 +1,6 @@
-import { LayerType } from "./LayerType.js"
-import { AXES } from "./AxisRegistry.js"
-import { Data } from "./Data.js"
+import { LayerType } from "../core/LayerType.js"
+import { AXES } from "../axes/AxisRegistry.js"
+import { Data } from "../core/Data.js"
 
 export class ScatterLayerTypeBase extends LayerType {
   _getAxisConfig(parameters, data) {

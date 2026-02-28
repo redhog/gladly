@@ -41,15 +41,42 @@ For detailed information about using and understanding Gladly:
 ### Project Structure
 ```
 src/
-  - index.js              # Public API exports
-  - Plot.js               # Main rendering orchestrator
-  - Layer.js              # Data container (internal)
-  - LayerType.js          # Shader definition + schema + factory
-  - ScatterShared.js      # Shared base class for points/lines layer types
-  - PointsLayer.js        # Points (scatter) layer type implementation
-  - LinesLayer.js         # Lines layer type implementation
-  - AxisRegistry.js       # Scale management (internal)
-  - LayerTypeRegistry.js  # Layer type registration
+  - index.js                        # Public API exports
+  core/
+    - Plot.js                       # Main rendering orchestrator
+    - Layer.js                      # Data container (internal)
+    - LayerType.js                  # Shader definition + schema + factory
+    - Data.js                       # Data normalisation wrapper
+    - LayerTypeRegistry.js          # Layer type registration
+  axes/
+    - Axis.js                       # First-class axis object
+    - AxisRegistry.js               # Spatial scale management (internal)
+    - AxisLink.js                   # Cross-plot axis linking
+    - AxisQuantityKindRegistry.js   # Global quantity kind definitions
+    - ColorAxisRegistry.js          # Color axis range + colorscale management
+    - FilterAxisRegistry.js         # Filter axis range management + GLSL helper
+    - ZoomController.js             # Zoom and pan interaction
+  colorscales/
+    - ColorscaleRegistry.js         # GLSL colorscale registration + dispatch builder
+    - MatplotlibColorscales.js      # All matplotlib 1D colorscales pre-registered
+    - BivariateColorscales.js       # 2D colorscales pre-registered
+  layers/
+    - ScatterShared.js              # Shared base class for points/lines layer types
+    - PointsLayer.js                # Points (scatter) layer type implementation
+    - LinesLayer.js                 # Lines layer type implementation
+    - ColorbarLayer.js              # 1D colorbar gradient LayerType
+    - ColorbarLayer2d.js            # 2D colorbar LayerType
+    - FilterbarLayer.js             # Filterbar axis LayerType
+    - TileLayer.js                  # Map tile LayerType (XYZ/WMS/WMTS)
+  floats/
+    - Float.js                      # Draggable, resizable floating widget container
+    - Colorbar.js                   # 1D colorbar plot (extends Plot)
+    - Colorbar2d.js                 # 2D colorbar plot (extends Plot)
+    - Filterbar.js                  # Filterbar plot (extends Plot)
+  geo/
+    - EpsgUtils.js                  # EPSG/CRS projection utilities
+  compute/
+    - kde.js / fft.js / conv.js / hist.js / filter.js
 example/
   - main.js               # Usage example (declarative API)
   - index.html            # Demo page

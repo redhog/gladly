@@ -25,7 +25,7 @@ plot.update({
 
 Accepted values: `"horizontal"`, `"vertical"`, `"none"` (default). Calling `update()` again with a different value automatically destroys and recreates the widget.
 
-The auto-created widgets are instances of [`Float`](#float) (colorbar) and [`FilterbarFloat`](#filterbarfloat) (filterbar) — draggable, resizable floating panels positioned inside the plot's container.
+The auto-created widgets are [`Float`](#float) instances — draggable, resizable floating panels positioned inside the plot's container — wrapping a `Colorbar` or `Filterbar` as appropriate.
 
 ---
 
@@ -78,44 +78,55 @@ cb.destroy()
 
 ## `Float`
 
-A draggable, resizable floating panel that wraps a [`Colorbar`](#colorbar) inside the parent plot's container.
+A draggable, resizable floating panel. `Float` is a generic container — it wraps any widget returned by a factory function.
 
 ```javascript
-new Float(parentPlot, colorAxisName, { orientation, x, y, width, height, margin })
+new Float(parentPlot, factory, { x, y, width, height })
 ```
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `parentPlot` | Plot | — | The plot to attach the float to and to track the color axis from. |
-| `colorAxisName` | string | — | Quantity kind of the color axis to display. |
-| `orientation` | `"horizontal"` \| `"vertical"` | `"horizontal"` | Gradient direction. |
+| `parentPlot` | Plot | — | The plot whose container the float is appended to. |
+| `factory` | `(container: HTMLElement) => { destroy() }` | — | Called with the float's content element; must return an object with a `destroy()` method. |
 | `x` | number | `10` | Initial left position within the container (px). |
 | `y` | number | `10` | Initial top position within the container (px). |
-| `width` | number | orientation-specific | Initial width (px). |
-| `height` | number | orientation-specific | Initial height (px). |
-| `margin` | object | — | Passed through to the internal `Colorbar`. |
-
-**Default sizes:**
-- Horizontal: 220 × 82 px (includes 12 px drag bar)
-- Vertical: 70 × 232 px (includes 12 px drag bar)
+| `width` | number | `220` | Initial width (px). |
+| `height` | number | `82` | Initial height (px). |
 
 **Behavior:**
 - Appended as an `absolute`-positioned div inside `parentPlot.container`.
-- A thin drag bar at the top allows repositioning; the colorbar below it receives zoom/pan events normally.
+- A thin drag bar at the top allows repositioning; the content area below it receives all events normally.
 - A resize handle at the bottom-right allows resizing.
-- Call `destroy()` to remove the widget and clean up the internal `Colorbar`.
+- Call `destroy()` to remove the widget and call the inner widget's `destroy()`.
+
+To create a floating colorbar manually, pass a `Colorbar` factory:
 
 ```javascript
-import { Float } from './src/index.js'
+import { Float, Colorbar } from './src/index.js'
 
-const floatCb = new Float(plot, "temperature", {
-  orientation: "horizontal",
-  x: 20,
-  y: 20
-})
+const floatCb = new Float(
+  plot,
+  (container) => new Colorbar(container, plot, "temperature", { orientation: "horizontal" }),
+  { x: 20, y: 20, width: 220, height: 82 }
+)
 
 // Later:
 floatCb.destroy()
+```
+
+To create a floating filterbar manually, pass a `Filterbar` factory:
+
+```javascript
+import { Float, Filterbar } from './src/index.js'
+
+const floatFb = new Float(
+  plot,
+  (container) => new Filterbar(container, plot, "depth", { orientation: "horizontal" }),
+  { x: 20, y: 80, width: 220, height: 82 }
+)
+
+// Later:
+floatFb.destroy()
 ```
 
 ---
@@ -162,44 +173,4 @@ fb.destroy()
 
 ---
 
-## `FilterbarFloat`
-
-A draggable, resizable floating panel that wraps a [`Filterbar`](#filterbar) inside the parent plot's container.
-
-```javascript
-new FilterbarFloat(parentPlot, filterAxisName, { orientation, x, y, width, height, margin })
-```
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `parentPlot` | Plot | — | The plot to attach the float to and to track the filter axis from. |
-| `filterAxisName` | string | — | Quantity kind of the filter axis to control. |
-| `orientation` | `"horizontal"` \| `"vertical"` | `"horizontal"` | Layout direction. |
-| `x` | number | `10` | Initial left position within the container (px). |
-| `y` | number | `100` | Initial top position within the container (px). |
-| `width` | number | orientation-specific | Initial width (px). |
-| `height` | number | orientation-specific | Initial height (px). |
-| `margin` | object | — | Passed through to the internal `Filterbar`. |
-
-**Default sizes:**
-- Horizontal: 220 × 82 px (includes 12 px drag bar)
-- Vertical: 80 × 232 px (includes 12 px drag bar)
-
-**Behavior:**
-- Appended as an `absolute`-positioned div inside `parentPlot.container`.
-- Drag bar at the top for repositioning; filterbar below it receives events normally.
-- Resize handle at the bottom-right for resizing.
-- Call `destroy()` to remove the widget and clean up the internal `Filterbar`.
-
-```javascript
-import { FilterbarFloat } from './src/index.js'
-
-const floatFb = new FilterbarFloat(plot, "depth", {
-  orientation: "horizontal",
-  x: 20,
-  y: 80
-})
-
-// Later:
-floatFb.destroy()
-```
+For floating filterbars use `Float` with a `Filterbar` factory — see the [`Float`](#float) section above for an example.

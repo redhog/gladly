@@ -1,6 +1,6 @@
 import { Layer } from "./Layer.js"
-import { buildColorGlsl } from "./ColorscaleRegistry.js"
-import { buildFilterGlsl } from "./FilterAxisRegistry.js"
+import { buildColorGlsl } from "../colorscales/ColorscaleRegistry.js"
+import { buildFilterGlsl } from "../axes/FilterAxisRegistry.js"
 
 function buildSpatialGlsl() {
   return `float normalize_axis(float v, vec2 domain, float scaleType) {

@@ -1,14 +1,14 @@
 import reglInit from "regl"
 import * as d3 from "d3-selection"
-import { AXES, AxisRegistry } from "./AxisRegistry.js"
-import { Axis } from "./Axis.js"
-import { ColorAxisRegistry } from "./ColorAxisRegistry.js"
-import { FilterAxisRegistry } from "./FilterAxisRegistry.js"
-import { ZoomController } from "./ZoomController.js"
+import { AXES, AxisRegistry } from "../axes/AxisRegistry.js"
+import { Axis } from "../axes/Axis.js"
+import { ColorAxisRegistry } from "../axes/ColorAxisRegistry.js"
+import { FilterAxisRegistry } from "../axes/FilterAxisRegistry.js"
+import { ZoomController } from "../axes/ZoomController.js"
 import { getLayerType, getRegisteredLayerTypes } from "./LayerTypeRegistry.js"
-import { getAxisQuantityKind, getScaleTypeFloat } from "./AxisQuantityKindRegistry.js"
-import { getRegisteredColorscales, getRegistered2DColorscales } from "./ColorscaleRegistry.js"
-import { Float } from "./Float.js"
+import { getAxisQuantityKind, getScaleTypeFloat } from "../axes/AxisQuantityKindRegistry.js"
+import { getRegisteredColorscales, getRegistered2DColorscales } from "../colorscales/ColorscaleRegistry.js"
+import { Float } from "../floats/Float.js"
 
 function buildPlotSchema(data) {
   const layerTypes = getRegisteredLayerTypes()

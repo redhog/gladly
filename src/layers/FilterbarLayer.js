@@ -1,5 +1,5 @@
-import { LayerType } from "./LayerType.js"
-import { registerLayerType } from "./LayerTypeRegistry.js"
+import { LayerType } from "../core/LayerType.js"
+import { registerLayerType } from "../core/LayerTypeRegistry.js"
 
 export const filterbarLayerType = new LayerType({
   name: "filterbar",

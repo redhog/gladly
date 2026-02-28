@@ -557,8 +557,4 @@ Typically auto-created by setting `axes[quantityKind].filterbar: "horizontal"` o
 
 ---
 
-## `FilterbarFloat`
-
-A draggable, resizable floating panel that wraps a `Filterbar` inside the parent plot's container.
-
-Typically auto-created alongside the filterbar when `axes[quantityKind].filterbar` is set. For manual creation and full API see [Colorbars and Filterbars](ColorbarsAndFilterbars.md#filterbarfloat).
+The `Float` class is the generic draggable container used for both colorbars and filterbars. It is not instantiated directly — `Plot` creates and manages `Float` instances automatically via `_syncFloats()`. For details see [Colorbars and Filterbars](ColorbarsAndFilterbars.md#float).

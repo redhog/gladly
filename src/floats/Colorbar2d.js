@@ -1,7 +1,7 @@
-import { Plot } from "./Plot.js"
-import { getScaleTypeFloat } from "./AxisQuantityKindRegistry.js"
-import { linkAxes } from "./AxisLink.js"
-import "./ColorbarLayer2d.js"
+import { Plot } from "../core/Plot.js"
+import { getScaleTypeFloat } from "../axes/AxisQuantityKindRegistry.js"
+import { linkAxes } from "../axes/AxisLink.js"
+import "../layers/ColorbarLayer2d.js"
 
 const DRAG_BAR_HEIGHT = 12
 

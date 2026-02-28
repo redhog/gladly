@@ -1,5 +1,5 @@
 import { getAxisQuantityKind, getScaleTypeFloat } from './AxisQuantityKindRegistry.js'
-import { getColorscaleIndex } from './ColorscaleRegistry.js'
+import { getColorscaleIndex } from '../colorscales/ColorscaleRegistry.js'
 
 export class ColorAxisRegistry {
   constructor() {

@@ -26,45 +26,63 @@ Gladly is a GPU-accelerated multi-axis plotting library built on WebGL (via regl
 ```
 gladly/
 ├── src/
-│   ├── index.js                      # Public API exports
-│   ├── Plot.js                       # Main rendering orchestrator
-│   ├── Layer.js                      # Data container (DTO)
-│   ├── LayerType.js                  # Shader + metadata + schema + factory
-│   ├── ScatterShared.js              # Shared base class for points/lines layer types
-│   ├── PointsLayer.js                # Built-in points LayerType
-│   ├── LinesLayer.js                 # Built-in lines LayerType
-│   ├── ColorbarLayer.js              # Built-in colorbar gradient LayerType
-│   ├── FilterbarLayer.js             # Built-in filterbar axis LayerType
-│   ├── Axis.js                       # First-class axis object (stable across update())
-│   ├── AxisRegistry.js               # Spatial scale management (internal)
-│   ├── ColorAxisRegistry.js          # Color axis range + colorscale management (internal)
-│   ├── FilterAxisRegistry.js         # Filter axis range management + GLSL helper (internal)
-│   ├── AxisQuantityKindRegistry.js   # Global quantity kind definitions
-│   ├── AxisLink.js                   # Cross-plot axis linking
-│   ├── LayerTypeRegistry.js          # Global layer type registration
-│   ├── ColorscaleRegistry.js         # GLSL colorscale registration + dispatch builder
-│   ├── MatplotlibColorscales.js      # All matplotlib colorscales pre-registered
-│   ├── Colorbar.js                   # Colorbar plot (extends Plot)
-│   ├── Float.js                      # Draggable floating colorbar widget
-│   ├── Filterbar.js                  # Filterbar plot (extends Plot)
-│   └── FilterbarFloat.js             # Draggable floating filterbar widget
+│   ├── index.js                               # Public API exports
+│   ├── core/
+│   │   ├── Plot.js                            # Main rendering orchestrator
+│   │   ├── Layer.js                           # Data container (DTO)
+│   │   ├── LayerType.js                       # Shader + metadata + schema + factory
+│   │   ├── Data.js                            # Data normalisation wrapper
+│   │   └── LayerTypeRegistry.js               # Global layer type registration
+│   ├── axes/
+│   │   ├── Axis.js                            # First-class axis object (stable across update())
+│   │   ├── AxisRegistry.js                    # Spatial scale management (internal)
+│   │   ├── AxisLink.js                        # Cross-plot axis linking
+│   │   ├── AxisQuantityKindRegistry.js        # Global quantity kind definitions
+│   │   ├── ColorAxisRegistry.js               # Color axis range + colorscale management (internal)
+│   │   ├── FilterAxisRegistry.js              # Filter axis range management + GLSL helper (internal)
+│   │   └── ZoomController.js                  # Zoom and pan interaction
+│   ├── colorscales/
+│   │   ├── ColorscaleRegistry.js              # GLSL colorscale registration + dispatch builder
+│   │   ├── MatplotlibColorscales.js           # All matplotlib 1D colorscales pre-registered
+│   │   └── BivariateColorscales.js            # 2D colorscales pre-registered
+│   ├── layers/
+│   │   ├── ScatterShared.js                   # Shared base class for points/lines layer types
+│   │   ├── PointsLayer.js                     # Built-in points LayerType
+│   │   ├── LinesLayer.js                      # Built-in lines LayerType
+│   │   ├── ColorbarLayer.js                   # Built-in 1D colorbar gradient LayerType
+│   │   ├── ColorbarLayer2d.js                 # Built-in 2D colorbar LayerType
+│   │   ├── FilterbarLayer.js                  # Built-in filterbar axis LayerType
+│   │   └── TileLayer.js                       # Built-in map tile LayerType (XYZ/WMS/WMTS)
+│   ├── floats/
+│   │   ├── Float.js                           # Draggable, resizable floating widget container
+│   │   ├── Colorbar.js                        # 1D colorbar plot (extends Plot)
+│   │   ├── Colorbar2d.js                      # 2D colorbar plot (extends Plot)
+│   │   └── Filterbar.js                       # Filterbar plot (extends Plot)
+│   ├── geo/
+│   │   └── EpsgUtils.js                       # EPSG/CRS projection utilities
+│   └── compute/
+│       ├── kde.js                             # Kernel density estimation
+│       ├── fft.js                             # Fast Fourier transform
+│       ├── conv.js                            # Convolution
+│       ├── hist.js                            # Histogram
+│       └── filter.js                          # Signal filtering
 ├── example/
-│   ├── main.js                       # Example usage
-│   └── index.html                    # Demo page
+│   ├── main.js                                # Example usage
+│   └── index.html                             # Demo page
 ├── package.json
 └── docs/
-    ├── API.md                         # User-facing API overview
-    ├── ARCHITECTURE.md                # This file
-    ├── Quickstart.md                  # Installation and minimal example
+    ├── API.md                                 # User-facing API overview
+    ├── ARCHITECTURE.md                        # This file
+    ├── Quickstart.md                          # Installation and minimal example
     ├── api/
-    │   ├── PlotConfiguration.md       # How to configure plots
-    │   ├── LayerTypes.md              # How to write layer types
-    │   ├── BuiltInLayerTypes.md       # points, lines, colorbar, filterbar layer types
-    │   ├── ColorbarsAndFilterbars.md  # Colorbar, Float, Filterbar, FilterbarFloat
-    │   └── Reference.md               # Full public API reference
+    │   ├── PlotConfiguration.md               # How to configure plots
+    │   ├── LayerTypes.md                      # How to write layer types
+    │   ├── BuiltInLayerTypes.md               # points, lines, tile, colorbar, filterbar layer types
+    │   ├── ColorbarsAndFilterbars.md          # Colorbar, Colorbar2d, Filterbar, Float
+    │   └── Reference.md                       # Full public API reference
     └── architecture/
-        ├── Modules.md                 # Detailed module responsibilities
-        └── DataFlow.md                # Data flow and rendering pipeline
+        ├── Modules.md                         # Detailed module responsibilities
+        └── DataFlow.md                        # Data flow and rendering pipeline
 ```
 
 ---

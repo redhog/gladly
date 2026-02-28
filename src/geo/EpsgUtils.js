@@ -1,6 +1,6 @@
 import proj4 from 'proj4'
 import { byEpsg } from 'projnames'
-import { registerAxisQuantityKind } from './AxisQuantityKindRegistry.js'
+import { registerAxisQuantityKind } from '../axes/AxisQuantityKindRegistry.js'
 
 /**
  * Parse an EPSG CRS string or number to a plain integer code.

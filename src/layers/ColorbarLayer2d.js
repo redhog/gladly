@@ -1,5 +1,5 @@
-import { LayerType } from "./LayerType.js"
-import { registerLayerType } from "./LayerTypeRegistry.js"
+import { LayerType } from "../core/LayerType.js"
+import { registerLayerType } from "../core/LayerTypeRegistry.js"
 
 // Four vertices for a triangle-strip quad covering the entire clip space.
 const quadCx = new Float32Array([-1, 1, -1, 1])
