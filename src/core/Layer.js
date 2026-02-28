@@ -1,9 +1,10 @@
 export class Layer {
   constructor({ type, attributes, uniforms, nameMap = {}, domains = {}, lineWidth = 1, primitive = "points", xAxis = "xaxis_bottom", yAxis = "yaxis_left", xAxisQuantityKind, yAxisQuantityKind, colorAxes = [], filterAxes = [], vertexCount = null, instanceCount = null, attributeDivisors = {}, blend = null }) {
-    // Validate that all attributes are typed arrays
+    // Validate that all attributes are non-null/undefined
+    // (Float32Array, regl textures, numbers, and expression objects are all valid)
     for (const [key, value] of Object.entries(attributes)) {
-      if (!(value instanceof Float32Array)) {
-        throw new Error(`Attribute '${key}' must be Float32Array`)
+      if (value == null) {
+        throw new Error(`Attribute '${key}' must not be null or undefined`)
       }
     }
 
