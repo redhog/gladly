@@ -17,10 +17,8 @@ function makePointsVert(hasFilter) {
   varying float value;
   varying float value2;
   void main() {
-    ${hasFilter ? 'if (!filter_in_range(filter_range, filter_data)) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }' : ''}
-    float nx = normalize_axis(x, xDomain, xScaleType);
-    float ny = normalize_axis(y, yDomain, yScaleType);
-    gl_Position = vec4(nx*2.0-1.0, ny*2.0-1.0, 0, 1);
+    ${hasFilter ? 'if (!filter_(filter_data)) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }' : ''}
+    gl_Position = plot_pos(vec2(x, y));
     gl_PointSize = 4.0;
     value = color_data;
     value2 = color_data2;

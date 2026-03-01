@@ -4,11 +4,20 @@ import { buildFilterGlsl } from "../axes/FilterAxisRegistry.js"
 import { resolveAttributeExpr } from "../compute/ComputationRegistry.js"
 
 function buildSpatialGlsl() {
-  return `float normalize_axis(float v, vec2 domain, float scaleType) {
+  return `uniform vec2 xDomain;
+uniform vec2 yDomain;
+uniform float xScaleType;
+uniform float yScaleType;
+float normalize_axis(float v, vec2 domain, float scaleType) {
   float vt = scaleType > 0.5 ? log(v) : v;
   float d0 = scaleType > 0.5 ? log(domain.x) : domain.x;
   float d1 = scaleType > 0.5 ? log(domain.y) : domain.y;
   return (vt - d0) / (d1 - d0);
+}
+vec4 plot_pos(vec2 pos) {
+  float nx = normalize_axis(pos.x, xDomain, xScaleType);
+  float ny = normalize_axis(pos.y, yDomain, yScaleType);
+  return vec4(nx*2.0-1.0, ny*2.0-1.0, 0.0, 1.0);
 }`
 }
 
@@ -35,6 +44,14 @@ vec4 gladly_apply_color(vec4 color) {
 function removeAttributeDecl(src, varName) {
   return src.replace(
     new RegExp(`[ \\t]*attribute\\s+(?:(?:lowp|mediump|highp)\\s+)?\\w+\\s+${varName}\\s*;[ \\t]*\\n?`, 'g'),
+    ''
+  )
+}
+
+// Removes `uniform [precision] type varName;` from GLSL source.
+function removeUniformDecl(src, varName) {
+  return src.replace(
+    new RegExp(`[ \\t]*uniform\\s+(?:(?:lowp|mediump|highp)\\s+)?\\w+\\s+${varName}\\s*;[ \\t]*\\n?`, 'g'),
     ''
   )
 }
@@ -183,14 +200,58 @@ export class LayerType {
     }
 
     // Inject GLSL helpers before the layer shader body.
+    // Strip spatial uniform declarations from vert — they are re-declared inside buildSpatialGlsl().
+    vertSrc = removeUniformDecl(vertSrc, 'xDomain')
+    vertSrc = removeUniformDecl(vertSrc, 'yDomain')
+    vertSrc = removeUniformDecl(vertSrc, 'xScaleType')
+    vertSrc = removeUniformDecl(vertSrc, 'yScaleType')
     const spatialGlsl = buildSpatialGlsl()
     const colorGlsl = Object.keys(layer.colorAxes).length > 0 ? buildColorGlsl() : ''
     const filterGlsl = Object.keys(layer.filterAxes).length > 0 ? buildFilterGlsl() : ''
     const pickVertDecls = `attribute float a_pickId;\nvarying float v_pickId;`
 
+    // Per-suffix color wrapper: uniform declarations + map_color_SUFFIX(value).
+    // Uniforms are declared here so they precede the function body (GLSL requires
+    // declaration-before-use). Matching declarations are stripped from the frag source
+    // to avoid duplicate-declaration errors.
+    // Suffixes like '_a' would produce 'map_color__a' (double underscore — reserved in GLSL).
+    // Strip any leading underscore when forming the function name.
+    const fnSuffix = (s) => s.replace(/^_+/, '')
+
+    const colorHelperLines = []
+    let fragSrc = this.frag
+    for (const [suffix] of Object.entries(layer.colorAxes)) {
+      colorHelperLines.push(
+        `uniform int colorscale${suffix};`,
+        `uniform vec2 color_range${suffix};`,
+        `uniform float color_scale_type${suffix};`,
+        `vec4 map_color_${fnSuffix(suffix)}(float value) {`,
+        `  return map_color_s(colorscale${suffix}, color_range${suffix}, value, color_scale_type${suffix}, 0.0);`,
+        `}`
+      )
+      fragSrc = removeUniformDecl(fragSrc, `colorscale${suffix}`)
+      fragSrc = removeUniformDecl(fragSrc, `color_range${suffix}`)
+      fragSrc = removeUniformDecl(fragSrc, `color_scale_type${suffix}`)
+    }
+    const colorHelpers = colorHelperLines.join('\n')
+
+    // Per-suffix filter wrapper: uniform declaration + filter_SUFFIX(value).
+    // filter_range uniform is stripped from vertSrc to avoid duplicate declarations.
+    const filterHelperLines = []
+    for (const [suffix] of Object.entries(layer.filterAxes)) {
+      filterHelperLines.push(
+        `uniform vec4 filter_range${suffix};`,
+        `bool filter_${fnSuffix(suffix)}(float value) {`,
+        `  return filter_in_range(filter_range${suffix}, value);`,
+        `}`
+      )
+      vertSrc = removeUniformDecl(vertSrc, `filter_range${suffix}`)
+    }
+    const filterHelpers = filterHelperLines.join('\n')
+
     const drawConfig = {
-      vert: injectPickIdAssignment(injectInto(vertSrc, [spatialGlsl, filterGlsl, pickVertDecls, ...allGlobalDecls])),
-      frag: injectInto(this.frag, [buildApplyColorGlsl(), colorGlsl, filterGlsl]),
+      vert: injectPickIdAssignment(injectInto(vertSrc, [spatialGlsl, filterGlsl, filterHelpers, pickVertDecls, ...allGlobalDecls])),
+      frag: injectInto(fragSrc, [buildApplyColorGlsl(), colorGlsl, colorHelpers, filterGlsl, filterHelpers]),
       attributes,
       uniforms,
       viewport: regl.prop("viewport"),

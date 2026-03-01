@@ -426,11 +426,14 @@ const TILE_VERT = `
     float d1 = scaleType > 0.5 ? log(domain.y) : domain.y;
     return (vt - d0) / (d1 - d0);
   }
+  vec4 plot_pos(vec2 pos) {
+    float nx = normalize_axis(pos.x, xDomain, xScaleType);
+    float ny = normalize_axis(pos.y, yDomain, yScaleType);
+    return vec4(nx * 2.0 - 1.0, ny * 2.0 - 1.0, 0.0, 1.0);
+  }
 
   void main() {
-    float nx = normalize_axis(position.x, xDomain, xScaleType);
-    float ny = normalize_axis(position.y, yDomain, yScaleType);
-    gl_Position = vec4(nx * 2.0 - 1.0, ny * 2.0 - 1.0, 0.0, 1.0);
+    gl_Position = plot_pos(position);
     vUv = uv;
   }
 `

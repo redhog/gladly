@@ -34,13 +34,11 @@ function makeLinesVert(hasFilter) {
   varying float v_t;
   void main() {
     float same_seg = abs(a_seg0 - a_seg1) < 0.5 ? 1.0 : 0.0;
-    ${hasFilter ? 'if (!filter_in_range(filter_range, a_f0) || !filter_in_range(filter_range, a_f1)) same_seg = 0.0;' : ''}
+    ${hasFilter ? 'if (!filter_(a_f0) || !filter_(a_f1)) same_seg = 0.0;' : ''}
     float t = same_seg * a_endPoint;
     float x = mix(a_x0, a_x1, t);
     float y = mix(a_y0, a_y1, t);
-    float nx = normalize_axis(x, xDomain, xScaleType);
-    float ny = normalize_axis(y, yDomain, yScaleType);
-    gl_Position = vec4(nx * 2.0 - 1.0, ny * 2.0 - 1.0, 0, 1);
+    gl_Position = plot_pos(vec2(x, y));
     v_color_start  = a_v0;
     v_color_end    = a_v1;
     v_color2_start = a_v20;

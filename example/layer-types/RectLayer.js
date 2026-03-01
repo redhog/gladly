@@ -52,9 +52,7 @@ export const rectLayerType = new LayerType({
       float xPos = cx > 0.5 ? x + hr : x - hl;
       float yPos = cy > 0.5 ? top : bot;
 
-      float nx = normalize_axis(xPos, xDomain, xScaleType);
-      float ny = normalize_axis(yPos, yDomain, yScaleType);
-      gl_Position = vec4(nx * 2.0 - 1.0, ny * 2.0 - 1.0, 0.0, 1.0);
+      gl_Position = plot_pos(vec2(xPos, yPos));
       value = color_data;
     }
   `,
@@ -67,7 +65,7 @@ export const rectLayerType = new LayerType({
     varying float value;
 
     void main() {
-      gl_FragColor = map_color_s(colorscale, color_range, value, color_scale_type, 0.0);
+      gl_FragColor = map_color_(value);
     }
   `,
 
