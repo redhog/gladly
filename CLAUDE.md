@@ -23,6 +23,7 @@ For detailed information about using and understanding Gladly:
 - **[API Documentation](docs/API.md)**: User-facing API reference overview and data model
   - **[Configuring Plots](docs/api/PlotConfiguration.md)**: `plot.update()`, axes config, auto-range, multi-layer, interaction, examples
   - **[Writing Layer Types](docs/api/LayerTypes.md)**: `LayerType` constructor, shaders, color/filter axes, GLSL helpers, constants
+  - **[Computed Attributes](docs/api/ComputedAttributes.md)**: GPU texture and GLSL computations in layer attributes, `registerTextureComputation`, `registerGlslComputation`, built-in computations
   - **[API Reference](docs/api/Reference.md)**: `Plot`, `registerLayerType`, `getLayerType` and other public API entries
 
 - **[Architecture Documentation](docs/ARCHITECTURE.md)**: Developer-facing architecture overview
@@ -76,7 +77,13 @@ src/
   geo/
     - EpsgUtils.js                  # EPSG/CRS projection utilities
   compute/
-    - kde.js / fft.js / conv.js / hist.js / filter.js
+    - ComputationRegistry.js          # registerTextureComputation / registerGlslComputation / resolveAttributeExpr
+    - hist.js                         # 'histogram' texture computation
+    - axisFilter.js                   # 'filteredHistogram' texture computation (axis-reactive)
+    - kde.js                          # 'kde' texture computation
+    - filter.js                       # 'filter1D' / 'lowPass' / 'highPass' / 'bandPass' texture computations
+    - fft.js                          # 'fft1d' / 'fftConvolution' texture computations
+    - conv.js                         # 'convolution' texture computation (adaptive GPU)
 example/
   - main.js               # Usage example (declarative API)
   - index.html            # Demo page
@@ -107,7 +114,7 @@ npm start
 - **Auto-Setup**: Plot creates AxisRegistry, processes layers, calculates domains
 
 ### Key Implementation Details
-- All data must be Float32Array for GPU efficiency
+- Attribute values in `createLayer` are `Float32Array` or **computed attribute expressions** (`{ computationName: params }`); resolved by `ComputationRegistry.resolveAttributeExpr`
 - Shaders are embedded as strings in LayerType instances
 - Layer types provide JSON Schema (Draft 2020-12) for their parameters
 - Layer types include factory methods to create Layer instances

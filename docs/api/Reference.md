@@ -376,6 +376,76 @@ The quantity kind labels are looked up from `projnames` (e.g. EPSG:26911 → `"N
 
 ---
 
+## `registerTextureComputation(name, fn)`
+
+Registers a CPU/GPU computation that produces a regl texture, for use as a **computed attribute** in `createLayer`.
+
+```javascript
+import { registerTextureComputation } from 'gladly-plot'
+
+registerTextureComputation('myComp', (regl, params, getAxisDomain) => {
+  // params: resolved parameter object (arrays, textures, numbers)
+  // getAxisDomain(axisId): returns [min|null, max|null]; registers axis as dependency
+  // Returns a regl texture (R channel read as float attribute per vertex)
+})
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | string | Key used in attribute expressions: `{ [name]: params }` |
+| `fn` | function | `(regl, params, getAxisDomain) => Texture` |
+
+In `createLayer`, reference the computation as an attribute value:
+
+```javascript
+attributes: {
+  count: { myComp: { input: normalized, bins: 50 } }
+}
+```
+
+The framework calls `getAxisDomain` to detect axis dependencies and automatically recomputes the texture when a dependent axis domain changes (e.g. a filterbar is adjusted).
+
+For built-in computations, parameter details, and a full worked example see [Computed Attributes](ComputedAttributes.md).
+
+---
+
+## `registerGlslComputation(name, fn)`
+
+Registers a computation that produces a GLSL expression string, for use as a **computed attribute** in `createLayer`. The expression is injected directly into the vertex shader.
+
+```javascript
+import { registerGlslComputation } from 'gladly-plot'
+
+registerGlslComputation('normalizedDiff', ({ a, b }) =>
+  `((${a}) - (${b})) / ((${a}) + (${b}) + 1e-6)`)
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | string | Key used in attribute expressions: `{ [name]: params }` |
+| `fn` | function | `(resolvedGlslParams) => string` — each param value is already a GLSL expression string; return a GLSL float expression |
+
+See [Computed Attributes](ComputedAttributes.md) for the full API.
+
+---
+
+## `isTexture(value)`
+
+Duck-type check for regl textures. Returns `true` if `value` is a non-null object with a numeric `width` property and a `subimage` method.
+
+```javascript
+import { isTexture } from 'gladly-plot'
+
+registerTextureComputation('myComp', (regl, params) => {
+  const input = isTexture(params.input)
+    ? params.input
+    : uploadToTexture(regl, params.input)
+  // ...
+})
+```
+
+---
+
 ## `registerLayerType(name, layerType)`
 
 Registers a LayerType under a name for use in `config.layers`.

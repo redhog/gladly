@@ -130,5 +130,6 @@ plot.update({
 - **[Configuring Plots](api/PlotConfiguration.md)** — `plot.update()`, axes config, auto-range, multi-layer, interaction, examples
 - **[Colorbars and Filterbars](api/ColorbarsAndFilterbars.md)** — floating color/filter widgets, auto-creation via config, manual placement
 - **[Writing Layer Types](api/LayerTypes.md)** — `LayerType` constructor, shaders, color axes, filter axes, GLSL helpers, constants
+- **[Computed Attributes](api/ComputedAttributes.md)** — GPU texture and GLSL computations in layer attributes; `registerTextureComputation`, `registerGlslComputation`, built-in computations
 - **[Built-in Layer Types](api/BuiltInLayerTypes.md)** — `points`, `lines`, `colorbar`, `filterbar` layer type reference
 - **[API Reference](api/Reference.md)** — `Plot`, `registerLayerType`, `getLayerType`, `Data` and other public API entries

@@ -871,13 +871,18 @@ Each element in the array:
 
 ```javascript
 {
-  // GPU attribute arrays — keyed by internal name (quantity kind for color/filter axes).
+  // GPU attribute values — keyed by internal name (quantity kind for color/filter axes).
   // Use nameMap to rename them in the shader.
+  // Each value is either:
+  //   - Float32Array: uploaded directly as a vertex buffer attribute.
+  //   - Computed expression { computationName: params }: resolved to a GPU texture or
+  //     GLSL expression. See docs/api/ComputedAttributes.md for details.
   attributes: {
     x: Float32Array,
     y: Float32Array,
-    temperature_K: Float32Array,   // color axis data, keyed by quantity kind
-    velocity_ms:   Float32Array,   // filter axis data, keyed by quantity kind
+    temperature_K: Float32Array,                  // color axis data, keyed by quantity kind
+    velocity_ms:   Float32Array,                  // filter axis data, keyed by quantity kind
+    count: { histogram: { input: norm, bins } },  // computed attribute expression
     // ...
   },
 
@@ -947,7 +952,7 @@ Each element in the array:
 }
 ```
 
-All values in `attributes` must be `Float32Array` and are validated at layer construction time.
+Values in `attributes` are normally `Float32Array`. They may also be **computed attribute expressions** — single-key objects `{ computationName: params }` that the framework resolves into a GPU-sampled texture or injected GLSL expression. See [Computed Attributes](ComputedAttributes.md) for the full API and built-in computations.
 
 ---
 
