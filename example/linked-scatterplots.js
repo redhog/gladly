@@ -99,9 +99,9 @@ let plot1Config = {
   },
   "colorbars": [
     {
-      "xAxis": "temperature_K",
-      "yAxis": "reflectance_au",
-      "colorscale": "hsv_phase_magnitude"
+      "xAxis": "reflectance_au",
+      "yAxis": "temperature_K",
+      "colorscale": "bilinear4corner"
     }
   ]
 }
