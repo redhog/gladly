@@ -36,7 +36,6 @@ const POINTS_FRAG = `
   uniform vec2 color_range2;
   uniform float color_scale_type2;
 
-  uniform float alphaBlend;
   uniform float u_useSecondColor;
 
   varying float value;
@@ -48,11 +47,8 @@ const POINTS_FRAG = `
         colorscale, color_range, value, color_scale_type,
         colorscale2, color_range2, value2, color_scale_type2
       );
-      if (alphaBlend > 0.5) {
-        gl_FragColor.a *= gl_FragColor.a;
-      }
     } else {
-      gl_FragColor = map_color_s(colorscale, color_range, value, color_scale_type, alphaBlend);
+      gl_FragColor = map_color_(value);
     }
   }
 `
@@ -74,12 +70,11 @@ class PointsLayerType extends ScatterLayerTypeBase {
 
   _createLayer(parameters, data) {
     const d = Data.wrap(data)
-    const { xData, yData, vData, vData2, fData, alphaBlend, xQK, yQK, vQK, vQK2, fQK, srcX, srcY, srcV, srcV2, srcF } =
+    const { xData, yData, vData, vData2, fData, xQK, yQK, vQK, vQK2, fQK, srcX, srcY, srcV, srcV2, srcF } =
       this._resolveColorData(parameters, d)
 
     const useSecond = vData2 ? 1.0 : 0.0
     const domains = this._buildDomains(d, xData, yData, vData, vData2, xQK, yQK, vQK, vQK2)
-    const blendConfig = this._buildBlendConfig(alphaBlend)
 
     return [{
       attributes: {
@@ -90,13 +85,11 @@ class PointsLayerType extends ScatterLayerTypeBase {
         ...(fData ? { filter_data: srcF } : {}),
       },
       uniforms: {
-        alphaBlend: alphaBlend ? 1.0 : 0.0,
         u_useSecondColor: useSecond,
         ...(vData ? {} : { colorscale: 0, color_range: [0, 1], color_scale_type: 0.0 }),
         ...(vData2 ? {} : { colorscale2: 0, color_range2: [0, 1], color_scale_type2: 0.0 })
       },
       domains,
-      blend: blendConfig,
     }]
   }
 

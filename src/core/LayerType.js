@@ -191,6 +191,7 @@ export class LayerType {
       uniforms[`colorscale${suffix}`]       = regl.prop(`colorscale_${qk}`)
       uniforms[`color_range${suffix}`]      = regl.prop(`color_range_${qk}`)
       uniforms[`color_scale_type${suffix}`] = regl.prop(`color_scale_type_${qk}`)
+      uniforms[`alpha_blend${suffix}`]      = regl.prop(`alpha_blend_${qk}`)
     }
 
     // Add per-filter-axis uniforms (vec4: [min, max, hasMin, hasMax] + scale type).
@@ -225,13 +226,15 @@ export class LayerType {
         `uniform int colorscale${suffix};`,
         `uniform vec2 color_range${suffix};`,
         `uniform float color_scale_type${suffix};`,
+        `uniform float alpha_blend${suffix};`,
         `vec4 map_color_${fnSuffix(suffix)}(float value) {`,
-        `  return map_color_s(colorscale${suffix}, color_range${suffix}, value, color_scale_type${suffix}, 0.0);`,
+        `  return map_color_s(colorscale${suffix}, color_range${suffix}, value, color_scale_type${suffix}, alpha_blend${suffix});`,
         `}`
       )
       fragSrc = removeUniformDecl(fragSrc, `colorscale${suffix}`)
       fragSrc = removeUniformDecl(fragSrc, `color_range${suffix}`)
       fragSrc = removeUniformDecl(fragSrc, `color_scale_type${suffix}`)
+      fragSrc = removeUniformDecl(fragSrc, `alpha_blend${suffix}`)
     }
     const colorHelpers = colorHelperLines.join('\n')
 
@@ -258,7 +261,11 @@ export class LayerType {
       primitive: layer.primitive,
       lineWidth: layer.lineWidth,
       count: regl.prop("count"),
-      ...(layer.blend ? { blend: layer.blend } : {})
+      // Layers with color axes always enable src-alpha blend so alpha_blend can work at any time.
+      // (alpha=1.0 is equivalent to no blending, so this is safe when alpha_blend=0.)
+      ...(Object.keys(layer.colorAxes).length > 0
+        ? { blend: { enable: true, func: { srcRGB: 'src alpha', dstRGB: 'one minus src alpha', srcAlpha: 0, dstAlpha: 1 } } }
+        : layer.blend ? { blend: layer.blend } : {})
     }
 
     if (layer.instanceCount !== null) {

@@ -8,10 +8,14 @@ export class ColorAxisRegistry {
 
   ensureColorAxis(quantityKind, colorscaleOverride = null) {
     if (!this._axes.has(quantityKind)) {
-      this._axes.set(quantityKind, { colorscaleOverride, range: null })
+      this._axes.set(quantityKind, { colorscaleOverride, range: null, alphaBlend: 0.0 })
     } else if (colorscaleOverride !== null) {
       this._axes.get(quantityKind).colorscaleOverride = colorscaleOverride
     }
+  }
+
+  getAlphaBlend(quantityKind) {
+    return this._axes.get(quantityKind)?.alphaBlend ?? 0.0
   }
 
   setRange(quantityKind, min, max) {
@@ -52,6 +56,8 @@ export class ColorAxisRegistry {
       const override = axesOverrides[quantityKind]
       if (override?.colorscale && override?.colorscale != "none")
         this.ensureColorAxis(quantityKind, override.colorscale)
+      if (override?.alpha_blend !== undefined)
+        this._axes.get(quantityKind).alphaBlend = override.alpha_blend
       
       let min = Infinity, max = -Infinity
 

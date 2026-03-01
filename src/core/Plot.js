@@ -616,6 +616,7 @@ export class Plot {
         const range = this.colorAxisRegistry.getRange(qk)
         props[`color_range_${qk}`] = range ?? [0, 1]
         props[`color_scale_type_${qk}`] = this._getScaleTypeFloat(qk)
+        props[`alpha_blend_${qk}`] = this.colorAxisRegistry.getAlphaBlend(qk)
       }
 
       for (const qk of Object.values(layer.filterAxes)) {
