@@ -2,12 +2,14 @@ import { ScatterLayerTypeBase } from "./ScatterShared.js"
 import { Data } from "../core/Data.js"
 import { registerLayerType } from "../core/LayerTypeRegistry.js"
 
-const POINTS_VERT = `
+function makePointsVert(hasFilter) {
+  return `
   precision mediump float;
   attribute float x;
   attribute float y;
   attribute float color_data;
   attribute float color_data2;
+  ${hasFilter ? 'attribute float filter_data;\n  uniform vec4 filter_range;' : ''}
   uniform vec2 xDomain;
   uniform vec2 yDomain;
   uniform float xScaleType;
@@ -15,6 +17,7 @@ const POINTS_VERT = `
   varying float value;
   varying float value2;
   void main() {
+    ${hasFilter ? 'if (!filter_in_range(filter_range, filter_data)) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }' : ''}
     float nx = normalize_axis(x, xDomain, xScaleType);
     float ny = normalize_axis(y, yDomain, yScaleType);
     gl_Position = vec4(nx*2.0-1.0, ny*2.0-1.0, 0, 1);
@@ -23,6 +26,7 @@ const POINTS_VERT = `
     value2 = color_data2;
   }
 `
+}
 
 const POINTS_FRAG = `
   precision mediump float;
@@ -57,7 +61,7 @@ const POINTS_FRAG = `
 
 class PointsLayerType extends ScatterLayerTypeBase {
   constructor() {
-    super({ name: "points", vert: POINTS_VERT, frag: POINTS_FRAG })
+    super({ name: "points", vert: makePointsVert(false), frag: POINTS_FRAG })
   }
 
   schema(data) {
@@ -72,7 +76,7 @@ class PointsLayerType extends ScatterLayerTypeBase {
 
   _createLayer(parameters, data) {
     const d = Data.wrap(data)
-    const { xData, yData, vData, vData2, alphaBlend, xQK, yQK, vQK, vQK2, srcX, srcY, srcV, srcV2 } =
+    const { xData, yData, vData, vData2, fData, alphaBlend, xQK, yQK, vQK, vQK2, fQK, srcX, srcY, srcV, srcV2, srcF } =
       this._resolveColorData(parameters, d)
 
     const useSecond = vData2 ? 1.0 : 0.0
@@ -85,6 +89,7 @@ class PointsLayerType extends ScatterLayerTypeBase {
         y: srcY,
         color_data: vData ? srcV : new Float32Array(srcX.length),
         color_data2: vData2 ? srcV2 : new Float32Array(srcX.length),
+        ...(fData ? { filter_data: srcF } : {}),
       },
       uniforms: {
         alphaBlend: alphaBlend ? 1.0 : 0.0,
@@ -93,9 +98,15 @@ class PointsLayerType extends ScatterLayerTypeBase {
         ...(vData2 ? {} : { colorscale2: 0, color_range2: [0, 1], color_scale_type2: 0.0 })
       },
       domains,
-      nameMap: this._buildNameMap(vData, vQK, vData2, vQK2),
+      nameMap: this._buildNameMap(vData, vQK, vData2, vQK2, fData, fQK),
       blend: blendConfig,
     }]
+  }
+
+  createDrawCommand(regl, layer) {
+    const hasFilter = layer.filterAxes.length > 0
+    this.vert = makePointsVert(hasFilter)
+    return super.createDrawCommand(regl, layer)
   }
 }
 

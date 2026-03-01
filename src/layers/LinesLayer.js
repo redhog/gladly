@@ -13,7 +13,8 @@ import { ScatterLayerTypeBase } from "./ScatterShared.js"
 import { Data } from "../core/Data.js"
 import { registerLayerType } from "../core/LayerTypeRegistry.js"
 
-const LINES_VERT = `
+function makeLinesVert(hasFilter) {
+  return `
   precision mediump float;
   attribute float a_endPoint;
   attribute float a_x0, a_y0;
@@ -21,30 +22,25 @@ const LINES_VERT = `
   attribute float a_v0, a_v1;
   attribute float a_v20, a_v21;
   attribute float a_seg0, a_seg1;
-
+  ${hasFilter ? 'attribute float a_f0, a_f1;\n  uniform vec4 filter_range;' : ''}
   uniform vec2 xDomain;
   uniform vec2 yDomain;
   uniform float xScaleType;
   uniform float yScaleType;
-
   varying float v_color_start;
   varying float v_color_end;
   varying float v_color2_start;
   varying float v_color2_end;
   varying float v_t;
-
   void main() {
     float same_seg = abs(a_seg0 - a_seg1) < 0.5 ? 1.0 : 0.0;
+    ${hasFilter ? 'if (!filter_in_range(filter_range, a_f0) || !filter_in_range(filter_range, a_f1)) same_seg = 0.0;' : ''}
     float t = same_seg * a_endPoint;
-
     float x = mix(a_x0, a_x1, t);
     float y = mix(a_y0, a_y1, t);
-
     float nx = normalize_axis(x, xDomain, xScaleType);
     float ny = normalize_axis(y, yDomain, yScaleType);
-
     gl_Position = vec4(nx * 2.0 - 1.0, ny * 2.0 - 1.0, 0, 1);
-
     v_color_start  = a_v0;
     v_color_end    = a_v1;
     v_color2_start = a_v20;
@@ -52,6 +48,7 @@ const LINES_VERT = `
     v_t = a_endPoint;
   }
 `
+}
 
 const LINES_FRAG = `
   precision mediump float;
@@ -100,7 +97,7 @@ const LINES_FRAG = `
 
 class LinesLayerType extends ScatterLayerTypeBase {
   constructor() {
-    super({ name: "lines", vert: LINES_VERT, frag: LINES_FRAG })
+    super({ name: "lines", vert: makeLinesVert(false), frag: LINES_FRAG })
   }
 
   schema(data) {
@@ -135,7 +132,7 @@ class LinesLayerType extends ScatterLayerTypeBase {
   _createLayer(parameters, data) {
     const d = Data.wrap(data)
     const { lineSegmentIdData, lineColorMode = "gradient", lineWidth = 1.0 } = parameters
-    const { xData, yData, vData, vData2, alphaBlend, xQK, yQK, vQK, vQK2, srcX, srcY, srcV, srcV2 } =
+    const { xData, yData, vData, vData2, fData, alphaBlend, xQK, yQK, vQK, vQK2, fQK, srcX, srcY, srcV, srcV2, srcF } =
       this._resolveColorData(parameters, d)
 
     const useSecond = vData2 ? 1.0 : 0.0
@@ -161,6 +158,10 @@ class LinesLayerType extends ScatterLayerTypeBase {
         a_v21: vData2 ? srcV2.subarray(1, N) : new Float32Array(N - 1),
         a_seg0: seg0,
         a_seg1: seg1,
+        ...(fData ? {
+          a_f0: srcF.subarray(0, N - 1),
+          a_f1: srcF.subarray(1, N),
+        } : {}),
       },
       attributeDivisors: {
         a_x0: 1, a_x1: 1,
@@ -168,6 +169,7 @@ class LinesLayerType extends ScatterLayerTypeBase {
         a_v0: 1, a_v1: 1,
         a_v20: 1, a_v21: 1,
         a_seg0: 1, a_seg1: 1,
+        ...(fData ? { a_f0: 1, a_f1: 1 } : {}),
       },
       uniforms: {
         alphaBlend: alphaBlend ? 1.0 : 0.0,
@@ -176,7 +178,7 @@ class LinesLayerType extends ScatterLayerTypeBase {
         ...(vData ? {} : { colorscale: 0, color_range: [0, 1], color_scale_type: 0.0 }),
         ...(vData2 ? {} : { colorscale2: 0, color_range2: [0, 1], color_scale_type2: 0.0 })
       },
-      nameMap: this._buildNameMap(vData, vQK, vData2, vQK2),
+      nameMap: this._buildNameMap(vData, vQK, vData2, vQK2, fData, fQK),
       domains,
       primitive: "lines",
       lineWidth,
@@ -184,6 +186,12 @@ class LinesLayerType extends ScatterLayerTypeBase {
       instanceCount: N - 1,
       blend: blendConfig,
     }]
+  }
+
+  createDrawCommand(regl, layer) {
+    const hasFilter = layer.filterAxes.length > 0
+    this.vert = makeLinesVert(hasFilter)
+    return super.createDrawCommand(regl, layer)
   }
 }
 

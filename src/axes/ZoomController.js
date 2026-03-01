@@ -133,6 +133,7 @@ export class ZoomController {
         gestureStartMousePos = {}
         gestureStartDataPos = {}
         gestureStartTransform = null
+        plot._zoomEndCallbacks.forEach(cb => cb())
       })
 
     fullOverlay.call(zoomBehavior)

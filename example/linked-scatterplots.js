@@ -38,7 +38,8 @@ import { data as dataPromise } from "./shared.js"
 dataPromise.then(data => {
 
 let activePlot = 'plot1'
-let editorSyncing = false
+let lastEditorValue = ''
+let editor
 
 const plot1 = new Plot(document.getElementById('tab1-plot1'))
 const plot2 = new Plot(document.getElementById('tab1-plot2'))
@@ -155,7 +156,10 @@ function updatePlot(plotId, plotConfig) {
     } else {
       plot2Config = fullConfig
     }
-
+    if (editor && plotId === activePlot) {
+      editor.setValue(fullConfig)
+      lastEditorValue = JSON.stringify(editor.getValue())
+    }
     return true
   } catch (error) {
     document.getElementById('tab1-validation-errors').innerHTML = `
@@ -191,7 +195,7 @@ function attachPickHandler(plot) {
 attachPickHandler(plot1)
 attachPickHandler(plot2)
 
-let editor = new JSONEditor(document.getElementById('tab1-editor-container'), {
+editor = new JSONEditor(document.getElementById('tab1-editor-container'), {
   schema: Plot.schema(data),
   startval: plot1Config,
   theme: 'html',
@@ -210,15 +214,18 @@ editor.on('ready', () => {
   if (rootEditor && rootEditor.editjson_control) {
     rootEditor.editjson_control.classList.add('je-root-editjson')
   }
+  lastEditorValue = JSON.stringify(editor.getValue())
 })
 
 editor.on('change', () => {
-  if (editorSyncing) return
+  const value = editor.getValue()
+  if (JSON.stringify(value) === lastEditorValue) return
+  lastEditorValue = JSON.stringify(value)
 
   const errors = editor.validate()
 
   if (errors.length === 0) {
-    updatePlot(activePlot, editor.getValue())
+    updatePlot(activePlot, value)
   } else {
     const errorMessages = errors.map(err => `${err.path}: ${err.message}`).join('<br>')
     document.getElementById('tab1-validation-errors').innerHTML = `
@@ -236,9 +243,8 @@ function switchToPlot(plotId) {
   document.getElementById('tab1-plot2').classList.toggle('active', plotId === 'plot2')
 
   const newConfig = plotId === 'plot1' ? plot1Config : plot2Config
-  editorSyncing = true
   editor.setValue(newConfig)
-  editorSyncing = false
+  lastEditorValue = JSON.stringify(editor.getValue())
 
   document.getElementById('tab1-validation-errors').innerHTML = ''
 }
@@ -249,6 +255,20 @@ document.getElementById('tab1-edit-plot1-btn').addEventListener('click', () => {
 
 document.getElementById('tab1-edit-plot2-btn').addEventListener('click', () => {
   switchToPlot('plot2')
+})
+
+plot1.onZoomEnd(() => {
+  if (activePlot !== 'plot1') return
+  plot1Config = plot1.getConfig()
+  editor.setValue(plot1Config)
+  lastEditorValue = JSON.stringify(editor.getValue())
+})
+
+plot2.onZoomEnd(() => {
+  if (activePlot !== 'plot2') return
+  plot2Config = plot2.getConfig()
+  editor.setValue(plot2Config)
+  lastEditorValue = JSON.stringify(editor.getValue())
 })
 
 }) // dataPromise.then

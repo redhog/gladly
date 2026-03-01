@@ -167,6 +167,7 @@ export class Plot {
     this.colorAxisRegistry = null
     this.filterAxisRegistry = null
     this._renderCallbacks = new Set()
+    this._zoomEndCallbacks = new Set()
     this._dirty = false
     this._rafId = null
 
@@ -312,7 +313,20 @@ export class Plot {
   _initialize() {
     const { layers = [], axes = {}, colorbars = [] } = this.currentConfig
 
-    this.regl = reglInit({ canvas: this.canvas, extensions: ['ANGLE_instanced_arrays'] })
+    this.regl = reglInit({
+      canvas: this.canvas,
+      extensions: [
+        'ANGLE_instanced_arrays',
+        'OES_texture_float',
+        'OES_texture_float_linear',
+      ],
+      optionalExtensions: [
+        // WebGL1: render to float framebuffers (needed by compute passes)
+        'WEBGL_color_buffer_float',
+        // WebGL2: render to float framebuffers (standard but must be opted in)
+        'EXT_color_buffer_float',
+      ]
+    })
 
     this.layers = []
 
@@ -576,15 +590,19 @@ export class Plot {
     const axesConfig = this.currentConfig?.axes
 
     for (const layer of this.layers) {
+      if (layer._axisUpdaters) {
+        for (const updater of layer._axisUpdaters) updater.refreshIfNeeded(this)
+      }
+
       const xIsLog = layer.xAxis ? this.axisRegistry.isLogScale(layer.xAxis) : false
       const yIsLog = layer.yAxis ? this.axisRegistry.isLogScale(layer.yAxis) : false
       const props = {
-        xDomain: layer.xAxis ? this.axisRegistry.getScale(layer.xAxis).domain() : [0, 1],
-        yDomain: layer.yAxis ? this.axisRegistry.getScale(layer.yAxis).domain() : [0, 1],
+        xDomain: layer.xAxis ? (this.axisRegistry.getScale(layer.xAxis)?.domain() ?? [0, 1]) : [0, 1],
+        yDomain: layer.yAxis ? (this.axisRegistry.getScale(layer.yAxis)?.domain() ?? [0, 1]) : [0, 1],
         xScaleType: xIsLog ? 1.0 : 0.0,
         yScaleType: yIsLog ? 1.0 : 0.0,
         viewport: viewport,
-        count: layer.vertexCount ?? layer.attributes.x?.length ?? 0,
+        count: layer.vertexCount ?? Object.values(layer.attributes).find(v => v instanceof Float32Array)?.length ?? 0,
         u_pickingMode: 0.0,
         u_pickLayerIndex: 0.0,
       }
@@ -628,6 +646,11 @@ export class Plot {
     return result
   }
 
+  onZoomEnd(cb) {
+    this._zoomEndCallbacks.add(cb)
+    return { remove: () => this._zoomEndCallbacks.delete(cb) }
+  }
+
   on(eventType, callback) {
     const handler = (e) => {
       if (!this.container.contains(e.target)) return
@@ -661,15 +684,19 @@ export class Plot {
       }
       for (let i = 0; i < this.layers.length; i++) {
         const layer = this.layers[i]
+        if (layer._axisUpdaters) {
+          for (const updater of layer._axisUpdaters) updater.refreshIfNeeded(this)
+        }
+
         const xIsLog = layer.xAxis ? this.axisRegistry.isLogScale(layer.xAxis) : false
         const yIsLog = layer.yAxis ? this.axisRegistry.isLogScale(layer.yAxis) : false
         const props = {
-          xDomain: layer.xAxis ? this.axisRegistry.getScale(layer.xAxis).domain() : [0, 1],
-          yDomain: layer.yAxis ? this.axisRegistry.getScale(layer.yAxis).domain() : [0, 1],
+          xDomain: layer.xAxis ? (this.axisRegistry.getScale(layer.xAxis)?.domain() ?? [0, 1]) : [0, 1],
+          yDomain: layer.yAxis ? (this.axisRegistry.getScale(layer.yAxis)?.domain() ?? [0, 1]) : [0, 1],
           xScaleType: xIsLog ? 1.0 : 0.0,
           yScaleType: yIsLog ? 1.0 : 0.0,
           viewport,
-          count: layer.vertexCount ?? layer.attributes.x?.length ?? 0,
+          count: layer.vertexCount ?? Object.values(layer.attributes).find(v => v instanceof Float32Array)?.length ?? 0,
           u_pickingMode: 1.0,
           u_pickLayerIndex: i,
         }
