@@ -45,7 +45,7 @@ const plotConfig = {
         {
             "histogram": {
                 "vData": "y1",
-                "filterColumn": "y2",
+                "filterColumn": "v1",
                 "bins": 0,
                 "color": [
                     0.2,
@@ -62,10 +62,10 @@ const plotConfig = {
         "voltage_V": {
             "label": "Voltage (V)"
         },
-        "current_A": {
+        "reflectance_au": {
           "filterbar": "horizontal",
-          "min": 0,
-          "max": 50
+          "min": -0.5,
+          "max": 0.5
         },
         "count": {
             "label": "Count"
@@ -77,13 +77,19 @@ const plotConfig = {
 const plot = new Plot(document.getElementById('tab5-plot1'))
 
 let currentPlotConfig = plotConfig
-let editorSyncing = false
+let lastEditorValue = ''
+let editor
 
 function updatePlot(config) {
   try {
     plot.update({ config, data })
     document.getElementById('tab5-validation-errors').innerHTML = ''
-    currentPlotConfig = plot.getConfig()
+    const fullConfig = plot.getConfig()
+    currentPlotConfig = fullConfig
+    if (editor) {
+      editor.setValue(fullConfig)
+      lastEditorValue = JSON.stringify(editor.getValue())
+    }
     return true
   } catch (error) {
     document.getElementById('tab5-validation-errors').innerHTML = `
@@ -106,7 +112,7 @@ plot.on('mouseup', (e) => {
   status.textContent = `layer=${configLayerIndex}  bin=${dataIndex}`
 })
 
-const editor = new JSONEditor(document.getElementById('tab5-editor-container'), {
+editor = new JSONEditor(document.getElementById('tab5-editor-container'), {
   schema: Plot.schema(data),
   startval: currentPlotConfig,
   theme: 'html',
@@ -125,13 +131,17 @@ editor.on('ready', () => {
   if (rootEditor && rootEditor.editjson_control) {
     rootEditor.editjson_control.classList.add('je-root-editjson')
   }
+  lastEditorValue = JSON.stringify(editor.getValue())
 })
 
 editor.on('change', () => {
-  if (editorSyncing) return
+  const value = editor.getValue()
+  if (JSON.stringify(value) === lastEditorValue) return
+  lastEditorValue = JSON.stringify(value)
+
   const errors = editor.validate()
   if (errors.length === 0) {
-    updatePlot(editor.getValue())
+    updatePlot(value)
   } else {
     const errorMessages = errors.map(err => `${err.path}: ${err.message}`).join('<br>')
     document.getElementById('tab5-validation-errors').innerHTML = `
@@ -140,6 +150,13 @@ editor.on('change', () => {
       </div>
     `
   }
+})
+
+plot.onZoomEnd(() => {
+  const config = plot.getConfig()
+  currentPlotConfig = config
+  editor.setValue(config)
+  lastEditorValue = JSON.stringify(editor.getValue())
 })
 
 }) // dataPromise.then

@@ -167,6 +167,7 @@ export class Plot {
     this.colorAxisRegistry = null
     this.filterAxisRegistry = null
     this._renderCallbacks = new Set()
+    this._zoomEndCallbacks = new Set()
     this._dirty = false
     this._rafId = null
 
@@ -643,6 +644,11 @@ export class Plot {
       if (qk) result[qk] = value
     }
     return result
+  }
+
+  onZoomEnd(cb) {
+    this._zoomEndCallbacks.add(cb)
+    return { remove: () => this._zoomEndCallbacks.delete(cb) }
   }
 
   on(eventType, callback) {

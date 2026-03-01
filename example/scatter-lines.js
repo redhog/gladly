@@ -91,7 +91,8 @@ const plotConfig = {
 const plot = new Plot(document.getElementById('tab2-plot1'))
 
 let currentPlotConfig = plotConfig
-let editorSyncing = false
+let lastEditorValue = ''
+let editor
 
 function updatePlot(plotConfig) {
   try {
@@ -100,6 +101,10 @@ function updatePlot(plotConfig) {
 
     const fullConfig = plot.getConfig()
     currentPlotConfig = fullConfig
+    if (editor) {
+      editor.setValue(fullConfig)
+      lastEditorValue = JSON.stringify(editor.getValue())
+    }
 
     return true
   } catch (error) {
@@ -131,7 +136,7 @@ plot.on('mouseup', (e) => {
   }
 })
 
-let editor = new JSONEditor(document.getElementById('tab2-editor-container'), {
+editor = new JSONEditor(document.getElementById('tab2-editor-container'), {
   schema: Plot.schema(data),
   startval: currentPlotConfig,
   theme: 'html',
@@ -150,15 +155,18 @@ editor.on('ready', () => {
   if (rootEditor && rootEditor.editjson_control) {
     rootEditor.editjson_control.classList.add('je-root-editjson')
   }
+  lastEditorValue = JSON.stringify(editor.getValue())
 })
 
 editor.on('change', () => {
-  if (editorSyncing) return
+  const value = editor.getValue()
+  if (JSON.stringify(value) === lastEditorValue) return
+  lastEditorValue = JSON.stringify(value)
 
   const errors = editor.validate()
 
   if (errors.length === 0) {
-    updatePlot(editor.getValue())
+    updatePlot(value)
   } else {
     const errorMessages = errors.map(err => `${err.path}: ${err.message}`).join('<br>')
     document.getElementById('tab2-validation-errors').innerHTML = `
@@ -167,6 +175,13 @@ editor.on('change', () => {
       </div>
     `
   }
+})
+
+plot.onZoomEnd(() => {
+  const config = plot.getConfig()
+  currentPlotConfig = config
+  editor.setValue(config)
+  lastEditorValue = JSON.stringify(editor.getValue())
 })
 
 }) // dataPromise.then
