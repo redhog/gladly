@@ -98,13 +98,12 @@ class PointsLayerType extends ScatterLayerTypeBase {
         ...(vData2 ? {} : { colorscale2: 0, color_range2: [0, 1], color_scale_type2: 0.0 })
       },
       domains,
-      nameMap: this._buildNameMap(vData, vQK, vData2, vQK2, fData, fQK),
       blend: blendConfig,
     }]
   }
 
   createDrawCommand(regl, layer) {
-    const hasFilter = layer.filterAxes.length > 0
+    const hasFilter = Object.keys(layer.filterAxes).length > 0
     this.vert = makePointsVert(hasFilter)
     return super.createDrawCommand(regl, layer)
   }

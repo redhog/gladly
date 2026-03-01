@@ -15,7 +15,7 @@ export const colorbarLayerType = new LayerType({
       xAxisQuantityKind: orientation === "horizontal" ? colorAxis : undefined,
       yAxis: orientation === "vertical" ? "yaxis_left" : null,
       yAxisQuantityKind: orientation === "vertical" ? colorAxis : undefined,
-      colorAxisQuantityKinds: [colorAxis],
+      colorAxisQuantityKinds: { '': colorAxis },
     }
   },
 
@@ -62,11 +62,6 @@ export const colorbarLayerType = new LayerType({
       uniforms: { horizontal: orientation === "horizontal" ? 1 : 0 },
       primitive: "triangle strip",
       vertexCount: 4,
-      nameMap: {
-        [`colorscale_${colorAxis}`]: 'colorscale',
-        [`color_range_${colorAxis}`]: 'color_range',
-        [`color_scale_type_${colorAxis}`]: 'color_scale_type',
-      },
     }]
   }
 })

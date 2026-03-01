@@ -15,7 +15,7 @@ export const colorbar2dLayerType = new LayerType({
       xAxisQuantityKind: xAxis,
       yAxis: "yaxis_left",
       yAxisQuantityKind: yAxis,
-      colorAxisQuantityKinds: [xAxis, yAxis],
+      colorAxisQuantityKinds: { '_a': xAxis, '_b': yAxis },
     }
   },
 
@@ -82,14 +82,6 @@ export const colorbar2dLayerType = new LayerType({
       uniforms: {},
       primitive: "triangle strip",
       vertexCount: 4,
-      nameMap: {
-        [`colorscale_${xAxis}`]:       'colorscale_a',
-        [`color_range_${xAxis}`]:      'color_range_a',
-        [`color_scale_type_${xAxis}`]: 'color_scale_type_a',
-        [`colorscale_${yAxis}`]:       'colorscale_b',
-        [`color_range_${yAxis}`]:      'color_range_b',
-        [`color_scale_type_${yAxis}`]: 'color_scale_type_b',
-      },
     }]
   }
 })

@@ -17,7 +17,7 @@ A `LayerType` encapsulates everything needed to render one kind of data visualiz
 The axis information (quantity kinds, axis positions) is separated from the GPU data:
 
 - **`getAxisConfig(parameters, data)`** — returns which axes to bind and their quantity kinds
-- **`createLayer(parameters, data)`** — returns only GPU data: `{ attributes, uniforms, vertexCount?, nameMap? }`
+- **`createLayer(parameters, data)`** — returns only GPU data: `{ attributes, uniforms, vertexCount?, ... }`
 
 Either or both can be omitted when static declarations cover the needed information.
 
@@ -90,11 +90,14 @@ registerLayerType("red_dots", redDotsType)
 
 Color axes map a per-point numeric value to a color via a colorscale.
 
-The color data attribute must be keyed by the quantity kind in `attributes`. The shader can use any name — map the auto-generated uniform names to shader names via `nameMap` returned from `createLayer`.
-
 Colorscale is **not** specified in `createLayer`; it comes from:
 1. `config.axes[quantityKind].colorscale` (per-plot override), or
 2. The quantity kind registry definition (global default)
+
+`colorAxisQuantityKinds` is a dictionary mapping a **GLSL name suffix** to the quantity kind for each color axis. The suffix is appended to the base uniform names `colorscale`, `color_range`, `color_scale_type` to form the GLSL uniform names:
+- Suffix `''` → uniforms named `colorscale`, `color_range`, `color_scale_type`
+- Suffix `'2'` → uniforms named `colorscale2`, `color_range2`, `color_scale_type2`
+- Suffix `'_a'` → uniforms named `colorscale_a`, `color_range_a`, `color_scale_type_a`
 
 ```javascript
 import { LayerType, registerLayerType, AXES } from './src/index.js'
@@ -109,7 +112,8 @@ const heatDotsType = new LayerType({
     return {
       xAxis: parameters.xAxis,
       yAxis: parameters.yAxis,
-      colorAxisQuantityKinds: [parameters.vData],
+      // suffix '' → shader uniforms: colorscale, color_range, color_scale_type
+      colorAxisQuantityKinds: { '': parameters.vData },
     }
   },
 
@@ -159,13 +163,8 @@ const heatDotsType = new LayerType({
   createLayer: function(parameters, data) {
     const { xData, yData, vData } = parameters
     return [{
-      attributes: { x: data[xData], y: data[yData], [vData]: data[vData] },
+      attributes: { x: data[xData], y: data[yData], color_data: data[vData] },
       uniforms: {},
-      nameMap: {
-        [vData]: 'color_data',
-        [`colorscale_${vData}`]: 'colorscale',
-        [`color_range_${vData}`]: 'color_range',
-      },
     }]
   }
 })
@@ -194,7 +193,9 @@ plot.update({
 
 Filter axes discard points whose attribute value falls outside a configured range.
 
-The filter data attribute must be keyed by the quantity kind in `attributes`. Use `nameMap` to give it a friendlier shader name.
+`filterAxisQuantityKinds` is a dictionary mapping a **GLSL name suffix** to the quantity kind for each filter axis. The suffix is appended to the base uniform names `filter_range` and `filter_scale_type`:
+- Suffix `''` → uniforms named `filter_range`, `filter_scale_type`
+- Suffix `'2'` → uniforms named `filter_range2`, `filter_scale_type2`
 
 ```javascript
 const filteredDotsType = new LayerType({
@@ -206,7 +207,8 @@ const filteredDotsType = new LayerType({
     return {
       xAxis: parameters.xAxis,
       yAxis: parameters.yAxis,
-      filterAxisQuantityKinds: [parameters.zData],
+      // suffix '' → shader uniforms: filter_range, filter_scale_type
+      filterAxisQuantityKinds: { '': parameters.zData },
     }
   },
 
@@ -240,12 +242,8 @@ const filteredDotsType = new LayerType({
   createLayer: function(parameters, data) {
     const { xData, yData, zData } = parameters
     return [{
-      attributes: { x: data[xData], y: data[yData], [zData]: data[zData] },
+      attributes: { x: data[xData], y: data[yData], filter_data: data[zData] },
       uniforms: {},
-      nameMap: {
-        [zData]: 'filter_data',
-        [`filter_range_${zData}`]: 'filter_range',
-      },
     }]
   }
 })
@@ -278,8 +276,8 @@ const filteredScatterType = new LayerType({
       xAxisQuantityKind: parameters.xData,
       yAxis: parameters.yAxis,
       yAxisQuantityKind: parameters.yData,
-      colorAxisQuantityKinds:  [parameters.vData],
-      filterAxisQuantityKinds: [parameters.zData],
+      colorAxisQuantityKinds:  { '': parameters.vData },
+      filterAxisQuantityKinds: { '': parameters.zData },
     }
   },
 
@@ -324,17 +322,10 @@ const filteredScatterType = new LayerType({
     return [{
       attributes: {
         x: data[xData], y: data[yData],
-        [vData]: data[vData],
-        [zData]: data[zData],
+        color_data: data[vData],
+        filter_data: data[zData],
       },
       uniforms: {},
-      nameMap: {
-        [vData]: 'color_data',
-        [`colorscale_${vData}`]: 'colorscale',
-        [`color_range_${vData}`]: 'color_range',
-        [zData]: 'filter_data',
-        [`filter_range_${zData}`]: 'filter_range',
-      },
     }]
   }
 })
@@ -354,8 +345,8 @@ const fixedScatterType = new LayerType({
   xAxisQuantityKind: "distance_m",
   yAxis: "yaxis_left",
   yAxisQuantityKind: "current_A",
-  colorAxisQuantityKinds: ["temperature_K"],
-  filterAxisQuantityKinds: ["velocity_ms"],
+  colorAxisQuantityKinds: { '': "temperature_K" },
+  filterAxisQuantityKinds: { '': "velocity_ms" },
 
   getAxisConfig: function(parameters) {
     // Only needed to pass through user-selectable axis positions
@@ -431,7 +422,8 @@ const myLayerType = new LayerType({
       xAxisQuantityKind: d.getQuantityKind(xData) ?? xData,
       yAxis,
       yAxisQuantityKind: d.getQuantityKind(yData) ?? yData,
-      colorAxisQuantityKinds: [d.getQuantityKind(vData) ?? vData],
+      // suffix '' → shader uniforms: colorscale, color_range, color_scale_type
+      colorAxisQuantityKinds: { '': d.getQuantityKind(vData) ?? vData },
     }
   },
 
@@ -454,15 +446,9 @@ const myLayerType = new LayerType({
     if (vDomain) domains[vQK] = vDomain
 
     return [{
-      attributes: { x, y, [vQK]: v },
+      attributes: { x, y, color_data: v },
       uniforms: {},
       domains,
-      nameMap: {
-        [vQK]:                      'color_data',
-        [`colorscale_${vQK}`]:      'colorscale',
-        [`color_range_${vQK}`]:     'color_range',
-        [`color_scale_type_${vQK}`]:'color_scale_type',
-      },
     }]
   }
 })
@@ -483,42 +469,45 @@ When quantity kinds come from the data, the axis key in `config.axes` should use
 
 | Term | Description |
 |------|-------------|
-| **Quantity kind** | String identifier for the color axis (e.g. `"temperature_K"`). Layers sharing a quantity kind share a common range. Also names the GLSL attribute and the uniform suffixes. |
+| **Quantity kind** | String identifier for the color axis (e.g. `"temperature_K"`). Layers sharing a quantity kind share a common range. |
+| **GLSL name suffix** | Key in the `colorAxisQuantityKinds` dict (e.g. `''`, `'2'`, `'_a'`). Appended to base uniform names to form the shader-visible names for that color axis. |
 | **Colorscale** | Named GLSL color function (e.g. `"viridis"`). Set via `config.axes[quantityKind].colorscale` or the quantity kind registry. |
 
-### Attribute and Uniform Naming
+### Uniform Naming
 
-The system generates uniforms keyed by the quantity kind:
-- GPU attribute key in `attributes`: `temperature_K`
-- Uniforms: `colorscale_temperature_K`, `color_range_temperature_K`
+`colorAxisQuantityKinds` is a `Record<suffix, quantityKind>`. For each entry, `createDrawCommand` exposes uniforms named `colorscale${suffix}`, `color_range${suffix}`, `color_scale_type${suffix}`.
 
-For static layer types the quantity kind is fixed, so these names can be used directly in the shader. For dynamic types (where the quantity kind comes from a parameter), return a `nameMap` from `createLayer` to map these internal names to your chosen shader names.
+Examples:
+- `{ '': 'temperature_K' }` → uniforms `colorscale`, `color_range`, `color_scale_type`
+- `{ '': 'temp_K', '2': 'pressure_Pa' }` → uniforms `colorscale`/`colorscale2`, `color_range`/`color_range2`, `color_scale_type`/`color_scale_type2`
+- `{ '_a': 'xQK', '_b': 'yQK' }` → uniforms `colorscale_a`/`colorscale_b`, `color_range_a`/`color_range_b`, `color_scale_type_a`/`color_scale_type_b`
+
+The render loop passes these via internal prop names `colorscale_<quantityKind>`, `color_range_<quantityKind>`, `color_scale_type_<quantityKind>` and `createDrawCommand` maps them to the GLSL names automatically. Layer authors use the GLSL names directly in shaders and attributes.
 
 ### How the Plot Handles Color Axes
 
 1. Registers each quantity kind with the `ColorAxisRegistry`
-2. Scans all layer attributes keyed by that quantity kind and computes the auto range [min, max]
-   (if no attribute by that name exists on a layer, that layer is skipped for auto-range)
+2. Scans `layer.domains` for that quantity kind and computes the auto range [min, max]
+   (if no domain exists, falls back to scanning `layer.attributes` by quantity kind name)
 3. Applies any override from `config.axes`
-4. Passes `colorscale_<quantityKind>` (int) and `color_range_<quantityKind>` (vec2) as uniforms
+4. Passes uniforms to the draw call
 
 ### GLSL Integration
 
 When a layer has color axes, `createDrawCommand` automatically:
-1. Applies the layer's `nameMap` to rename uniform/attribute keys to shader-visible names
-2. Injects all registered colorscale GLSL functions
-3. Injects `map_color(int cs, vec2 range, float value)` dispatch function
+1. Injects all registered colorscale GLSL functions
+2. Injects `map_color(int cs, vec2 range, float value)` dispatch function
 
 ```glsl
-// Static layer type — shader names match generated names directly:
-uniform int colorscale_temperature_K;
-uniform vec2 color_range_temperature_K;
-uniform float color_scale_type_temperature_K;
+// Using suffix '' — GLSL uniform names are: colorscale, color_range, color_scale_type
+uniform int colorscale;
+uniform vec2 color_range;
+uniform float color_scale_type;
 varying float value;
 
 void main() {
   // map_color_s calls gladly_apply_color internally — no explicit wrap needed.
-  gl_FragColor = map_color_s(colorscale_temperature_K, color_range_temperature_K, value, color_scale_type_temperature_K, 0.0);
+  gl_FragColor = map_color_s(colorscale, color_range, value, color_scale_type, 0.0);
 }
 ```
 
@@ -528,37 +517,37 @@ void main() {
 
 | Term | Description |
 |------|-------------|
-| **Quantity kind** | String identifier (e.g. `"velocity_ms"`). Layers sharing a quantity kind share the same filter range. Also names the GLSL attribute and uniform suffix. |
+| **Quantity kind** | String identifier (e.g. `"velocity_ms"`). Layers sharing a quantity kind share the same filter range. |
+| **GLSL name suffix** | Key in the `filterAxisQuantityKinds` dict (e.g. `''`, `'2'`). Appended to `filter_range` and `filter_scale_type` to form the shader-visible uniform names. |
 | **Open bound** | Missing `min` or `max` in `config.axes` means that bound is not enforced. |
 
-### Attribute and Uniform Naming
+### Uniform Naming
 
-The system generates names keyed by the quantity kind:
-- GPU attribute key in `attributes`: `velocity_ms`
-- Uniform: `filter_range_velocity_ms` (vec4)
+`filterAxisQuantityKinds` is a `Record<suffix, quantityKind>`. For each entry, `createDrawCommand` exposes uniforms `filter_range${suffix}` and `filter_scale_type${suffix}`.
 
-For static layer types these can be used in the shader directly. For dynamic types, return a `nameMap` from `createLayer` to map them to friendly shader names.
+Examples:
+- `{ '': 'velocity_ms' }` → uniforms `filter_range`, `filter_scale_type`
+- `{ '2': 'depth_m' }` → uniforms `filter_range2`, `filter_scale_type2`
 
 ### How the Plot Handles Filter Axes
 
 1. Registers each quantity kind with the `FilterAxisRegistry`
-2. Scans all layer attributes keyed by that quantity kind and computes the data extent
+2. Scans `layer.domains` and `layer.attributes` (by quantity kind name) and computes the data extent
 3. Applies `min`/`max` from `config.axes` if present; defaults to fully open bounds
-4. Passes `filter_range_<quantityKind>` (vec4: `[min, max, hasMin, hasMax]`) as a uniform
+4. Passes uniforms to the draw call
 
 ### GLSL Integration
 
 When a layer has filter axes, `createDrawCommand` automatically:
-1. Applies the layer's `nameMap` to rename uniform/attribute keys to shader-visible names
-2. Injects `filter_in_range(vec4, float)`
+1. Injects `filter_in_range(vec4, float)`
 
 ```glsl
-// Static layer type — shader names match generated names directly:
-uniform vec4 filter_range_velocity_ms;
-attribute float velocity_ms;
+// Using suffix '' — GLSL uniform name is: filter_range
+uniform vec4 filter_range;
+attribute float filter_data;
 
 void main() {
-  if (!filter_in_range(filter_range_velocity_ms, velocity_ms)) {
+  if (!filter_in_range(filter_range, filter_data)) {
     gl_Position = vec4(2.0, 2.0, 2.0, 1.0);  // vertex shader discard
     return;
   }
@@ -777,24 +766,24 @@ new LayerType({ name,
 | `xAxisQuantityKind` | string | Static x-axis quantity kind. Optional. |
 | `yAxis` | string | Static default y-axis position (e.g. `"yaxis_left"`). Optional. |
 | `yAxisQuantityKind` | string | Static y-axis quantity kind. Optional. |
-| `colorAxisQuantityKinds` | string[] | Static quantity kinds for color axes. Optional, defaults to `[]`. |
-| `filterAxisQuantityKinds` | string[] | Static quantity kinds for filter axes. Optional, defaults to `[]`. |
+| `colorAxisQuantityKinds` | Record&lt;string,string&gt; | Static dict mapping GLSL name suffix → quantity kind for color axes. Optional, defaults to `{}`. |
+| `filterAxisQuantityKinds` | Record&lt;string,string&gt; | Static dict mapping GLSL name suffix → quantity kind for filter axes. Optional, defaults to `{}`. |
 | `getAxisConfig` | function | `(parameters, data) => axisConfig` — dynamic axis config; overrides static fields wherever it returns a non-`undefined` value. Optional if statics cover all needed info. |
 | `vert` | string | GLSL vertex shader |
 | `frag` | string | GLSL fragment shader |
 | `schema` | function | `(data) => JSONSchema` |
-| `createLayer` | function | `(parameters, data) => Array<{ attributes, uniforms, primitive?, vertexCount?, instanceCount?, attributeDivisors?, nameMap?, blend? }>` — GPU data only; each element becomes one `Layer` |
+| `createLayer` | function | `(parameters, data) => Array<{ attributes, uniforms, primitive?, vertexCount?, instanceCount?, attributeDivisors?, blend? }>` — GPU data only; each element becomes one `Layer` |
 
 **`getAxisConfig` return shape:**
 
 ```javascript
 {
-  xAxis?: string | null,             // null suppresses the x axis
+  xAxis?: string | null,                       // null suppresses the x axis
   xAxisQuantityKind?: string,
-  yAxis?: string | null,             // null suppresses the y axis
+  yAxis?: string | null,                       // null suppresses the y axis
   yAxisQuantityKind?: string,
-  colorAxisQuantityKinds?: string[],
-  filterAxisQuantityKinds?: string[],
+  colorAxisQuantityKinds?: Record<string, string>,  // suffix → quantity kind
+  filterAxisQuantityKinds?: Record<string, string>, // suffix → quantity kind
 }
 ```
 
@@ -811,11 +800,11 @@ Any field that is `undefined` (or absent) leaves the corresponding static declar
 | `count` | `int` | always | Number of data points (vertices) |
 | `u_pickingMode` | `float` | always | `0.0` = normal render, `1.0` = GPU pick pass |
 | `u_pickLayerIndex` | `float` | always | Layer index encoded in the pick pass |
-| `colorscale_<quantityKind>` | `int` | color axes | Colorscale index (one per color axis) |
-| `color_range_<quantityKind>` | `vec2` | color axes | `[min, max]` color range (one per color axis) |
-| `color_scale_type_<quantityKind>` | `float` | color axes | `0.0` = linear, `1.0` = log (one per color axis) |
-| `filter_range_<quantityKind>` | `vec4` | filter axes | `[min, max, hasMin, hasMax]` (one per filter axis) |
-| `filter_scale_type_<quantityKind>` | `float` | filter axes | `0.0` = linear, `1.0` = log (one per filter axis) |
+| `colorscale<suffix>` | `int` | color axes | Colorscale index; one per entry in `colorAxisQuantityKinds` |
+| `color_range<suffix>` | `vec2` | color axes | `[min, max]` color range; one per color axis |
+| `color_scale_type<suffix>` | `float` | color axes | `0.0` = linear, `1.0` = log; one per color axis |
+| `filter_range<suffix>` | `vec4` | filter axes | `[min, max, hasMin, hasMax]`; one per filter axis |
+| `filter_scale_type<suffix>` | `float` | filter axes | `0.0` = linear, `1.0` = log; one per filter axis |
 
 **Automatically injected GLSL:**
 
@@ -856,7 +845,7 @@ bool filter_in_range(vec4 range, float value)
 
 | Method | Description |
 |--------|-------------|
-| `createDrawCommand(regl, layer)` | Compiles shaders and returns a regl draw function; applies `nameMap` to rename uniform/attribute keys |
+| `createDrawCommand(regl, layer)` | Compiles shaders and returns a regl draw function; maps color/filter axis uniforms via `colorAxisQuantityKinds`/`filterAxisQuantityKinds` suffixes |
 | `schema(data)` | Returns JSON Schema for layer parameters |
 | `createLayer(parameters, data)` | Calls user factory + `resolveAxisConfig`, returns a ready-to-render Layer |
 | `resolveAxisConfig(parameters, data)` | Merges static declarations with `getAxisConfig` output (dynamic wins on non-`undefined`) |
@@ -871,8 +860,7 @@ Each element in the array:
 
 ```javascript
 {
-  // GPU attribute values — keyed by internal name (quantity kind for color/filter axes).
-  // Use nameMap to rename them in the shader.
+  // GPU attribute values — keyed by GLSL attribute name.
   // Each value is either:
   //   - Float32Array: uploaded directly as a vertex buffer attribute.
   //   - Computed expression { computationName: params }: resolved to a GPU texture or
@@ -880,14 +868,14 @@ Each element in the array:
   attributes: {
     x: Float32Array,
     y: Float32Array,
-    temperature_K: Float32Array,                  // color axis data, keyed by quantity kind
-    velocity_ms:   Float32Array,                  // filter axis data, keyed by quantity kind
+    color_data: Float32Array,                     // name matches GLSL attribute declaration
+    filter_data: Float32Array,                    // name matches GLSL attribute declaration
     count: { histogram: { input: norm, bins } },  // computed attribute expression
     // ...
   },
 
   // Layer-specific GPU uniforms (in addition to the auto-provided ones).
-  // Keys are shader-visible names (or use nameMap to rename them).
+  // Keys are the GLSL-visible uniform names.
   uniforms: {},
 
   // Optional: pre-computed [min, max] domains keyed by quantity kind.
@@ -922,18 +910,6 @@ Each element in the array:
   attributeDivisors: {
     x: 1, xPrev: 1, xNext: 1, top: 1, bot: 1,  // per-instance
     // cx, cy omitted → divisor 0 (per-vertex)
-  },
-
-  // Optional: maps internal names → shader-visible names.
-  // Applies to attribute keys, uniform keys, and all auto-generated uniform names
-  // (colorscale_<qk>, color_range_<qk>, filter_range_<qk>, xDomain, etc.).
-  // Entries absent from nameMap pass through unchanged.
-  nameMap: {
-    temperature_K:              'color_data',
-    colorscale_temperature_K:   'colorscale',
-    color_range_temperature_K:  'color_range',
-    velocity_ms:                'filter_data',
-    filter_range_velocity_ms:   'filter_range',
   },
 
   // Optional: regl blend configuration for this draw call.

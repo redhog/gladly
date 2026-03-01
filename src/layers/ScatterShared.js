@@ -5,12 +5,14 @@ import { Data } from "../core/Data.js"
 export class ScatterLayerTypeBase extends LayerType {
   _getAxisConfig(parameters, data) {
     const d = Data.wrap(data)
-    const { xData, yData, vData, vData2, fData, xAxis, yAxis } = parameters
-    const colorAxisQuantityKinds = [d.getQuantityKind(vData) ?? vData]
-    if (vData2) {
-      colorAxisQuantityKinds.push(d.getQuantityKind(vData2) ?? vData2)
-    }
-    const filterAxisQuantityKinds = fData ? [d.getQuantityKind(fData) ?? fData] : []
+    const { xData, yData, vData: vDataRaw, vData2: vData2Raw, fData: fDataRaw, xAxis, yAxis } = parameters
+    const vData  = vDataRaw  === "none" ? null : vDataRaw
+    const vData2 = vData2Raw === "none" ? null : vData2Raw
+    const fData  = fDataRaw  === "none" ? null : fDataRaw
+    const colorAxisQuantityKinds = {}
+    if (vData) colorAxisQuantityKinds['']  = d.getQuantityKind(vData)  ?? vData
+    if (vData2) colorAxisQuantityKinds['2'] = d.getQuantityKind(vData2) ?? vData2
+    const filterAxisQuantityKinds = fData ? { '': d.getQuantityKind(fData) ?? fData } : {}
     return {
       xAxis,
       xAxisQuantityKind: d.getQuantityKind(xData) ?? xData,
@@ -115,22 +117,6 @@ export class ScatterLayerTypeBase extends LayerType {
     }
 
     return domains
-  }
-
-  _buildNameMap(vData, vQK, vData2, vQK2, fData, fQK) {
-    return {
-      ...(vData ? {
-        [`colorscale_${vQK}`]: 'colorscale',
-        [`color_range_${vQK}`]: 'color_range',
-        [`color_scale_type_${vQK}`]: 'color_scale_type',
-      } : {}),
-      ...(vData2 ? {
-        [`colorscale_${vQK2}`]: 'colorscale2',
-        [`color_range_${vQK2}`]: 'color_range2',
-        [`color_scale_type_${vQK2}`]: 'color_scale_type2',
-      } : {}),
-      ...(fData ? { [`filter_range_${fQK}`]: 'filter_range' } : {}),
-    }
   }
 
   _buildBlendConfig(alphaBlend) {

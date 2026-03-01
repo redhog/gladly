@@ -65,7 +65,7 @@ export class FilterAxisRegistry {
       let extMin = Infinity, extMax = -Infinity
 
       for (const layer of layers) {
-        for (const qk of layer.filterAxes) {
+        for (const qk of Object.values(layer.filterAxes)) {
           if (qk !== quantityKind) continue
           if (layer.domains[qk] !== undefined) {
             const [dMin, dMax] = layer.domains[qk]

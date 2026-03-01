@@ -587,8 +587,8 @@ class TileLayerType extends LayerType {
       xAxisQuantityKind: crsToQkX(effectivePlotCrs),
       yAxis,
       yAxisQuantityKind: crsToQkY(effectivePlotCrs),
-      colorAxisQuantityKinds: [],
-      filterAxisQuantityKinds: [],
+      colorAxisQuantityKinds: {},
+      filterAxisQuantityKinds: {},
     }
   }
 
@@ -609,8 +609,8 @@ class TileLayerType extends LayerType {
       yAxis,
       xAxisQuantityKind: crsToQkX(effectivePlotCrs),
       yAxisQuantityKind: crsToQkY(effectivePlotCrs),
-      colorAxes: [],
-      filterAxes: [],
+      colorAxes: {},
+      filterAxes: {},
       vertexCount: 0,
       instanceCount: null,
       attributes: {},

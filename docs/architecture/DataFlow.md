@@ -90,7 +90,7 @@ Plot._initialize()
   │   │   └─> For each registered filter axis, apply config min/max if present;
   │   │       default = open bounds (no discard)
   │   └─> Color axes:
-  │       └─> For each registered quantity kind, scan all layer colorAxes[slot].data;
+  │       └─> For each registered quantity kind, scan all layer colorAxes values;
   │           compute [min, max]; apply config override; apply colorscale preference
   │
   ├─> Plot.initZoom()   — see Interaction Cycle below

@@ -85,8 +85,8 @@ export class LayerType {
     this.xAxisQuantityKind = xAxisQuantityKind
     this.yAxis = yAxis
     this.yAxisQuantityKind = yAxisQuantityKind
-    this.colorAxisQuantityKinds = colorAxisQuantityKinds ?? []
-    this.filterAxisQuantityKinds = filterAxisQuantityKinds ?? []
+    this.colorAxisQuantityKinds = colorAxisQuantityKinds ?? {}
+    this.filterAxisQuantityKinds = filterAxisQuantityKinds ?? {}
     this.vert = vert
     this.frag = frag
 
@@ -97,16 +97,10 @@ export class LayerType {
   }
 
   createDrawCommand(regl, layer, plot) {
-    const nm = layer.nameMap
-    // Rename an internal name to the shader-visible name via nameMap (identity if absent).
-    const shaderName = (internalName) => nm[internalName] ?? internalName
-    // Build a single-entry uniform object with renamed key reading from the internal prop name.
-    const u = (internalName) => ({ [shaderName(internalName)]: regl.prop(internalName) })
-
     // --- Resolve computed attributes ---
     let vertSrc = this.vert
-    const originalBufferAttrs = {}   // internal_name → Float32Array
-    const computedBufferAttrs = {}   // shader_name   → Float32Array  (from context.bufferAttrs)
+    const originalBufferAttrs = {}   // name → Float32Array
+    const computedBufferAttrs = {}   // name → Float32Array  (from context.bufferAttrs)
     const allTextureUniforms = {}
     const allScalarUniforms = {}
     const allGlobalDecls = []
@@ -114,16 +108,16 @@ export class LayerType {
     const allAxisUpdaters = []
 
     for (const [key, expr] of Object.entries(layer.attributes)) {
-      const result = resolveAttributeExpr(regl, expr, shaderName(key), plot)
+      const result = resolveAttributeExpr(regl, expr, key, plot)
       if (result.kind === 'buffer') {
         originalBufferAttrs[key] = result.value
       } else {
-        vertSrc = removeAttributeDecl(vertSrc, shaderName(key))
+        vertSrc = removeAttributeDecl(vertSrc, key)
         Object.assign(computedBufferAttrs, result.context.bufferAttrs)
         Object.assign(allTextureUniforms, result.context.textureUniforms)
         Object.assign(allScalarUniforms, result.context.scalarUniforms)
         allGlobalDecls.push(...result.context.globalDecls)
-        mainInjections.push(`float ${shaderName(key)} = ${result.glslExpr};`)
+        mainInjections.push(`float ${key} = ${result.glslExpr};`)
         allAxisUpdaters.push(...result.context.axisUpdaters)
       }
     }
@@ -134,15 +128,12 @@ export class LayerType {
       vertSrc = injectIntoMainStart(vertSrc, mainInjections.join('\n  '))
     }
 
-    // Merged buffer attrs by shader name — used for vertex count fallback.
-    const allShaderBuffers = {
-      ...Object.fromEntries(Object.entries(originalBufferAttrs).map(([k, v]) => [shaderName(k), v])),
-      ...computedBufferAttrs
-    }
+    // Merged buffer attrs — used for vertex count fallback.
+    const allShaderBuffers = { ...originalBufferAttrs, ...computedBufferAttrs }
 
     const isInstanced = layer.instanceCount !== null
     const pickCount = isInstanced ? layer.instanceCount :
-      (layer.vertexCount ?? allShaderBuffers[shaderName('x')]?.length
+      (layer.vertexCount ?? allShaderBuffers['x']?.length
         ?? Object.values(layer.attributes).find(v => v instanceof Float32Array)?.length ?? 0)
     const pickIds = new Float32Array(pickCount)
     for (let i = 0; i < pickCount; i++) pickIds[i] = i
@@ -154,45 +145,47 @@ export class LayerType {
         Object.entries(originalBufferAttrs).map(([key, buffer]) => {
           const divisor = layer.attributeDivisors[key]
           const attrObj = divisor !== undefined ? { buffer, divisor } : { buffer }
-          return [shaderName(key), attrObj]
+          return [key, attrObj]
         })
       ),
-      // Computed buffer attrs (no divisors; already shader-named)
+      // Computed buffer attrs (no divisors)
       ...Object.fromEntries(
-        Object.entries(computedBufferAttrs).map(([shaderKey, buffer]) => [shaderKey, { buffer }])
+        Object.entries(computedBufferAttrs).map(([key, buffer]) => [key, { buffer }])
       ),
       a_pickId: isInstanced ? { buffer: regl.buffer(pickIds), divisor: 1 } : regl.buffer(pickIds)
     }
 
     // --- Build uniforms ---
     const uniforms = {
-      ...u("xDomain"),
-      ...u("yDomain"),
-      ...u("xScaleType"),
-      ...u("yScaleType"),
+      xDomain: regl.prop("xDomain"),
+      yDomain: regl.prop("yDomain"),
+      xScaleType: regl.prop("xScaleType"),
+      yScaleType: regl.prop("yScaleType"),
       u_pickingMode: regl.prop('u_pickingMode'),
       u_pickLayerIndex: regl.prop('u_pickLayerIndex'),
-      ...Object.fromEntries(
-        Object.entries(layer.uniforms).map(([key, value]) => [shaderName(key), value])
-      ),
+      ...layer.uniforms,
       ...allTextureUniforms,
       ...allScalarUniforms
     }
 
-    // Add per-color-axis uniforms (colorscale index + range + scale type), keyed by quantity kind
-    for (const qk of layer.colorAxes) {
-      Object.assign(uniforms, u(`colorscale_${qk}`), u(`color_range_${qk}`), u(`color_scale_type_${qk}`))
+    // Add per-color-axis uniforms keyed by GLSL name suffix → quantity kind.
+    // For suffix '' and qk 'temp_K': colorscale, color_range, color_scale_type read from prop colorscale_temp_K etc.
+    for (const [suffix, qk] of Object.entries(layer.colorAxes)) {
+      uniforms[`colorscale${suffix}`]       = regl.prop(`colorscale_${qk}`)
+      uniforms[`color_range${suffix}`]      = regl.prop(`color_range_${qk}`)
+      uniforms[`color_scale_type${suffix}`] = regl.prop(`color_scale_type_${qk}`)
     }
 
-    // Add per-filter-axis uniforms (vec4: [min, max, hasMin, hasMax] + scale type), keyed by quantity kind
-    for (const qk of layer.filterAxes) {
-      Object.assign(uniforms, u(`filter_range_${qk}`), u(`filter_scale_type_${qk}`))
+    // Add per-filter-axis uniforms (vec4: [min, max, hasMin, hasMax] + scale type).
+    for (const [suffix, qk] of Object.entries(layer.filterAxes)) {
+      uniforms[`filter_range${suffix}`]      = regl.prop(`filter_range_${qk}`)
+      uniforms[`filter_scale_type${suffix}`] = regl.prop(`filter_scale_type_${qk}`)
     }
 
     // Inject GLSL helpers before the layer shader body.
     const spatialGlsl = buildSpatialGlsl()
-    const colorGlsl = layer.colorAxes.length > 0 ? buildColorGlsl() : ''
-    const filterGlsl = layer.filterAxes.length > 0 ? buildFilterGlsl() : ''
+    const colorGlsl = Object.keys(layer.colorAxes).length > 0 ? buildColorGlsl() : ''
+    const filterGlsl = Object.keys(layer.filterAxes).length > 0 ? buildFilterGlsl() : ''
     const pickVertDecls = `attribute float a_pickId;\nvarying float v_pickId;`
 
     const drawConfig = {
@@ -227,8 +220,8 @@ export class LayerType {
       xAxisQuantityKind: this.xAxisQuantityKind,
       yAxis: this.yAxis,
       yAxisQuantityKind: this.yAxisQuantityKind,
-      colorAxisQuantityKinds: [...this.colorAxisQuantityKinds],
-      filterAxisQuantityKinds: [...this.filterAxisQuantityKinds],
+      colorAxisQuantityKinds: { ...this.colorAxisQuantityKinds },
+      filterAxisQuantityKinds: { ...this.filterAxisQuantityKinds },
     }
 
     if (this._getAxisConfig) {
@@ -255,7 +248,6 @@ export class LayerType {
       type: this,
       attributes: gpuConfig.attributes ?? {},
       uniforms: gpuConfig.uniforms ?? {},
-      nameMap: gpuConfig.nameMap ?? {},
       domains: gpuConfig.domains ?? {},
       lineWidth: gpuConfig.lineWidth ?? 1,
       primitive: gpuConfig.primitive ?? "points",

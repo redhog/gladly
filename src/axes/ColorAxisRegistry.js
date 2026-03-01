@@ -56,7 +56,7 @@ export class ColorAxisRegistry {
       let min = Infinity, max = -Infinity
 
       for (const layer of layers) {
-        for (const qk of layer.colorAxes) {
+        for (const qk of Object.values(layer.colorAxes)) {
           if (qk !== quantityKind) continue
           if (layer.domains[qk] !== undefined) {
             const [dMin, dMax] = layer.domains[qk]

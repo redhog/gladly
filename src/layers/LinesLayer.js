@@ -178,7 +178,6 @@ class LinesLayerType extends ScatterLayerTypeBase {
         ...(vData ? {} : { colorscale: 0, color_range: [0, 1], color_scale_type: 0.0 }),
         ...(vData2 ? {} : { colorscale2: 0, color_range2: [0, 1], color_scale_type2: 0.0 })
       },
-      nameMap: this._buildNameMap(vData, vQK, vData2, vQK2, fData, fQK),
       domains,
       primitive: "lines",
       lineWidth,
@@ -189,7 +188,7 @@ class LinesLayerType extends ScatterLayerTypeBase {
   }
 
   createDrawCommand(regl, layer) {
-    const hasFilter = layer.filterAxes.length > 0
+    const hasFilter = Object.keys(layer.filterAxes).length > 0
     this.vert = makeLinesVert(hasFilter)
     return super.createDrawCommand(regl, layer)
   }

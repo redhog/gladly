@@ -64,7 +64,7 @@ class HistogramLayerType extends LayerType {
       xAxisQuantityKind: d.getQuantityKind(vData) ?? vData,
       yAxis,
       yAxisQuantityKind: "count",
-      ...(filterQK ? { filterAxisQuantityKinds: [filterQK] } : {}),
+      ...(filterQK ? { filterAxisQuantityKinds: { '': filterQK } } : {}),
     }
   }
 

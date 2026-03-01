@@ -8,7 +8,7 @@ export const multiLineLayerType = new LayerType({
 
   xAxis: "xaxis_bottom",
   yAxis: "yaxis_left",
-  colorAxisQuantityKinds: ["line_index"],
+  colorAxisQuantityKinds: { '': "line_index" },
 
   getAxisConfig: function(parameters, data) {
     const d = Data.wrap(data)
@@ -141,11 +141,6 @@ export const multiLineLayerType = new LayerType({
         domains: { line_index: [idx, idx] },
         primitive: "lines",
         lineWidth: 2,
-        nameMap: {
-          colorscale_line_index:       'colorscale',
-          color_range_line_index:      'color_range',
-          color_scale_type_line_index: 'color_scale_type',
-        },
       }
     })
   }
