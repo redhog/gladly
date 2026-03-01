@@ -90,6 +90,7 @@ export class LayerType {
     xAxis, xAxisQuantityKind,
     yAxis, yAxisQuantityKind,
     colorAxisQuantityKinds,
+    colorAxis2dQuantityKinds,
     filterAxisQuantityKinds,
     // Optional dynamic resolver — overrides statics wherever it returns a non-undefined value
     getAxisConfig,
@@ -103,6 +104,7 @@ export class LayerType {
     this.yAxis = yAxis
     this.yAxisQuantityKind = yAxisQuantityKind
     this.colorAxisQuantityKinds = colorAxisQuantityKinds ?? {}
+    this.colorAxis2dQuantityKinds = colorAxis2dQuantityKinds ?? {}
     this.filterAxisQuantityKinds = filterAxisQuantityKinds ?? {}
     this.vert = vert
     this.frag = frag
@@ -207,7 +209,7 @@ export class LayerType {
     vertSrc = removeUniformDecl(vertSrc, 'xScaleType')
     vertSrc = removeUniformDecl(vertSrc, 'yScaleType')
     const spatialGlsl = buildSpatialGlsl()
-    const colorGlsl = Object.keys(layer.colorAxes).length > 0 ? buildColorGlsl() : ''
+    const colorGlsl = (Object.keys(layer.colorAxes).length > 0 || Object.keys(layer.colorAxes2d).length > 0) ? buildColorGlsl() : ''
     const filterGlsl = Object.keys(layer.filterAxes).length > 0 ? buildFilterGlsl() : ''
     const pickVertDecls = `attribute float a_pickId;\nvarying float v_pickId;`
 
@@ -238,6 +240,18 @@ export class LayerType {
     }
     const colorHelpers = colorHelperLines.join('\n')
 
+    // Per-suffix 2D color wrapper: map_color_2d_SUFFIX(vec2 values) calling map_color_s_2d.
+    // Uniforms for the component axes are already declared above in colorHelperLines.
+    const color2dHelperLines = []
+    for (const [suffix2d, [s1, s2]] of Object.entries(layer.colorAxes2d)) {
+      color2dHelperLines.push(
+        `vec4 map_color_2d_${fnSuffix(suffix2d)}(vec2 values) {`,
+        `  return map_color_s_2d(colorscale${s1}, color_range${s1}, values.x, color_scale_type${s1}, colorscale${s2}, color_range${s2}, values.y, color_scale_type${s2});`,
+        `}`
+      )
+    }
+    const color2dHelpers = color2dHelperLines.join('\n')
+
     // Per-suffix filter wrapper: uniform declaration + filter_SUFFIX(value).
     // filter_range uniform is stripped from vertSrc to avoid duplicate declarations.
     const filterHelperLines = []
@@ -254,7 +268,7 @@ export class LayerType {
 
     const drawConfig = {
       vert: injectPickIdAssignment(injectInto(vertSrc, [spatialGlsl, filterGlsl, filterHelpers, pickVertDecls, ...allGlobalDecls])),
-      frag: injectInto(fragSrc, [buildApplyColorGlsl(), colorGlsl, colorHelpers, filterGlsl, filterHelpers]),
+      frag: injectInto(fragSrc, [buildApplyColorGlsl(), colorGlsl, colorHelpers, color2dHelpers, filterGlsl, filterHelpers]),
       attributes,
       uniforms,
       viewport: regl.prop("viewport"),
@@ -263,7 +277,7 @@ export class LayerType {
       count: regl.prop("count"),
       // Layers with color axes always enable src-alpha blend so alpha_blend can work at any time.
       // (alpha=1.0 is equivalent to no blending, so this is safe when alpha_blend=0.)
-      ...(Object.keys(layer.colorAxes).length > 0
+      ...(Object.keys(layer.colorAxes).length > 0 || Object.keys(layer.colorAxes2d).length > 0
         ? { blend: { enable: true, func: { srcRGB: 'src alpha', dstRGB: 'one minus src alpha', srcAlpha: 0, dstAlpha: 1 } } }
         : layer.blend ? { blend: layer.blend } : {})
     }
@@ -289,16 +303,18 @@ export class LayerType {
       yAxis: this.yAxis,
       yAxisQuantityKind: this.yAxisQuantityKind,
       colorAxisQuantityKinds: { ...this.colorAxisQuantityKinds },
+      colorAxis2dQuantityKinds: { ...this.colorAxis2dQuantityKinds },
       filterAxisQuantityKinds: { ...this.filterAxisQuantityKinds },
     }
 
     if (this._getAxisConfig) {
       const dynamic = this._getAxisConfig.call(this, parameters, data)
-      if (dynamic.xAxis !== undefined)                  resolved.xAxis = dynamic.xAxis
-      if (dynamic.xAxisQuantityKind !== undefined)      resolved.xAxisQuantityKind = dynamic.xAxisQuantityKind
-      if (dynamic.yAxis !== undefined)                  resolved.yAxis = dynamic.yAxis
-      if (dynamic.yAxisQuantityKind !== undefined)      resolved.yAxisQuantityKind = dynamic.yAxisQuantityKind
-      if (dynamic.colorAxisQuantityKinds !== undefined) resolved.colorAxisQuantityKinds = dynamic.colorAxisQuantityKinds
+      if (dynamic.xAxis !== undefined)                   resolved.xAxis = dynamic.xAxis
+      if (dynamic.xAxisQuantityKind !== undefined)       resolved.xAxisQuantityKind = dynamic.xAxisQuantityKind
+      if (dynamic.yAxis !== undefined)                   resolved.yAxis = dynamic.yAxis
+      if (dynamic.yAxisQuantityKind !== undefined)       resolved.yAxisQuantityKind = dynamic.yAxisQuantityKind
+      if (dynamic.colorAxisQuantityKinds !== undefined)  resolved.colorAxisQuantityKinds = dynamic.colorAxisQuantityKinds
+      if (dynamic.colorAxis2dQuantityKinds !== undefined) resolved.colorAxis2dQuantityKinds = dynamic.colorAxis2dQuantityKinds
       if (dynamic.filterAxisQuantityKinds !== undefined) resolved.filterAxisQuantityKinds = dynamic.filterAxisQuantityKinds
     }
 
@@ -328,6 +344,7 @@ export class LayerType {
       xAxisQuantityKind: axisConfig.xAxisQuantityKind,
       yAxisQuantityKind: axisConfig.yAxisQuantityKind,
       colorAxes: axisConfig.colorAxisQuantityKinds,
+      colorAxes2d: axisConfig.colorAxis2dQuantityKinds,
       filterAxes: axisConfig.filterAxisQuantityKinds,
     }))
   }

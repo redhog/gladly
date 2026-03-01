@@ -26,36 +26,22 @@ function makePointsVert(hasFilter) {
 `
 }
 
-const POINTS_FRAG = `
+function makePointsFrag(hasSecond) {
+  return `
   precision mediump float;
-  uniform int colorscale;
-  uniform vec2 color_range;
-  uniform float color_scale_type;
-
-  uniform int colorscale2;
-  uniform vec2 color_range2;
-  uniform float color_scale_type2;
-
-  uniform float u_useSecondColor;
-
   varying float value;
   varying float value2;
-
   void main() {
-    if (u_useSecondColor > 0.5) {
-      gl_FragColor = map_color_s_2d(
-        colorscale, color_range, value, color_scale_type,
-        colorscale2, color_range2, value2, color_scale_type2
-      );
-    } else {
-      gl_FragColor = map_color_(value);
-    }
+    ${hasSecond
+      ? 'gl_FragColor = map_color_2d_(vec2(value, value2));'
+      : 'gl_FragColor = map_color_(value);'}
   }
 `
+}
 
 class PointsLayerType extends ScatterLayerTypeBase {
   constructor() {
-    super({ name: "points", vert: makePointsVert(false), frag: POINTS_FRAG })
+    super({ name: "points", vert: makePointsVert(false), frag: makePointsFrag(false) })
   }
 
   schema(data) {
@@ -73,7 +59,6 @@ class PointsLayerType extends ScatterLayerTypeBase {
     const { xData, yData, vData, vData2, fData, xQK, yQK, vQK, vQK2, fQK, srcX, srcY, srcV, srcV2, srcF } =
       this._resolveColorData(parameters, d)
 
-    const useSecond = vData2 ? 1.0 : 0.0
     const domains = this._buildDomains(d, xData, yData, vData, vData2, xQK, yQK, vQK, vQK2)
 
     return [{
@@ -84,18 +69,16 @@ class PointsLayerType extends ScatterLayerTypeBase {
         color_data2: vData2 ? srcV2 : new Float32Array(srcX.length),
         ...(fData ? { filter_data: srcF } : {}),
       },
-      uniforms: {
-        u_useSecondColor: useSecond,
-        ...(vData ? {} : { colorscale: 0, color_range: [0, 1], color_scale_type: 0.0 }),
-        ...(vData2 ? {} : { colorscale2: 0, color_range2: [0, 1], color_scale_type2: 0.0 })
-      },
+      uniforms: {},
       domains,
     }]
   }
 
   createDrawCommand(regl, layer) {
     const hasFilter = Object.keys(layer.filterAxes).length > 0
+    const hasSecond = Object.keys(layer.colorAxes2d).length > 0
     this.vert = makePointsVert(hasFilter)
+    this.frag = makePointsFrag(hasSecond)
     return super.createDrawCommand(regl, layer)
   }
 }

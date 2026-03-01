@@ -48,49 +48,32 @@ function makeLinesVert(hasFilter) {
 `
 }
 
-const LINES_FRAG = `
+function makeLinesFrag(hasSecond) {
+  return `
   precision mediump float;
-
-  uniform int colorscale;
-  uniform vec2 color_range;
-  uniform float color_scale_type;
-
-  uniform int colorscale2;
-  uniform vec2 color_range2;
-  uniform float color_scale_type2;
-
   uniform float u_lineColorMode;
-  uniform float u_useSecondColor;
-
   varying float v_color_start;
   varying float v_color_end;
   varying float v_color2_start;
   varying float v_color2_end;
   varying float v_t;
-
   void main() {
     float value = u_lineColorMode > 0.5
       ? (v_t < 0.5 ? v_color_start : v_color_end)
       : mix(v_color_start, v_color_end, v_t);
-
-    if (u_useSecondColor > 0.5) {
-      float value2 = u_lineColorMode > 0.5
-        ? (v_t < 0.5 ? v_color2_start : v_color2_end)
-        : mix(v_color2_start, v_color2_end, v_t);
-
-      gl_FragColor = map_color_s_2d(
-        colorscale, color_range, value, color_scale_type,
-        colorscale2, color_range2, value2, color_scale_type2
-      );
-    } else {
-      gl_FragColor = map_color_(value);
-    }
+    ${hasSecond ? `
+    float value2 = u_lineColorMode > 0.5
+      ? (v_t < 0.5 ? v_color2_start : v_color2_end)
+      : mix(v_color2_start, v_color2_end, v_t);
+    gl_FragColor = map_color_2d_(vec2(value, value2));` : `
+    gl_FragColor = map_color_(value);`}
   }
 `
+}
 
 class LinesLayerType extends ScatterLayerTypeBase {
   constructor() {
-    super({ name: "lines", vert: makeLinesVert(false), frag: LINES_FRAG })
+    super({ name: "lines", vert: makeLinesVert(false), frag: makeLinesFrag(false) })
   }
 
   schema(data) {
@@ -128,7 +111,6 @@ class LinesLayerType extends ScatterLayerTypeBase {
     const { xData, yData, vData, vData2, fData, xQK, yQK, vQK, vQK2, fQK, srcX, srcY, srcV, srcV2, srcF } =
       this._resolveColorData(parameters, d)
 
-    const useSecond = vData2 ? 1.0 : 0.0
     const domains = this._buildDomains(d, xData, yData, vData, vData2, xQK, yQK, vQK, vQK2)
 
     const N = srcX.length
@@ -165,9 +147,6 @@ class LinesLayerType extends ScatterLayerTypeBase {
       },
       uniforms: {
         u_lineColorMode: lineColorMode === "midpoint" ? 1.0 : 0.0,
-        u_useSecondColor: useSecond,
-        ...(vData ? {} : { colorscale: 0, color_range: [0, 1], color_scale_type: 0.0 }),
-        ...(vData2 ? {} : { colorscale2: 0, color_range2: [0, 1], color_scale_type2: 0.0 })
       },
       domains,
       primitive: "lines",
@@ -179,7 +158,9 @@ class LinesLayerType extends ScatterLayerTypeBase {
 
   createDrawCommand(regl, layer) {
     const hasFilter = Object.keys(layer.filterAxes).length > 0
+    const hasSecond = Object.keys(layer.colorAxes2d).length > 0
     this.vert = makeLinesVert(hasFilter)
+    this.frag = makeLinesFrag(hasSecond)
     return super.createDrawCommand(regl, layer)
   }
 }

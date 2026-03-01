@@ -16,6 +16,7 @@ export const colorbar2dLayerType = new LayerType({
       yAxis: "yaxis_left",
       yAxisQuantityKind: yAxis,
       colorAxisQuantityKinds: { '_a': xAxis, '_b': yAxis },
+      colorAxis2dQuantityKinds: { '': ['_a', '_b'] },
     }
   },
 
@@ -39,10 +40,8 @@ export const colorbar2dLayerType = new LayerType({
   // correctly and linear-scale is a no-op (exp(log(v)) == v, but for linear vt == v anyway).
   frag: `
     precision mediump float;
-    uniform int colorscale_a;
     uniform vec2 color_range_a;
     uniform float color_scale_type_a;
-    uniform int colorscale_b;
     uniform vec2 color_range_b;
     uniform float color_scale_type_b;
     varying float tval_x;
@@ -58,10 +57,7 @@ export const colorbar2dLayerType = new LayerType({
       float vt_b = r0_b + tval_y * (r1_b - r0_b);
       float v_b  = color_scale_type_b > 0.5 ? exp(vt_b) : vt_b;
 
-      gl_FragColor = map_color_s_2d(
-        colorscale_a, color_range_a, v_a, color_scale_type_a,
-        colorscale_b, color_range_b, v_b, color_scale_type_b
-      );
+      gl_FragColor = map_color_2d_(vec2(v_a, v_b));
     }
   `,
 

@@ -12,6 +12,7 @@ export class ScatterLayerTypeBase extends LayerType {
     const colorAxisQuantityKinds = {}
     if (vData) colorAxisQuantityKinds['']  = d.getQuantityKind(vData)  ?? vData
     if (vData2) colorAxisQuantityKinds['2'] = d.getQuantityKind(vData2) ?? vData2
+    const colorAxis2dQuantityKinds = vData && vData2 ? { '': ['', '2'] } : {}
     const filterAxisQuantityKinds = fData ? { '': d.getQuantityKind(fData) ?? fData } : {}
     return {
       xAxis,
@@ -19,6 +20,7 @@ export class ScatterLayerTypeBase extends LayerType {
       yAxis,
       yAxisQuantityKind: d.getQuantityKind(yData) ?? yData,
       colorAxisQuantityKinds,
+      colorAxis2dQuantityKinds,
       filterAxisQuantityKinds,
     }
   }
