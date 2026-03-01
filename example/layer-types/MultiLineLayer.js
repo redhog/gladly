@@ -8,7 +8,7 @@ export const multiLineLayerType = new LayerType({
 
   xAxis: "xaxis_bottom",
   yAxis: "yaxis_left",
-  colorAxisQuantityKinds: ["line_index"],
+  colorAxisQuantityKinds: { '': "line_index" },
 
   getAxisConfig: function(parameters, data) {
     const d = Data.wrap(data)
@@ -33,9 +33,7 @@ export const multiLineLayerType = new LayerType({
     varying float vLineIndex;
     varying float vBadSegment;
     void main() {
-      float nx = normalize_axis(x, xDomain, xScaleType);
-      float ny = normalize_axis(y, yDomain, yScaleType);
-      gl_Position = vec4(nx*2.0-1.0, ny*2.0-1.0, 0, 1);
+      gl_Position = plot_pos(vec2(x, y));
       vLineIndex = line_index;
       vBadSegment = bad_segment;
     }
@@ -53,7 +51,7 @@ export const multiLineLayerType = new LayerType({
       if (vBadSegment > 0.5) {
         gl_FragColor = gladly_apply_color(bad_color);
       } else {
-        gl_FragColor = map_color_s(colorscale, color_range, vLineIndex, color_scale_type, 0.0);
+        gl_FragColor = map_color_(vLineIndex);
       }
     }
   `,
@@ -141,11 +139,6 @@ export const multiLineLayerType = new LayerType({
         domains: { line_index: [idx, idx] },
         primitive: "lines",
         lineWidth: 2,
-        nameMap: {
-          colorscale_line_index:       'colorscale',
-          color_range_line_index:      'color_range',
-          color_scale_type_line_index: 'color_scale_type',
-        },
       }
     })
   }

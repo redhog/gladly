@@ -5,18 +5,22 @@ import { Data } from "../core/Data.js"
 export class ScatterLayerTypeBase extends LayerType {
   _getAxisConfig(parameters, data) {
     const d = Data.wrap(data)
-    const { xData, yData, vData, vData2, fData, xAxis, yAxis } = parameters
-    const colorAxisQuantityKinds = [d.getQuantityKind(vData) ?? vData]
-    if (vData2) {
-      colorAxisQuantityKinds.push(d.getQuantityKind(vData2) ?? vData2)
-    }
-    const filterAxisQuantityKinds = fData ? [d.getQuantityKind(fData) ?? fData] : []
+    const { xData, yData, vData: vDataRaw, vData2: vData2Raw, fData: fDataRaw, xAxis, yAxis } = parameters
+    const vData  = vDataRaw  === "none" ? null : vDataRaw
+    const vData2 = vData2Raw === "none" ? null : vData2Raw
+    const fData  = fDataRaw  === "none" ? null : fDataRaw
+    const colorAxisQuantityKinds = {}
+    if (vData) colorAxisQuantityKinds['']  = d.getQuantityKind(vData)  ?? vData
+    if (vData2) colorAxisQuantityKinds['2'] = d.getQuantityKind(vData2) ?? vData2
+    const colorAxis2dQuantityKinds = vData && vData2 ? { '': ['', '2'] } : {}
+    const filterAxisQuantityKinds = fData ? { '': d.getQuantityKind(fData) ?? fData } : {}
     return {
       xAxis,
       xAxisQuantityKind: d.getQuantityKind(xData) ?? xData,
       yAxis,
       yAxisQuantityKind: d.getQuantityKind(yData) ?? yData,
       colorAxisQuantityKinds,
+      colorAxis2dQuantityKinds,
       filterAxisQuantityKinds,
     }
   }
@@ -60,16 +64,11 @@ export class ScatterLayerTypeBase extends LayerType {
         default: "yaxis_left",
         description: "Which y-axis to use for this layer"
       },
-      alphaBlend: {
-        type: "boolean",
-        default: false,
-        description: "Map the normalized color value to alpha so low values fade to transparent"
-      },
     }
   }
 
   _resolveColorData(parameters, d) {
-    const { xData, yData, vData: vDataOrig, vData2: vData2Orig, fData: fDataOrig, alphaBlend = false } = parameters
+    const { xData, yData, vData: vDataOrig, vData2: vData2Orig, fData: fDataOrig } = parameters
     const vData = vDataOrig == "none" ? null : vDataOrig
     const vData2 = vData2Orig == "none" ? null : vData2Orig
     const fData = fDataOrig == "none" ? null : fDataOrig
@@ -92,7 +91,7 @@ export class ScatterLayerTypeBase extends LayerType {
     if (vData2 && !srcV2) throw new Error(`Data column '${vData2}' not found`)
     if (fData && !srcF) throw new Error(`Data column '${fData}' not found`)
 
-    return { xData, yData, vData, vData2, fData, alphaBlend, xQK, yQK, vQK, vQK2, fQK, srcX, srcY, srcV, srcV2, srcF }
+    return { xData, yData, vData, vData2, fData, xQK, yQK, vQK, vQK2, fQK, srcX, srcY, srcV, srcV2, srcF }
   }
 
   _buildDomains(d, xData, yData, vData, vData2, xQK, yQK, vQK, vQK2) {
@@ -117,26 +116,4 @@ export class ScatterLayerTypeBase extends LayerType {
     return domains
   }
 
-  _buildNameMap(vData, vQK, vData2, vQK2, fData, fQK) {
-    return {
-      ...(vData ? {
-        [`colorscale_${vQK}`]: 'colorscale',
-        [`color_range_${vQK}`]: 'color_range',
-        [`color_scale_type_${vQK}`]: 'color_scale_type',
-      } : {}),
-      ...(vData2 ? {
-        [`colorscale_${vQK2}`]: 'colorscale2',
-        [`color_range_${vQK2}`]: 'color_range2',
-        [`color_scale_type_${vQK2}`]: 'color_scale_type2',
-      } : {}),
-      ...(fData ? { [`filter_range_${fQK}`]: 'filter_range' } : {}),
-    }
-  }
-
-  _buildBlendConfig(alphaBlend) {
-    return alphaBlend ? {
-      enable: true,
-      func: { srcRGB: 'src alpha', dstRGB: 'one minus src alpha', srcAlpha: 0, dstAlpha: 1 },
-    } : null
-  }
 }

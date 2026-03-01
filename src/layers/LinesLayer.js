@@ -34,13 +34,11 @@ function makeLinesVert(hasFilter) {
   varying float v_t;
   void main() {
     float same_seg = abs(a_seg0 - a_seg1) < 0.5 ? 1.0 : 0.0;
-    ${hasFilter ? 'if (!filter_in_range(filter_range, a_f0) || !filter_in_range(filter_range, a_f1)) same_seg = 0.0;' : ''}
+    ${hasFilter ? 'if (!filter_(a_f0) || !filter_(a_f1)) same_seg = 0.0;' : ''}
     float t = same_seg * a_endPoint;
     float x = mix(a_x0, a_x1, t);
     float y = mix(a_y0, a_y1, t);
-    float nx = normalize_axis(x, xDomain, xScaleType);
-    float ny = normalize_axis(y, yDomain, yScaleType);
-    gl_Position = vec4(nx * 2.0 - 1.0, ny * 2.0 - 1.0, 0, 1);
+    gl_Position = plot_pos(vec2(x, y));
     v_color_start  = a_v0;
     v_color_end    = a_v1;
     v_color2_start = a_v20;
@@ -50,54 +48,32 @@ function makeLinesVert(hasFilter) {
 `
 }
 
-const LINES_FRAG = `
+function makeLinesFrag(hasSecond) {
+  return `
   precision mediump float;
-
-  uniform int colorscale;
-  uniform vec2 color_range;
-  uniform float color_scale_type;
-
-  uniform int colorscale2;
-  uniform vec2 color_range2;
-  uniform float color_scale_type2;
-
-  uniform float alphaBlend;
   uniform float u_lineColorMode;
-  uniform float u_useSecondColor;
-
   varying float v_color_start;
   varying float v_color_end;
   varying float v_color2_start;
   varying float v_color2_end;
   varying float v_t;
-
   void main() {
     float value = u_lineColorMode > 0.5
       ? (v_t < 0.5 ? v_color_start : v_color_end)
       : mix(v_color_start, v_color_end, v_t);
-
-    if (u_useSecondColor > 0.5) {
-      float value2 = u_lineColorMode > 0.5
-        ? (v_t < 0.5 ? v_color2_start : v_color2_end)
-        : mix(v_color2_start, v_color2_end, v_t);
-
-      gl_FragColor = map_color_s_2d(
-        colorscale, color_range, value, color_scale_type,
-        colorscale2, color_range2, value2, color_scale_type2
-      );
-
-      if (alphaBlend > 0.5) {
-        gl_FragColor.a *= gl_FragColor.a;
-      }
-    } else {
-      gl_FragColor = map_color_s(colorscale, color_range, value, color_scale_type, alphaBlend);
-    }
+    ${hasSecond ? `
+    float value2 = u_lineColorMode > 0.5
+      ? (v_t < 0.5 ? v_color2_start : v_color2_end)
+      : mix(v_color2_start, v_color2_end, v_t);
+    gl_FragColor = map_color_2d_(vec2(value, value2));` : `
+    gl_FragColor = map_color_(value);`}
   }
 `
+}
 
 class LinesLayerType extends ScatterLayerTypeBase {
   constructor() {
-    super({ name: "lines", vert: makeLinesVert(false), frag: LINES_FRAG })
+    super({ name: "lines", vert: makeLinesVert(false), frag: makeLinesFrag(false) })
   }
 
   schema(data) {
@@ -132,12 +108,10 @@ class LinesLayerType extends ScatterLayerTypeBase {
   _createLayer(parameters, data) {
     const d = Data.wrap(data)
     const { lineSegmentIdData, lineColorMode = "gradient", lineWidth = 1.0 } = parameters
-    const { xData, yData, vData, vData2, fData, alphaBlend, xQK, yQK, vQK, vQK2, fQK, srcX, srcY, srcV, srcV2, srcF } =
+    const { xData, yData, vData, vData2, fData, xQK, yQK, vQK, vQK2, fQK, srcX, srcY, srcV, srcV2, srcF } =
       this._resolveColorData(parameters, d)
 
-    const useSecond = vData2 ? 1.0 : 0.0
     const domains = this._buildDomains(d, xData, yData, vData, vData2, xQK, yQK, vQK, vQK2)
-    const blendConfig = this._buildBlendConfig(alphaBlend)
 
     const N = srcX.length
     const segIds = lineSegmentIdData ? d.getData(lineSegmentIdData) : null
@@ -172,25 +146,21 @@ class LinesLayerType extends ScatterLayerTypeBase {
         ...(fData ? { a_f0: 1, a_f1: 1 } : {}),
       },
       uniforms: {
-        alphaBlend: alphaBlend ? 1.0 : 0.0,
         u_lineColorMode: lineColorMode === "midpoint" ? 1.0 : 0.0,
-        u_useSecondColor: useSecond,
-        ...(vData ? {} : { colorscale: 0, color_range: [0, 1], color_scale_type: 0.0 }),
-        ...(vData2 ? {} : { colorscale2: 0, color_range2: [0, 1], color_scale_type2: 0.0 })
       },
-      nameMap: this._buildNameMap(vData, vQK, vData2, vQK2, fData, fQK),
       domains,
       primitive: "lines",
       lineWidth,
       vertexCount: 2,
       instanceCount: N - 1,
-      blend: blendConfig,
     }]
   }
 
   createDrawCommand(regl, layer) {
-    const hasFilter = layer.filterAxes.length > 0
+    const hasFilter = Object.keys(layer.filterAxes).length > 0
+    const hasSecond = Object.keys(layer.colorAxes2d).length > 0
     this.vert = makeLinesVert(hasFilter)
+    this.frag = makeLinesFrag(hasSecond)
     return super.createDrawCommand(regl, layer)
   }
 }

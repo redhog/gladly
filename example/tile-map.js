@@ -130,14 +130,13 @@ const plotConfig = {
         vData: 'popDens',
         xAxis: 'xaxis_bottom',
         yAxis: 'yaxis_left',
-        alphaBlend: true,
       },
     },
   ],
   axes: {
     xaxis_bottom: { min: -180, max: 180 },
     yaxis_left:   { min: -80,  max: 80  },
-    pop_density:  { colorbar: 'vertical', colorscale: 'hot', min: 0, max: 1 },
+    pop_density:  { colorbar: 'vertical', colorscale: 'hot', min: 0, max: 1, alpha_blend: 1.0 },
   },
 }
 

@@ -35,9 +35,7 @@ const HIST_VERT = `
     float bx = x_center + (side * 2.0 - 1.0) * u_binHalfWidth;
     float by = top * count;
 
-    float nx = normalize_axis(bx, xDomain, xScaleType);
-    float ny = normalize_axis(by, yDomain, yScaleType);
-    gl_Position = vec4(nx * 2.0 - 1.0, ny * 2.0 - 1.0, 0.0, 1.0);
+    gl_Position = plot_pos(vec2(bx, by));
   }
 `
 
@@ -64,7 +62,7 @@ class HistogramLayerType extends LayerType {
       xAxisQuantityKind: d.getQuantityKind(vData) ?? vData,
       yAxis,
       yAxisQuantityKind: "count",
-      ...(filterQK ? { filterAxisQuantityKinds: [filterQK] } : {}),
+      ...(filterQK ? { filterAxisQuantityKinds: { '': filterQK } } : {}),
     }
   }
 

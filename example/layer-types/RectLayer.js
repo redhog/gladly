@@ -19,7 +19,7 @@ export const rectLayerType = new LayerType({
       xAxisQuantityKind: d.getQuantityKind(params.xData) ?? params.xData,
       yAxis: params.yAxis,
       yAxisQuantityKind: d.getQuantityKind(params.yTopData) ?? params.yTopData,
-      colorAxisQuantityKinds: [d.getQuantityKind(params.vData) ?? params.vData],
+      colorAxisQuantityKinds: { '': d.getQuantityKind(params.vData) ?? params.vData },
     }
   },
 
@@ -52,9 +52,7 @@ export const rectLayerType = new LayerType({
       float xPos = cx > 0.5 ? x + hr : x - hl;
       float yPos = cy > 0.5 ? top : bot;
 
-      float nx = normalize_axis(xPos, xDomain, xScaleType);
-      float ny = normalize_axis(yPos, yDomain, yScaleType);
-      gl_Position = vec4(nx * 2.0 - 1.0, ny * 2.0 - 1.0, 0.0, 1.0);
+      gl_Position = plot_pos(vec2(xPos, yPos));
       value = color_data;
     }
   `,
@@ -67,7 +65,7 @@ export const rectLayerType = new LayerType({
     varying float value;
 
     void main() {
-      gl_FragColor = map_color_s(colorscale, color_range, value, color_scale_type, 0.0);
+      gl_FragColor = map_color_(value);
     }
   `,
 
@@ -126,28 +124,26 @@ export const rectLayerType = new LayerType({
     const botMin = bot.reduce((a, v) => Math.min(a, v), Infinity)
     const botMax = bot.reduce((a, v) => Math.max(a, v), -Infinity)
 
+    const vMin = v.reduce((a, v) => Math.min(a, v), Infinity)
+    const vMax = v.reduce((a, v) => Math.max(a, v), -Infinity)
+
     return [{
       attributes: {
-        cx: QUAD_CX,  // per-vertex (divisor 0)
-        cy: QUAD_CY,  // per-vertex (divisor 0)
-        x,            // per-instance (divisor 1)
-        xPrev,        // per-instance (divisor 1)
-        xNext,        // per-instance (divisor 1)
-        top,          // per-instance (divisor 1)
-        bot,          // per-instance (divisor 1)
-        [vQK]: v,     // per-instance color data, keyed by quantity kind (divisor 1)
+        cx: QUAD_CX,    // per-vertex (divisor 0)
+        cy: QUAD_CY,    // per-vertex (divisor 0)
+        x,              // per-instance (divisor 1)
+        xPrev,          // per-instance (divisor 1)
+        xNext,          // per-instance (divisor 1)
+        top,            // per-instance (divisor 1)
+        bot,            // per-instance (divisor 1)
+        color_data: v,  // per-instance color data (divisor 1)
       },
-      attributeDivisors: { x: 1, xPrev: 1, xNext: 1, top: 1, bot: 1, [vQK]: 1 },
+      attributeDivisors: { x: 1, xPrev: 1, xNext: 1, top: 1, bot: 1, color_data: 1 },
       uniforms: { uE: e },
-      nameMap: {
-        [vQK]:                        'color_data',
-        [`colorscale_${vQK}`]:        'colorscale',
-        [`color_range_${vQK}`]:       'color_range',
-        [`color_scale_type_${vQK}`]:  'color_scale_type',
-      },
       domains: {
         [xQK]: [xMin, xMax],
         [yQK]: [Math.min(topMin, botMin), Math.max(topMax, botMax)],
+        [vQK]: [vMin, vMax],
       },
       primitive: "triangles",
       vertexCount: 6,

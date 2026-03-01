@@ -90,22 +90,21 @@ this._renderCallbacks    // Set<function> — called after each render()
   xAxisQuantityKind: string|undefined,
   yAxis: string|undefined,               // default y-axis position
   yAxisQuantityKind: string|undefined,
-  colorAxisQuantityKinds: string[],      // static quantity kinds for color axes
-  filterAxisQuantityKinds: string[],     // static quantity kinds for filter axes
+  colorAxisQuantityKinds: Record<string,string>,  // static dict: GLSL suffix → quantity kind for color axes
+  filterAxisQuantityKinds: Record<string,string>, // static dict: GLSL suffix → quantity kind for filter axes
   vert: string,        // GLSL vertex shader
   frag: string,        // GLSL fragment shader
   schema: (data) => JSONSchema,
-  createLayer: (parameters, data) => Array<{ attributes, uniforms, primitive?, vertexCount?, nameMap? }>,
+  createLayer: (parameters, data) => Array<{ attributes, uniforms, primitive?, vertexCount? }>,
   getAxisConfig: (parameters, data) => axisConfig,  // optional dynamic resolver
 }
 ```
 
 **`createDrawCommand(regl, layer)`**
-- Applies `layer.nameMap` to rename attribute and uniform keys to shader-visible names
 - Compiles shaders into a regl draw command
 - Adds standard uniforms: `xDomain`, `yDomain`, `count`
-- Adds `colorscale_<quantityKind>` + `color_range_<quantityKind>` for each color axis
-- Adds `filter_range_<quantityKind>` (vec4) for each filter axis
+- For each `[suffix, qk]` in `layer.colorAxes`: adds GLSL uniforms `colorscale${suffix}`, `color_range${suffix}`, `color_scale_type${suffix}` (reading from internal props keyed by quantity kind)
+- For each `[suffix, qk]` in `layer.filterAxes`: adds GLSL uniforms `filter_range${suffix}`, `filter_scale_type${suffix}`
 - Injects `normalize_axis()`, `map_color()`, and `filter_in_range()` GLSL helpers as needed
 
 **`createLayer(parameters, data)`**
@@ -130,8 +129,8 @@ this._renderCallbacks    // Set<function> — called after each render()
 
 **Constructor validation:**
 - All `attributes` values must be `Float32Array` — throws `TypeError` otherwise
-- `colorAxes` must be `string[]` — each element is a quantity kind
-- `filterAxes` must be `string[]` — each element is a quantity kind
+- `colorAxes` must be `Record<string,string>` — maps GLSL name suffix to quantity kind
+- `filterAxes` must be `Record<string,string>` — maps GLSL name suffix to quantity kind
 
 **Why Float32Array?**
 - Direct GPU memory mapping — no conversion overhead
@@ -318,7 +317,6 @@ Imported by `index.js` as a side-effect alongside `MatplotlibColorscales.js`.
 - `_commonSchemaProperties(dataProperties)` — returns JSON Schema properties common to both layer types (`xData`, `yData`, `vData`, `vData2`, `xAxis`, `yAxis`, `alphaBlend`)
 - `_resolveColorData(parameters, d)` — strips `"none"` sentinels, validates columns exist, returns resolved data arrays and quantity kinds
 - `_buildDomains(...)` — constructs the `domains` object from data metadata
-- `_buildNameMap(...)` — constructs the `nameMap` that renames per-quantity-kind uniforms to fixed shader names
 - `_buildBlendConfig(alphaBlend)` — returns a regl blend config or `null`
 
 ---

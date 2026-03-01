@@ -530,12 +530,12 @@ export class Plot {
       if (ac.yAxis) this.axisRegistry.ensureAxis(ac.yAxis, ac.yAxisQuantityKind, axesConfig[ac.yAxis]?.scale ?? axesConfig[ac.yAxisQuantityKind]?.scale)
 
       // Register color axes (colorscale comes from config or quantity kind registry, not from here)
-      for (const quantityKind of ac.colorAxisQuantityKinds) {
+      for (const quantityKind of Object.values(ac.colorAxisQuantityKinds)) {
         this.colorAxisRegistry.ensureColorAxis(quantityKind)
       }
 
       // Register filter axes
-      for (const quantityKind of ac.filterAxisQuantityKinds) {
+      for (const quantityKind of Object.values(ac.filterAxisQuantityKinds)) {
         this.filterAxisRegistry.ensureFilterAxis(quantityKind)
       }
 
@@ -611,14 +611,15 @@ export class Plot {
         props.instances = layer.instanceCount
       }
 
-      for (const qk of layer.colorAxes) {
+      for (const qk of Object.values(layer.colorAxes)) {
         props[`colorscale_${qk}`] = this.colorAxisRegistry.getColorscaleIndex(qk)
         const range = this.colorAxisRegistry.getRange(qk)
         props[`color_range_${qk}`] = range ?? [0, 1]
         props[`color_scale_type_${qk}`] = this._getScaleTypeFloat(qk)
+        props[`alpha_blend_${qk}`] = this.colorAxisRegistry.getAlphaBlend(qk)
       }
 
-      for (const qk of layer.filterAxes) {
+      for (const qk of Object.values(layer.filterAxes)) {
         props[`filter_range_${qk}`] = this.filterAxisRegistry.getRangeUniform(qk)
         props[`filter_scale_type_${qk}`] = this._getScaleTypeFloat(qk)
       }
@@ -701,13 +702,13 @@ export class Plot {
           u_pickLayerIndex: i,
         }
         if (layer.instanceCount !== null) props.instances = layer.instanceCount
-        for (const qk of layer.colorAxes) {
+        for (const qk of Object.values(layer.colorAxes)) {
           props[`colorscale_${qk}`] = this.colorAxisRegistry.getColorscaleIndex(qk)
           const range = this.colorAxisRegistry.getRange(qk)
           props[`color_range_${qk}`] = range ?? [0, 1]
           props[`color_scale_type_${qk}`] = this._getScaleTypeFloat(qk)
         }
-        for (const qk of layer.filterAxes) {
+        for (const qk of Object.values(layer.filterAxes)) {
           props[`filter_range_${qk}`] = this.filterAxisRegistry.getRangeUniform(qk)
           props[`filter_scale_type_${qk}`] = this._getScaleTypeFloat(qk)
         }
