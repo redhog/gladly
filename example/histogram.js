@@ -41,20 +41,38 @@ registerAxisQuantityKind("count", { label: "Count", scale: "linear" })
 dataPromise.then(data => {
 
 const plotConfig = {
-  layers: [
-    {
-      histogram: {
-        vData: "y1",
-        bins: 80,
-        color: [0.18, 0.52, 0.8, 0.9]
-      }
-    }
-  ],
-  axes: {
-    voltage_V: { label: "Voltage (V)" },
-    count:     { label: "Count" }
-  }
-}
+    "layers": [
+        {
+            "histogram": {
+                "vData": "y1",
+                "filterColumn": "y2",
+                "bins": 0,
+                "color": [
+                    0.2,
+                    0.5,
+                    0.8,
+                    1
+                ],
+                "xAxis": "xaxis_bottom",
+                "yAxis": "yaxis_left"
+            }
+        }
+    ],
+    "axes": {
+        "voltage_V": {
+            "label": "Voltage (V)"
+        },
+        "current_A": {
+          "filterbar": "horizontal",
+          "min": 0,
+          "max": 50
+        },
+        "count": {
+            "label": "Count"
+        }
+    },
+    "colorbars": []
+};
 
 const plot = new Plot(document.getElementById('tab5-plot1'))
 
