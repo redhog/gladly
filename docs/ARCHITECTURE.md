@@ -14,10 +14,18 @@ Gladly is a GPU-accelerated multi-axis plotting library built on WebGL (via regl
 
 ---
 
-## Sub-topics
+## Architecture sub-topics
 
 - **[Module Responsibilities](architecture/Modules.md)** — per-module purpose, patterns, key properties and methods
 - **[Data Flow & Rendering](architecture/DataFlow.md)** — declarative setup, render cycle, zoom/pan interaction
+
+## User-facing documentation
+
+- **[API Overview & Data Model](API.md)** — concepts, data model, documentation map
+- **[Configuring Plots](api/PlotConfiguration.md)** — `plot.update()`, axes, auto-range, interaction
+- **[Writing Layer Types](api/LayerTypes.md)** — shaders, axis declarations, GLSL helpers
+- **[Computed Attributes](api/ComputedAttributes.md)** — texture and GLSL computations
+- **[API Reference](api/Reference.md)** — complete public API signatures
 
 ---
 

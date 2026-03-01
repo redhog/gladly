@@ -74,6 +74,10 @@ plot.update({
 
 ## Next steps
 
-- **[Configuring Plots](api/PlotConfiguration.md)** — axes config, auto-range, multi-layer, interaction
-- **[Writing Layer Types](api/LayerTypes.md)** — custom shaders, color axes, filter axes
-- **[API Reference](api/Reference.md)** — full reference for `Plot`, `linkAxes`, `registerLayerType`, and more
+- **[API Overview & Data Model](API.md)** — understand plots, layers, axes, and colorscales before going deeper
+- **[Configuring Plots](api/PlotConfiguration.md)** — full `plot.update()` format: axes, auto-range, multi-layer, zoom/pan, GPU picking, events
+- **[Built-in Layer Types](api/BuiltInLayerTypes.md)** — `points`, `lines`, `tile`, `colorbar`, `filterbar` — parameters and examples
+- **[Colorbars and Filterbars](api/ColorbarsAndFilterbars.md)** — add floating colorbar/filterbar widgets to your plot
+- **[Writing Layer Types](api/LayerTypes.md)** — custom GLSL shaders, color/filter axes, instanced rendering
+- **[Computed Attributes](api/ComputedAttributes.md)** — use histograms, KDE, FFT, and custom GPU computations as layer data
+- **[API Reference](api/Reference.md)** — complete signatures for `Plot`, `Axis`, `linkAxes`, `Data`, `registerLayerType`, and all public exports

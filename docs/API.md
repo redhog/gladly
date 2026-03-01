@@ -8,6 +8,38 @@ The library features a **declarative API** where you register layer types once a
 
 ---
 
+## Where to start
+
+**New to Gladly?** Read the [Quick Start](Quickstart.md) first — it gets you a working plot in a few minutes.
+
+Then read the **Data Model** section below to understand the core concepts, and follow the links to deeper guides for each topic.
+
+---
+
+## All documentation
+
+### User guides
+
+| Document | Covers |
+|----------|--------|
+| **[Quick Start](Quickstart.md)** | Installation, minimal working example |
+| **[Configuring Plots](api/PlotConfiguration.md)** | `plot.update()` format, spatial/color/filter axes, auto-range, multi-layer, zoom/pan, GPU picking, events |
+| **[Built-in Layer Types](api/BuiltInLayerTypes.md)** | `points`, `lines`, `tile`, `colorbar`, `filterbar` — parameters and examples |
+| **[Colorbars and Filterbars](api/ColorbarsAndFilterbars.md)** | Floating colorbar/filterbar widgets: auto-creation via config and manual placement |
+| **[Writing Layer Types](api/LayerTypes.md)** | Custom `LayerType`: shaders, color/filter axes, GLSL helpers, instanced rendering, picking support |
+| **[Computed Attributes](api/ComputedAttributes.md)** | GPU texture and GLSL computations as layer attributes: `TextureComputation`, `GlslComputation`, built-in computations (histogram, KDE, FFT, convolution) |
+| **[API Reference](api/Reference.md)** | Complete signatures for `Plot`, `Axis`, `linkAxes`, `Data`, `registerLayerType`, and all other public exports |
+
+### Architecture (for contributors)
+
+| Document | Covers |
+|----------|--------|
+| **[Architecture Overview](ARCHITECTURE.md)** | Design patterns, architectural decisions, performance considerations, project structure |
+| **[Module Responsibilities](architecture/Modules.md)** | Per-module purpose, key properties and methods |
+| **[Data Flow & Rendering](architecture/DataFlow.md)** | Setup phase, per-frame render cycle, zoom/pan interaction |
+
+---
+
 ## Data Model
 
 Understanding the core data model makes all other concepts fall into place.
@@ -134,12 +166,12 @@ plot.update({
 
 ---
 
-## Sub-topics
+## Suggested reading order
 
-- **[Quick Start](Quickstart.md)** — installation and minimal working example
-- **[Configuring Plots](api/PlotConfiguration.md)** — `plot.update()`, axes config, auto-range, multi-layer, interaction, examples
-- **[Colorbars and Filterbars](api/ColorbarsAndFilterbars.md)** — floating color/filter widgets, auto-creation via config, manual placement
-- **[Writing Layer Types](api/LayerTypes.md)** — `LayerType` constructor, shaders, color axes, filter axes, GLSL helpers, constants
-- **[Computed Attributes](api/ComputedAttributes.md)** — GPU texture and GLSL computations in layer attributes; `TextureComputation` / `GlslComputation` base classes; `EXPRESSION_REF`; `computationSchema`; built-in computations
-- **[Built-in Layer Types](api/BuiltInLayerTypes.md)** — `points`, `lines`, `colorbar`, `filterbar` layer type reference
-- **[API Reference](api/Reference.md)** — `Plot`, `registerLayerType`, `getLayerType`, `Data` and other public API entries
+1. **[Quick Start](Quickstart.md)** — get a working plot running
+2. **[Configuring Plots](api/PlotConfiguration.md)** — learn the full `plot.update()` format and all axis options
+3. **[Built-in Layer Types](api/BuiltInLayerTypes.md)** — see what `points`, `lines`, and `tile` can do
+4. **[Colorbars and Filterbars](api/ColorbarsAndFilterbars.md)** — add interactive color/filter widgets
+5. **[Writing Layer Types](api/LayerTypes.md)** — define custom visualisation strategies with GLSL shaders
+6. **[Computed Attributes](api/ComputedAttributes.md)** — use GPU computations (histograms, KDE, FFT) as layer data
+7. **[API Reference](api/Reference.md)** — look up any function or class signature
