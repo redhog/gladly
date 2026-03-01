@@ -64,11 +64,22 @@ Plot._initialize()
   │       └─> layerType.createDrawCommand(regl, layer)
   │           ├─> Inject map_color() GLSL if color axes present
   │           ├─> Inject filter_in_range() GLSL if filter axes present
+  │           ├─> For each attribute value:
+  │           │   └─> resolveAttributeExpr(regl, expr, name, plot)
+  │           │       ├─> Float32Array → { kind: 'buffer', value }
+  │           │       └─> { computationName: params } → { kind: 'computed', glslExpr, context }
+  │           │           ├─> TextureComputation: allocates texture, registers sampler
+  │           │           │   uniform + GLSL sample expr; adds axisUpdater for reactive
+  │           │           │   recompute when tracked axis domains change
+  │           │           └─> GlslComputation: recursively resolves params to GLSL exprs,
+  │           │               returns composite GLSL float expression
+  │           ├─> Prepend collected globalDecls to vertex shader source
   │           ├─> Compile vertex + fragment shaders
   │           ├─> Build attributes map  { name: regl.prop('attributes.name') }
   │           ├─> Build uniforms map    { xDomain, yDomain, count,
   │           │                           colorscale_<slot>, color_range_<slot>,
-  │           │                           filter_range_<slot> }
+  │           │                           filter_range_<slot>,
+  │           │                           u_cgen_<name> (texture/scalar uniforms from computations) }
   │           └─> Return regl draw function
   │
   ├─> Plot._setDomains(config.axes)
@@ -95,6 +106,12 @@ Plot._initialize()
 plot.render()
   │
   ├─> regl.clear({ color: [1, 1, 1, 1] })   — white background
+  │
+  ├─> Refresh axis-reactive texture computations:
+  │   └─> For each axisUpdater registered during createDrawCommand:
+  │       └─> updater.refreshIfNeeded(plot)
+  │           └─> If any tracked axis domain changed: recompute texture in-place
+  │               (dynamic uniform picks up new texture on next draw call)
   │
   ├─> For each (layer, drawCommand):
   │   │

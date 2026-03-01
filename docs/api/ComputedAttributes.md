@@ -37,7 +37,7 @@ createLayer(parameters, data) {
 A computation expression is a **single-key object** `{ computationName: params }` where:
 
 - `computationName` is a registered texture or GLSL computation.
-- `params` is the parameter value, which is resolved recursively before being passed to the computation function. Params can be:
+- `params` is the parameter value, which is resolved recursively before being passed to the computation. Params can be:
   - A `Float32Array` — used as-is.
   - A number — passed as a scalar (uploaded as a GPU uniform inside texture computations).
   - A regl texture — used as-is.
@@ -56,21 +56,29 @@ Texture computations receive a `getAxisDomain` callback. Calling it for an axis 
 This makes it straightforward to build filter-aware computations:
 
 ```javascript
-registerTextureComputation('filteredHistogram', (regl, params, getAxisDomain) => {
-  const { input, filterValues, filterAxisId, bins } = params
-  const domain = getAxisDomain(filterAxisId)  // registers the axis as a dependency
-  const filterMin = domain?.[0] ?? null
-  const filterMax = domain?.[1] ?? null
+import { TextureComputation, registerTextureComputation } from 'gladly-plot'
+import makeHistogram from './hist.js'
 
-  const filtered = []
-  for (let i = 0; i < input.length; i++) {
-    const fv = filterValues[i]
-    if (filterMin !== null && fv < filterMin) continue
-    if (filterMax !== null && fv > filterMax) continue
-    filtered.push(input[i])
+class FilteredHistogramComputation extends TextureComputation {
+  compute(regl, params, getAxisDomain) {
+    const { input, filterValues, filterAxisId, bins } = params
+    const domain = getAxisDomain(filterAxisId)  // registers the axis as a dependency
+    const filterMin = domain?.[0] ?? null
+    const filterMax = domain?.[1] ?? null
+
+    const filtered = []
+    for (let i = 0; i < input.length; i++) {
+      const fv = filterValues[i]
+      if (filterMin !== null && fv < filterMin) continue
+      if (filterMax !== null && fv > filterMax) continue
+      filtered.push(input[i])
+    }
+    return makeHistogram(regl, new Float32Array(filtered), { bins })
   }
-  return makeHistogram(regl, new Float32Array(filtered), { bins })
-})
+  schema(data) { /* ... */ }
+}
+
+registerTextureComputation('filteredHistogram', new FilteredHistogramComputation())
 ```
 
 ---
@@ -78,15 +86,17 @@ registerTextureComputation('filteredHistogram', (regl, params, getAxisDomain) =>
 ## Registering a Texture Computation
 
 ```javascript
-registerTextureComputation(name, fn)
+registerTextureComputation(name, computation)
 ```
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `name` | string | Key used in computation expressions: `{ [name]: params }` |
-| `fn` | function | `(regl, params, getAxisDomain) => Texture` |
+| `computation` | `TextureComputation` | Instance of a class extending `TextureComputation` |
 
-**`fn` parameters:**
+Subclass `TextureComputation` and implement two methods:
+
+### `compute(regl, params, getAxisDomain)`
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
@@ -96,35 +106,58 @@ registerTextureComputation(name, fn)
 
 **Return value:** A regl texture. The framework samples it per-vertex using `a_pickId` as the texel index, reading the `R` channel as the attribute value.
 
+### `schema(data)`
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `data` | `Data \| null` | The plot's data object, or `null` when called without a data context. |
+
+**Return value:** A JSON Schema (Draft 2020-12) object describing the `params` structure accepted by `compute`. Use `EXPRESSION_REF` for parameters that can be a `Float32Array` or a sub-expression.
+
 **Example — custom weighted average texture:**
 
 ```javascript
-import { registerTextureComputation } from 'gladly-plot'
+import { TextureComputation, EXPRESSION_REF, registerTextureComputation } from 'gladly-plot'
 
-registerTextureComputation('weightedAverage', (regl, params) => {
-  const { values, weights, bins } = params  // both Float32Arrays
-  const outData = new Float32Array(bins * 4)  // RGBA, R channel used
+class WeightedAverageComputation extends TextureComputation {
+  compute(regl, params) {
+    const { values, weights, bins } = params  // both Float32Arrays
+    const outData = new Float32Array(bins * 4)  // RGBA, R channel used
 
-  for (let b = 0; b < bins; b++) {
-    let sumW = 0, sumWV = 0
-    for (let i = 0; i < values.length; i++) {
-      const bIndex = Math.floor(values[i] * bins)
-      if (Math.min(bIndex, bins - 1) !== b) continue
-      sumW  += weights[i]
-      sumWV += weights[i] * values[i]
+    for (let b = 0; b < bins; b++) {
+      let sumW = 0, sumWV = 0
+      for (let i = 0; i < values.length; i++) {
+        const bIndex = Math.floor(values[i] * bins)
+        if (Math.min(bIndex, bins - 1) !== b) continue
+        sumW  += weights[i]
+        sumWV += weights[i] * values[i]
+      }
+      outData[b * 4] = sumW > 0 ? sumWV / sumW : 0  // R channel
     }
-    outData[b * 4] = sumW > 0 ? sumWV / sumW : 0  // R channel
+
+    return regl.texture({
+      data: outData,
+      width: bins,
+      height: 1,
+      type: 'float',
+      format: 'rgba'
+    })
   }
 
-  const tex = regl.texture({
-    data: outData,
-    width: bins,
-    height: 1,
-    type: 'float',
-    format: 'rgba'
-  })
-  return tex
-})
+  schema(data) {
+    return {
+      type: 'object',
+      properties: {
+        values:  EXPRESSION_REF,
+        weights: EXPRESSION_REF,
+        bins:    { type: 'number' }
+      },
+      required: ['values', 'weights', 'bins']
+    }
+  }
+}
+
+registerTextureComputation('weightedAverage', new WeightedAverageComputation())
 ```
 
 Usage in `createLayer`:
@@ -140,15 +173,17 @@ attributes: {
 ## Registering a GLSL Computation
 
 ```javascript
-registerGlslComputation(name, fn)
+registerGlslComputation(name, computation)
 ```
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `name` | string | Key used in computation expressions: `{ [name]: params }` |
-| `fn` | function | `(resolvedGlslParams) => string` |
+| `computation` | `GlslComputation` | Instance of a class extending `GlslComputation` |
 
-**`fn` parameters:**
+Subclass `GlslComputation` and implement two methods:
+
+### `glsl(resolvedGlslParams)`
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
@@ -156,13 +191,32 @@ registerGlslComputation(name, fn)
 
 **Return value:** A GLSL expression string that evaluates to a `float`.
 
+### `schema(data)`
+
+Same signature as for `TextureComputation.schema`. Return a JSON Schema describing the params object.
+
 **Example — normalised difference:**
 
 ```javascript
-import { registerGlslComputation } from 'gladly-plot'
+import { GlslComputation, EXPRESSION_REF, registerGlslComputation } from 'gladly-plot'
 
-registerGlslComputation('normalizedDiff', ({ a, b }) =>
-  `((${a}) - (${b})) / ((${a}) + (${b}) + 1e-6)`)
+class NormalizedDiffComputation extends GlslComputation {
+  glsl({ a, b }) {
+    return `((${a}) - (${b})) / ((${a}) + (${b}) + 1e-6)`
+  }
+  schema(data) {
+    return {
+      type: 'object',
+      properties: {
+        a: EXPRESSION_REF,
+        b: EXPRESSION_REF
+      },
+      required: ['a', 'b']
+    }
+  }
+}
+
+registerGlslComputation('normalizedDiff', new NormalizedDiffComputation())
 ```
 
 Usage in `createLayer`:
@@ -182,6 +236,79 @@ attributes: {
 
 ---
 
+## `EXPRESSION_REF`
+
+```javascript
+import { EXPRESSION_REF } from 'gladly-plot'
+```
+
+A JSON Schema `$ref` object (`{ '$ref': '#/$defs/expression' }`) for use inside `schema()` methods. Use it for any parameter that can accept a `Float32Array` or a nested computation expression:
+
+```javascript
+schema(data) {
+  return {
+    type: 'object',
+    properties: {
+      input: EXPRESSION_REF,   // accepts Float32Array or { computationName: params }
+      bins:  { type: 'number' }
+    },
+    required: ['input']
+  }
+}
+```
+
+The `$ref` resolves to the `expression` entry in `$defs` produced by `computationSchema()`, which is an `anyOf` covering all registered computations and column names.
+
+---
+
+## `computationSchema(data)`
+
+```javascript
+import { computationSchema } from 'gladly-plot'
+const schema = computationSchema(data)
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `data` | `Data \| null` | A `Data` instance (for column name enumeration), or `null`. |
+
+**Return value:** A JSON Schema Draft 2020-12 document describing the full space of valid computation expressions. Structure:
+
+```json
+{
+  "$defs": {
+    "params_histogram":          { "type": "object", "properties": { "input": { "$ref": "#/$defs/expression" }, "bins": { "type": "number" } }, "required": ["input"] },
+    "params_filteredHistogram":  { ... },
+    "...",
+    "expression": {
+      "anyOf": [
+        { "type": "string", "enum": ["col1", "col2", "..."] },
+        { "type": "object", "properties": { "histogram":         { "$ref": "#/$defs/params_histogram"         } }, "required": ["histogram"],         "additionalProperties": false },
+        { "type": "object", "properties": { "filteredHistogram": { "$ref": "#/$defs/params_filteredHistogram" } }, "required": ["filteredHistogram"], "additionalProperties": false },
+        "..."
+      ]
+    }
+  },
+  "$ref": "#/$defs/expression"
+}
+```
+
+- Column names are populated from `data.columns()` when `data` is provided; the `enum` is empty otherwise.
+- Each computation contributes its `schema(data)` return value as `$defs.params_<name>`.
+- The `$defs.expression` entry is an `anyOf` covering column references and every registered computation.
+- `EXPRESSION_REF` inside any `schema()` method references this same `$defs.expression` entry, enabling recursive nesting.
+
+Use this to drive form rendering or validation for user-configurable computation expressions:
+
+```javascript
+import { computationSchema } from 'gladly-plot'
+
+const schema = computationSchema(myData)
+// Pass schema to a JSON Schema form library or validator
+```
+
+---
+
 ## `isTexture(value)`
 
 ```javascript
@@ -191,15 +318,17 @@ isTexture(value)  // => boolean
 
 Duck-type check for regl textures. Returns `true` if `value` is a non-null object with a numeric `width` property and a `subimage` method.
 
-Useful inside texture computation functions when a parameter may be either a raw `Float32Array` or an already-computed texture from a nested expression:
+Useful inside `compute()` when a parameter may be either a raw `Float32Array` or an already-computed texture from a nested expression:
 
 ```javascript
-registerTextureComputation('myComputation', (regl, params) => {
-  const input = isTexture(params.input)
-    ? params.input                      // use the texture directly
-    : uploadToTexture(regl, params.input) // upload the Float32Array
-  // ...
-})
+class MyComputation extends TextureComputation {
+  compute(regl, params) {
+    const input = isTexture(params.input)
+      ? params.input                      // use the texture directly
+      : uploadToTexture(regl, params.input) // upload the Float32Array
+    // ...
+  }
+}
 ```
 
 ---
@@ -340,7 +469,21 @@ GPU FFT of a real-valued signal. Output is a **complex texture**: R channel = re
 To use the magnitude as a vertex attribute, chain it with a GLSL computation:
 
 ```javascript
-registerGlslComputation('magnitude', ({ re, im }) => `sqrt((${re})*(${re}) + (${im})*(${im}))`)
+import { GlslComputation, EXPRESSION_REF, registerGlslComputation } from 'gladly-plot'
+
+class MagnitudeComputation extends GlslComputation {
+  glsl({ re, im }) {
+    return `sqrt((${re})*(${re}) + (${im})*(${im}))`
+  }
+  schema(data) {
+    return {
+      type: 'object',
+      properties: { re: EXPRESSION_REF, im: EXPRESSION_REF },
+      required: ['re', 'im']
+    }
+  }
+}
+registerGlslComputation('magnitude', new MagnitudeComputation())
 
 // In createLayer:
 attributes: {

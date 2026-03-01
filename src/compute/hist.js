@@ -1,4 +1,4 @@
-import { registerTextureComputation } from "./ComputationRegistry.js"
+import { registerTextureComputation, TextureComputation, EXPRESSION_REF } from "./ComputationRegistry.js"
 
 /**
  * Auto-select number of histogram bins using Scott's rule.
@@ -161,6 +161,20 @@ export default function makeHistogram(regl, input, options = {}) {
   return histTex;
 }
 
-// params: { input: Float32Array (values in [0,1]), bins?: number }
-registerTextureComputation('histogram', (regl, params) =>
-  makeHistogram(regl, params.input, { bins: params.bins }))
+class HistogramComputation extends TextureComputation {
+  compute(regl, params) {
+    return makeHistogram(regl, params.input, { bins: params.bins })
+  }
+  schema(data) {
+    return {
+      type: 'object',
+      properties: {
+        input: EXPRESSION_REF,
+        bins: { type: 'number' }
+      },
+      required: ['input']
+    }
+  }
+}
+
+registerTextureComputation('histogram', new HistogramComputation())

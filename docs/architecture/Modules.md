@@ -32,6 +32,9 @@ Detailed breakdown of each source module, organised by subdirectory. For the hig
 - `buildFilterGlsl`
 - `AxisRegistry`, `ColorAxisRegistry`, `FilterAxisRegistry`
 - `registerEpsgDef`, `parseCrsCode`, `crsToQkX`, `crsToQkY`, `qkToEpsgCode`, `reproject`
+- `Computation`, `TextureComputation`, `GlslComputation` — base classes for custom computations
+- `registerTextureComputation`, `registerGlslComputation`, `isTexture`
+- `EXPRESSION_REF`, `computationSchema`
 
 ---
 
@@ -440,14 +443,50 @@ At module load, registers a `'filterbar'` float factory with `Plot.registerFloat
 
 ---
 
-## `compute/` — Data Processing
+## `compute/` — Computed Attributes
 
-CPU-side signal processing helpers. All functions operate on `Float32Array` and return `Float32Array`.
+The `compute/` directory implements the **computed attribute system**: a class-based registry of named computations that can produce GPU textures or GLSL expressions for use as layer attributes.
 
-| File | Exports |
-|------|---------|
-| `compute/kde.js` | Kernel density estimation |
-| `compute/fft.js` | Fast Fourier transform |
-| `compute/conv.js` | Convolution (uses FFT internally) |
-| `compute/hist.js` | Histogram |
-| `compute/filter.js` | Signal filtering |
+---
+
+### `compute/ComputationRegistry.js`
+
+**Purpose:** Central hub for the computed attribute system.
+
+**Pattern:** Registry + Strategy
+
+**Base classes:**
+- `Computation` — abstract base; subclasses must implement `schema(data) => JSONSchema`
+- `TextureComputation extends Computation` — subclasses must implement `compute(regl, params, getAxisDomain) => Texture`
+- `GlslComputation extends Computation` — subclasses must implement `glsl(resolvedGlslParams) => string`
+
+**Registry functions:**
+- `registerTextureComputation(name, computation)` — stores a `TextureComputation` instance under `name`
+- `registerGlslComputation(name, computation)` — stores a `GlslComputation` instance under `name`
+
+**Schema support:**
+- `EXPRESSION_REF` — `{ '$ref': '#/$defs/expression' }` constant; use in `schema()` for params that accept a `Float32Array` or a nested computation expression
+- `computationSchema(data)` — builds a JSON Schema Draft 2020-12 document with `$defs` for every registered computation's params plus a recursive `expression` entry (`anyOf` of column names and all computation forms)
+
+**Attribute resolution:**
+- `resolveAttributeExpr(regl, expr, attrShaderName, plot)` — entry point called by `LayerType.createDrawCommand`; returns `{ kind: 'buffer', value }` for plain `Float32Array`, or `{ kind: 'computed', glslExpr, context }` for computation expressions. The `context` carries `bufferAttrs`, `textureUniforms`, `scalarUniforms`, `globalDecls`, and `axisUpdaters` for shader injection.
+- `isTexture(value)` — duck-type check for regl textures; useful inside `compute()` when a param may be either a `Float32Array` or an already-computed texture.
+
+**Axis-reactive recomputation:** when a texture computation calls `getAxisDomain(axisId)`, the registry registers that axis as a dependency and stores an updater in `context.axisUpdaters`. On each render, `Plot` calls `refreshIfNeeded()` on all updaters; if any tracked axis domain has changed the texture is recomputed transparently.
+
+---
+
+### Built-in Computation Files
+
+Each file defines one or more `TextureComputation` subclasses and registers them as side-effects. All are imported by `index.js`.
+
+| File | Registered name(s) | Description |
+|------|--------------------|-------------|
+| `compute/hist.js` | `histogram` | Bins normalised values into a histogram texture (CPU or GPU path; auto-selects bin count via Scott's rule) |
+| `compute/axisFilter.js` | `filteredHistogram` | Like `histogram` but filters input by a filter axis range before counting; axis-reactive |
+| `compute/kde.js` | `kde` | Gaussian-smoothed kernel density estimate over a histogram or raw array |
+| `compute/filter.js` | `filter1D`, `lowPass`, `highPass`, `bandPass` | 1-D GPU convolution; Gaussian low/high/band-pass variants built on top |
+| `compute/fft.js` | `fft1d`, `fftConvolution` | GPU Cooley–Tukey FFT of a real signal; FFT-based convolution |
+| `compute/conv.js` | `convolution` | Adaptive convolution: single-pass GPU (kernel ≤ 1024), chunked GPU (≤ 8192), or FFT fallback |
+
+See [Computed Attributes](../api/ComputedAttributes.md) for usage, parameter schemas, and extension examples.

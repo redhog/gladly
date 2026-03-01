@@ -1,12 +1,54 @@
 const textureComputations = new Map()
 const glslComputations = new Map()
 
-export function registerTextureComputation(name, fn) {
-  textureComputations.set(name, { fn })
+export class Computation {
+  schema(data) { throw new Error('Not implemented') }
 }
 
-export function registerGlslComputation(name, fn) {
-  glslComputations.set(name, { fn })
+export class TextureComputation extends Computation {
+  compute(regl, params, getAxisDomain) { throw new Error('Not implemented') }
+}
+
+export class GlslComputation extends Computation {
+  glsl(resolvedParams) { throw new Error('Not implemented') }
+}
+
+// Use in computation schema() methods for params that can be a Float32Array or sub-expression
+export const EXPRESSION_REF = { '$ref': '#/$defs/expression' }
+
+export function registerTextureComputation(name, computation) {
+  textureComputations.set(name, computation)
+}
+
+export function registerGlslComputation(name, computation) {
+  glslComputations.set(name, computation)
+}
+
+export function computationSchema(data) {
+  const cols = data ? data.columns() : []
+  const defs = {}
+
+  for (const [name, comp] of textureComputations) {
+    defs[`params_${name}`] = comp.schema(data)
+  }
+
+  for (const [name, comp] of glslComputations) {
+    defs[`params_${name}`] = comp.schema(data)
+  }
+
+  defs.expression = {
+    anyOf: [
+      { type: 'string', enum: cols },
+      ...[...textureComputations, ...glslComputations].map(([name]) => ({
+        type: 'object',
+        properties: { [name]: { '$ref': `#/$defs/params_${name}` } },
+        required: [name],
+        additionalProperties: false
+      }))
+    ]
+  }
+
+  return { '$defs': defs, '$ref': '#/$defs/expression' }
 }
 
 // Duck-type check for regl textures.
@@ -43,7 +85,7 @@ function resolveToRawValue(regl, expr, path, getAxisDomain) {
         const comp = textureComputations.get(compName)
         const params = expr[compName]
         const resolvedParams = resolveToRawValue(regl, params, path, getAxisDomain)
-        return comp.fn(regl, resolvedParams, getAxisDomain)
+        return comp.compute(regl, resolvedParams, getAxisDomain)
       }
       if (glslComputations.has(compName)) {
         throw new Error(
@@ -117,7 +159,7 @@ function resolveToGlslExpr(regl, expr, path, context, plot) {
         // Initial computation with axis tracking.
         const initGetter = makeTrackingGetter(liveRef, plot)
         const resolvedParams = resolveToRawValue(regl, params, path, initGetter)
-        liveRef.texture = comp.fn(regl, resolvedParams, initGetter)
+        liveRef.texture = comp.compute(regl, resolvedParams, initGetter)
 
         // Cache the domains accessed during initial computation.
         for (const axisId of liveRef.accessedAxes) {
@@ -148,7 +190,7 @@ function resolveToGlslExpr(regl, expr, path, context, plot) {
             const newRef = { accessedAxes: new Set(), cachedDomains: {} }
             const newGetter = makeTrackingGetter(newRef, currentPlot)
             const newParams = resolveToRawValue(regl, params, path, newGetter)
-            newRef.texture = comp.fn(regl, newParams, newGetter)
+            newRef.texture = comp.compute(regl, newParams, newGetter)
             for (const axisId of newRef.accessedAxes) {
               newRef.cachedDomains[axisId] = currentPlot.getAxisDomain(axisId)
             }
@@ -169,7 +211,7 @@ function resolveToGlslExpr(regl, expr, path, context, plot) {
         for (const [k, v] of Object.entries(params)) {
           resolvedGlslParams[k] = resolveToGlslExpr(regl, v, `${path}_${k}`, context, plot)
         }
-        return comp.fn(resolvedGlslParams)
+        return comp.glsl(resolvedGlslParams)
       }
     }
   }

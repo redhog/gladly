@@ -61,11 +61,13 @@ gladly/
 │   ├── geo/
 │   │   └── EpsgUtils.js                       # EPSG/CRS projection utilities
 │   └── compute/
-│       ├── kde.js                             # Kernel density estimation
-│       ├── fft.js                             # Fast Fourier transform
-│       ├── conv.js                            # Convolution
-│       ├── hist.js                            # Histogram
-│       └── filter.js                          # Signal filtering
+│       ├── ComputationRegistry.js             # Base classes, registry, schema, attribute resolver
+│       ├── hist.js                            # 'histogram' TextureComputation
+│       ├── axisFilter.js                      # 'filteredHistogram' TextureComputation
+│       ├── kde.js                             # 'kde' TextureComputation
+│       ├── filter.js                          # 'filter1D', 'lowPass', 'highPass', 'bandPass' TextureComputations
+│       ├── fft.js                             # 'fft1d', 'fftConvolution' TextureComputations
+│       └── conv.js                            # 'convolution' TextureComputation
 ├── example/
 │   ├── main.js                                # Example usage
 │   └── index.html                             # Demo page
@@ -137,7 +139,17 @@ Each `LayerType` encapsulates shaders, axis quantity kinds, schema, and a factor
 
 ---
 
-### 4. Factory Pattern — Layer Creation
+### 4. Registry Pattern — Computation Types
+
+**Intent:** Make named computations discoverable for both execution and schema introspection.
+
+`ComputationRegistry` stores `TextureComputation` and `GlslComputation` instances by name. Any computation expression `{ name: params }` in an `attributes` map is resolved through this registry at draw-command build time. `computationSchema(data)` aggregates `schema(data)` from all registered computations into a single JSON Schema document with `$defs`-based recursion.
+
+**Benefits:** Custom computations plug in without modifying core code; schema generation for all computations is automatic; expressions can nest arbitrarily via `EXPRESSION_REF`.
+
+---
+
+### 5. Factory Pattern — Layer Creation
 
 **Intent:** Encapsulate layer instantiation in the LayerType.
 
@@ -147,7 +159,7 @@ Each `LayerType` encapsulates shaders, axis quantity kinds, schema, and a factor
 
 ---
 
-### 5. Registry Pattern — AxisRegistry
+### 6. Registry Pattern — AxisRegistry
 
 **Intent:** Central scale registry with lazy initialisation and quantity kind validation.
 
@@ -157,7 +169,7 @@ Each `LayerType` encapsulates shaders, axis quantity kinds, schema, and a factor
 
 ---
 
-### 6. Separation of Concerns — Canvas + SVG
+### 7. Separation of Concerns — Canvas + SVG
 
 **Intent:** Leverage each technology for what it does best.
 

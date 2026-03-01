@@ -1,4 +1,4 @@
-import { registerTextureComputation } from "./ComputationRegistry.js"
+import { registerTextureComputation, TextureComputation, EXPRESSION_REF } from "./ComputationRegistry.js"
 
 function toTexture(regl, input, length) {
   if (input instanceof Float32Array) {
@@ -154,7 +154,74 @@ function bandPass(regl, input, sigmaLow, sigmaHigh) {
 
 export { filter1D, gaussianKernel, lowPass, highPass, bandPass }
 
-registerTextureComputation('filter1D', (regl, params) => filter1D(regl, params.input, params.kernel))
-registerTextureComputation('lowPass',  (regl, params) => lowPass(regl, params.input, params.sigma, params.kernelSize))
-registerTextureComputation('highPass', (regl, params) => highPass(regl, params.input, params.sigma, params.kernelSize))
-registerTextureComputation('bandPass', (regl, params) => bandPass(regl, params.input, params.sigmaLow, params.sigmaHigh))
+class Filter1DComputation extends TextureComputation {
+  compute(regl, params) {
+    return filter1D(regl, params.input, params.kernel)
+  }
+  schema(data) {
+    return {
+      type: 'object',
+      properties: {
+        input: EXPRESSION_REF,
+        kernel: EXPRESSION_REF
+      },
+      required: ['input', 'kernel']
+    }
+  }
+}
+
+class LowPassComputation extends TextureComputation {
+  compute(regl, params) {
+    return lowPass(regl, params.input, params.sigma, params.kernelSize)
+  }
+  schema(data) {
+    return {
+      type: 'object',
+      properties: {
+        input: EXPRESSION_REF,
+        sigma: { type: 'number' },
+        kernelSize: { type: 'number' }
+      },
+      required: ['input']
+    }
+  }
+}
+
+class HighPassComputation extends TextureComputation {
+  compute(regl, params) {
+    return highPass(regl, params.input, params.sigma, params.kernelSize)
+  }
+  schema(data) {
+    return {
+      type: 'object',
+      properties: {
+        input: EXPRESSION_REF,
+        sigma: { type: 'number' },
+        kernelSize: { type: 'number' }
+      },
+      required: ['input']
+    }
+  }
+}
+
+class BandPassComputation extends TextureComputation {
+  compute(regl, params) {
+    return bandPass(regl, params.input, params.sigmaLow, params.sigmaHigh)
+  }
+  schema(data) {
+    return {
+      type: 'object',
+      properties: {
+        input: EXPRESSION_REF,
+        sigmaLow: { type: 'number' },
+        sigmaHigh: { type: 'number' }
+      },
+      required: ['input', 'sigmaLow', 'sigmaHigh']
+    }
+  }
+}
+
+registerTextureComputation('filter1D', new Filter1DComputation())
+registerTextureComputation('lowPass',  new LowPassComputation())
+registerTextureComputation('highPass', new HighPassComputation())
+registerTextureComputation('bandPass', new BandPassComputation())

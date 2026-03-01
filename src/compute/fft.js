@@ -1,4 +1,4 @@
-import { registerTextureComputation } from "./ComputationRegistry.js"
+import { registerTextureComputation, TextureComputation, EXPRESSION_REF } from "./ComputationRegistry.js"
 
 /* ============================================================
    Utilities
@@ -254,7 +254,39 @@ export function fftConvolution(regl, signal, kernel) {
   return fft1d(regl, new Float32Array(N), true);
 }
 
+class Fft1dComputation extends TextureComputation {
+  compute(regl, params) {
+    return fft1d(regl, params.input, params.inverse ?? false)
+  }
+  schema(data) {
+    return {
+      type: 'object',
+      properties: {
+        input: EXPRESSION_REF,
+        inverse: { type: 'boolean' }
+      },
+      required: ['input']
+    }
+  }
+}
+
+class FftConvolutionComputation extends TextureComputation {
+  compute(regl, params) {
+    return fftConvolution(regl, params.signal, params.kernel)
+  }
+  schema(data) {
+    return {
+      type: 'object',
+      properties: {
+        signal: EXPRESSION_REF,
+        kernel: EXPRESSION_REF
+      },
+      required: ['signal', 'kernel']
+    }
+  }
+}
+
 // fft1d: output is a complex texture — R = real part, G = imaginary part.
 // Use a downstream computation (e.g. magnitude) to get a single scalar per bin.
-registerTextureComputation('fft1d', (regl, params) => fft1d(regl, params.input, params.inverse ?? false))
-registerTextureComputation('fftConvolution', (regl, params) => fftConvolution(regl, params.signal, params.kernel))
+registerTextureComputation('fft1d', new Fft1dComputation())
+registerTextureComputation('fftConvolution', new FftConvolutionComputation())

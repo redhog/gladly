@@ -1,4 +1,4 @@
-import { registerTextureComputation } from "./ComputationRegistry.js"
+import { registerTextureComputation, TextureComputation, EXPRESSION_REF } from "./ComputationRegistry.js"
 
 /**
  * Smooth a histogram to produce a KDE texture
@@ -82,5 +82,21 @@ export default function smoothKDE(regl, histInput, options = {}) {
   return kdeTex;
 }
 
-registerTextureComputation('kde', (regl, params) =>
-  smoothKDE(regl, params.input, { bins: params.bins, bandwidth: params.bandwidth }))
+class KdeComputation extends TextureComputation {
+  compute(regl, params) {
+    return smoothKDE(regl, params.input, { bins: params.bins, bandwidth: params.bandwidth })
+  }
+  schema(data) {
+    return {
+      type: 'object',
+      properties: {
+        input: EXPRESSION_REF,
+        bins: { type: 'number' },
+        bandwidth: { type: 'number' }
+      },
+      required: ['input']
+    }
+  }
+}
+
+registerTextureComputation('kde', new KdeComputation())

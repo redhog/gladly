@@ -22,7 +22,7 @@ export { filterbarLayerType } from "./layers/FilterbarLayer.js"
 export { tileLayerType, TileLayerType } from "./layers/TileLayer.js"
 export { histogramLayerType } from "./layers/HistogramLayer.js"
 export { registerEpsgDef, parseCrsCode, crsToQkX, crsToQkY, qkToEpsgCode, reproject } from "./geo/EpsgUtils.js"
-export { registerTextureComputation, registerGlslComputation, isTexture } from "./compute/ComputationRegistry.js"
+export { Computation, TextureComputation, GlslComputation, EXPRESSION_REF, computationSchema, registerTextureComputation, registerGlslComputation, isTexture } from "./compute/ComputationRegistry.js"
 
 // Register all matplotlib colorscales (side-effect import)
 import "./colorscales/MatplotlibColorscales.js"

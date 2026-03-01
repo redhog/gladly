@@ -376,24 +376,46 @@ The quantity kind labels are looked up from `projnames` (e.g. EPSG:26911 → `"N
 
 ---
 
-## `registerTextureComputation(name, fn)`
+## `Computation`
 
-Registers a CPU/GPU computation that produces a regl texture, for use as a **computed attribute** in `createLayer`.
+Abstract base class for all computations. Subclass `TextureComputation` or `GlslComputation` rather than this directly.
 
 ```javascript
-import { registerTextureComputation } from 'gladly-plot'
-
-registerTextureComputation('myComp', (regl, params, getAxisDomain) => {
-  // params: resolved parameter object (arrays, textures, numbers)
-  // getAxisDomain(axisId): returns [min|null, max|null]; registers axis as dependency
-  // Returns a regl texture (R channel read as float attribute per vertex)
-})
+import { Computation } from 'gladly-plot'
 ```
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `name` | string | Key used in attribute expressions: `{ [name]: params }` |
-| `fn` | function | `(regl, params, getAxisDomain) => Texture` |
+**Method to implement:**
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `schema(data)` | `(data: Data \| null) => JSONSchema` | Return a JSON Schema (Draft 2020-12) describing the `params` object the computation accepts. Use `EXPRESSION_REF` for params that accept a `Float32Array` or sub-expression. |
+
+---
+
+## `TextureComputation`
+
+Base class for computations that produce a regl texture. Extend this to register a new texture computation.
+
+```javascript
+import { TextureComputation, EXPRESSION_REF, registerTextureComputation } from 'gladly-plot'
+
+class MyComp extends TextureComputation {
+  compute(regl, params, getAxisDomain) {
+    // params: resolved parameter object (arrays, textures, numbers)
+    // getAxisDomain(axisId): returns [min|null, max|null]; registers axis as dependency
+    // Returns a regl texture (R channel read as float attribute per vertex)
+  }
+  schema(data) {
+    return {
+      type: 'object',
+      properties: { input: EXPRESSION_REF, bins: { type: 'number' } },
+      required: ['input']
+    }
+  }
+}
+
+registerTextureComputation('myComp', new MyComp())
+```
 
 In `createLayer`, reference the computation as an attribute value:
 
@@ -409,23 +431,79 @@ For built-in computations, parameter details, and a full worked example see [Com
 
 ---
 
-## `registerGlslComputation(name, fn)`
+## `GlslComputation`
 
-Registers a computation that produces a GLSL expression string, for use as a **computed attribute** in `createLayer`. The expression is injected directly into the vertex shader.
+Base class for computations that produce a GLSL expression string. The expression is injected directly into the vertex shader.
 
 ```javascript
-import { registerGlslComputation } from 'gladly-plot'
+import { GlslComputation, EXPRESSION_REF, registerGlslComputation } from 'gladly-plot'
 
-registerGlslComputation('normalizedDiff', ({ a, b }) =>
-  `((${a}) - (${b})) / ((${a}) + (${b}) + 1e-6)`)
+class NormalizedDiff extends GlslComputation {
+  glsl({ a, b }) {
+    return `((${a}) - (${b})) / ((${a}) + (${b}) + 1e-6)`
+  }
+  schema(data) {
+    return {
+      type: 'object',
+      properties: { a: EXPRESSION_REF, b: EXPRESSION_REF },
+      required: ['a', 'b']
+    }
+  }
+}
+
+registerGlslComputation('normalizedDiff', new NormalizedDiff())
 ```
+
+Each value in the `glsl()` parameter object is already a GLSL expression string (not a JS value). Return a GLSL `float` expression.
+
+See [Computed Attributes](ComputedAttributes.md) for the full API.
+
+---
+
+## `registerTextureComputation(name, computation)`
+
+Registers a `TextureComputation` instance under `name`.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `name` | string | Key used in attribute expressions: `{ [name]: params }` |
-| `fn` | function | `(resolvedGlslParams) => string` — each param value is already a GLSL expression string; return a GLSL float expression |
+| `computation` | `TextureComputation` | Instance of a class extending `TextureComputation` |
 
-See [Computed Attributes](ComputedAttributes.md) for the full API.
+---
+
+## `registerGlslComputation(name, computation)`
+
+Registers a `GlslComputation` instance under `name`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | string | Key used in attribute expressions: `{ [name]: params }` |
+| `computation` | `GlslComputation` | Instance of a class extending `GlslComputation` |
+
+---
+
+## `EXPRESSION_REF`
+
+```javascript
+import { EXPRESSION_REF } from 'gladly-plot'
+```
+
+A JSON Schema `$ref` (`{ '$ref': '#/$defs/expression' }`) for use inside `schema()` methods. Marks a parameter as accepting either a `Float32Array` (data column) or a nested computation expression. See [Computed Attributes — EXPRESSION_REF](ComputedAttributes.md#expression_ref).
+
+---
+
+## `computationSchema(data)`
+
+```javascript
+import { computationSchema } from 'gladly-plot'
+const schema = computationSchema(data)
+```
+
+Returns a JSON Schema Draft 2020-12 document covering the full space of valid computation expressions: column name references and every registered computation, with `$defs` enabling recursive sub-expressions. See [Computed Attributes — computationSchema](ComputedAttributes.md#computationschemadata).
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `data` | `Data \| null` | Used to enumerate column names for the `expression` `anyOf`. Pass `null` when no data is available. |
 
 ---
 
@@ -436,12 +514,14 @@ Duck-type check for regl textures. Returns `true` if `value` is a non-null objec
 ```javascript
 import { isTexture } from 'gladly-plot'
 
-registerTextureComputation('myComp', (regl, params) => {
-  const input = isTexture(params.input)
-    ? params.input
-    : uploadToTexture(regl, params.input)
-  // ...
-})
+class MyComp extends TextureComputation {
+  compute(regl, params) {
+    const input = isTexture(params.input)
+      ? params.input
+      : uploadToTexture(regl, params.input)
+    // ...
+  }
+}
 ```
 
 ---

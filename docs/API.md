@@ -79,19 +79,29 @@ See [Configuring Plots](api/PlotConfiguration.md) for the full config format.
 
 The plotting framework is **agnostic about the shape of the `data` object** passed to `plot.update()`. It stores it and passes it unchanged to each layer type's `createLayer` and `getAxisConfig` functions. What those functions do with it is entirely up to the layer type author.
 
-The only firm requirement is that every value placed in the `attributes` map returned from `createLayer` must be a `Float32Array` (validated at layer construction time, since GPU buffers require typed arrays):
+Each value in the `attributes` map returned from `createLayer` must be one of:
+
+- A **`Float32Array`** — uploaded directly as a GPU vertex buffer.
+- A **computed attribute expression** — a single-key object `{ computationName: params }` that the framework resolves to a GPU texture or GLSL expression at draw-command build time.
 
 ```javascript
-// Correct — flat object of Float32Arrays (simplest format)
+// Correct — plain Float32Arrays
 const data = {
   x: new Float32Array([1, 2, 3]),
   y: new Float32Array([4, 5, 6]),
   v: new Float32Array([0.1, 0.5, 0.9])
 }
 
-// Incorrect — plain arrays will throw when createLayer puts them in attributes
+// Also correct — computed attribute expression
+attributes: {
+  count: { histogram: { input: normalized, bins: 50 } }
+}
+
+// Incorrect — plain JS arrays will throw
 const bad = { x: [1, 2, 3], y: [4, 5, 6] }
 ```
+
+See [Computed Attributes](api/ComputedAttributes.md) for the full expression syntax, built-in computations, and how to write custom ones.
 
 #### Optional: the `Data` class
 
@@ -130,6 +140,6 @@ plot.update({
 - **[Configuring Plots](api/PlotConfiguration.md)** — `plot.update()`, axes config, auto-range, multi-layer, interaction, examples
 - **[Colorbars and Filterbars](api/ColorbarsAndFilterbars.md)** — floating color/filter widgets, auto-creation via config, manual placement
 - **[Writing Layer Types](api/LayerTypes.md)** — `LayerType` constructor, shaders, color axes, filter axes, GLSL helpers, constants
-- **[Computed Attributes](api/ComputedAttributes.md)** — GPU texture and GLSL computations in layer attributes; `registerTextureComputation`, `registerGlslComputation`, built-in computations
+- **[Computed Attributes](api/ComputedAttributes.md)** — GPU texture and GLSL computations in layer attributes; `TextureComputation` / `GlslComputation` base classes; `EXPRESSION_REF`; `computationSchema`; built-in computations
 - **[Built-in Layer Types](api/BuiltInLayerTypes.md)** — `points`, `lines`, `colorbar`, `filterbar` layer type reference
 - **[API Reference](api/Reference.md)** — `Plot`, `registerLayerType`, `getLayerType`, `Data` and other public API entries

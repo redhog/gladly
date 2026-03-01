@@ -23,7 +23,7 @@ For detailed information about using and understanding Gladly:
 - **[API Documentation](docs/API.md)**: User-facing API reference overview and data model
   - **[Configuring Plots](docs/api/PlotConfiguration.md)**: `plot.update()`, axes config, auto-range, multi-layer, interaction, examples
   - **[Writing Layer Types](docs/api/LayerTypes.md)**: `LayerType` constructor, shaders, color/filter axes, GLSL helpers, constants
-  - **[Computed Attributes](docs/api/ComputedAttributes.md)**: GPU texture and GLSL computations in layer attributes, `registerTextureComputation`, `registerGlslComputation`, built-in computations
+  - **[Computed Attributes](docs/api/ComputedAttributes.md)**: GPU texture and GLSL computations in layer attributes; `TextureComputation` / `GlslComputation` base classes; `EXPRESSION_REF`; `computationSchema`; built-in computations
   - **[API Reference](docs/api/Reference.md)**: `Plot`, `registerLayerType`, `getLayerType` and other public API entries
 
 - **[Architecture Documentation](docs/ARCHITECTURE.md)**: Developer-facing architecture overview
@@ -77,13 +77,15 @@ src/
   geo/
     - EpsgUtils.js                  # EPSG/CRS projection utilities
   compute/
-    - ComputationRegistry.js          # registerTextureComputation / registerGlslComputation / resolveAttributeExpr
-    - hist.js                         # 'histogram' texture computation
-    - axisFilter.js                   # 'filteredHistogram' texture computation (axis-reactive)
-    - kde.js                          # 'kde' texture computation
-    - filter.js                       # 'filter1D' / 'lowPass' / 'highPass' / 'bandPass' texture computations
-    - fft.js                          # 'fft1d' / 'fftConvolution' texture computations
-    - conv.js                         # 'convolution' texture computation (adaptive GPU)
+    - ComputationRegistry.js          # Computation / TextureComputation / GlslComputation base classes;
+                                      # registerTextureComputation / registerGlslComputation;
+                                      # EXPRESSION_REF / computationSchema / resolveAttributeExpr / isTexture
+    - hist.js                         # 'histogram' TextureComputation
+    - axisFilter.js                   # 'filteredHistogram' TextureComputation (axis-reactive)
+    - kde.js                          # 'kde' TextureComputation
+    - filter.js                       # 'filter1D' / 'lowPass' / 'highPass' / 'bandPass' TextureComputations
+    - fft.js                          # 'fft1d' / 'fftConvolution' TextureComputations
+    - conv.js                         # 'convolution' TextureComputation (adaptive GPU)
 example/
   - main.js               # Usage example (declarative API)
   - index.html            # Demo page

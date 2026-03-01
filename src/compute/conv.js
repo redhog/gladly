@@ -1,5 +1,5 @@
 import { fftConvolution } from "./fft.js"
-import { registerTextureComputation } from "./ComputationRegistry.js"
+import { registerTextureComputation, TextureComputation, EXPRESSION_REF } from "./ComputationRegistry.js"
 
 /*
   ============================================================
@@ -211,6 +211,20 @@ export default function adaptiveConvolution(regl, signalArray, kernelArray) {
   return fftConvolution(regl, signalArray, kernelArray);
 }
 
-// params: { signal: Float32Array, kernel: Float32Array }
-registerTextureComputation('convolution', (regl, params) =>
-  adaptiveConvolution(regl, params.signal, params.kernel))
+class ConvolutionComputation extends TextureComputation {
+  compute(regl, params) {
+    return adaptiveConvolution(regl, params.signal, params.kernel)
+  }
+  schema(data) {
+    return {
+      type: 'object',
+      properties: {
+        signal: EXPRESSION_REF,
+        kernel: EXPRESSION_REF
+      },
+      required: ['signal', 'kernel']
+    }
+  }
+}
+
+registerTextureComputation('convolution', new ConvolutionComputation())
