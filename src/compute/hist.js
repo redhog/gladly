@@ -169,6 +169,7 @@ class HistogramComputation extends TextureComputation {
   schema(data) {
     return {
       type: 'object',
+      title: 'histogram',
       properties: {
         input: EXPRESSION_REF,
         bins: { type: 'number' }

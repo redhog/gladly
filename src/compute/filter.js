@@ -162,6 +162,7 @@ class Filter1DComputation extends TextureComputation {
   schema(data) {
     return {
       type: 'object',
+      title: 'filter1D',
       properties: {
         input: EXPRESSION_REF,
         kernel: EXPRESSION_REF
@@ -179,6 +180,7 @@ class LowPassComputation extends TextureComputation {
   schema(data) {
     return {
       type: 'object',
+      title: 'lowPass',
       properties: {
         input: EXPRESSION_REF,
         sigma: { type: 'number' },
@@ -197,6 +199,7 @@ class HighPassComputation extends TextureComputation {
   schema(data) {
     return {
       type: 'object',
+      title: 'highPass',
       properties: {
         input: EXPRESSION_REF,
         sigma: { type: 'number' },
@@ -215,6 +218,7 @@ class BandPassComputation extends TextureComputation {
   schema(data) {
     return {
       type: 'object',
+      title: 'bandPass',
       properties: {
         input: EXPRESSION_REF,
         sigmaLow: { type: 'number' },

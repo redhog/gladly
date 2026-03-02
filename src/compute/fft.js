@@ -262,6 +262,7 @@ class Fft1dComputation extends TextureComputation {
   schema(data) {
     return {
       type: 'object',
+      title: 'fft1d',
       properties: {
         input: EXPRESSION_REF,
         inverse: { type: 'boolean' }
@@ -280,6 +281,7 @@ class FftConvolutionComputation extends TextureComputation {
   schema(data) {
     return {
       type: 'object',
+      title: 'fftConvolution',
       properties: {
         signal: EXPRESSION_REF,
         kernel: EXPRESSION_REF

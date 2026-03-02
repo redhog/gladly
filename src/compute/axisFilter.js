@@ -35,6 +35,7 @@ class FilteredHistogramComputation extends TextureComputation {
   schema(data) {
     return {
       type: 'object',
+      title: 'filteredHistogram',
       properties: {
         input: EXPRESSION_REF,
         filterValues: EXPRESSION_REF,

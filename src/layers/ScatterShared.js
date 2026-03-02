@@ -1,7 +1,7 @@
 import { LayerType } from "../core/LayerType.js"
 import { AXES } from "../axes/AxisRegistry.js"
 import { Data } from "../core/Data.js"
-import { computationSchema, EXPRESSION_REF } from "../compute/ComputationRegistry.js"
+import { computationSchema, EXPRESSION_REF, EXPRESSION_REF_OPT } from "../compute/ComputationRegistry.js"
 
 export class ScatterLayerTypeBase extends LayerType {
   _getAxisConfig(parameters, data) {
@@ -27,7 +27,7 @@ export class ScatterLayerTypeBase extends LayerType {
   }
 
   // Returns schema properties for the common data parameters.
-  // All data params use EXPRESSION_REF (or anyOf with "none") — the caller must hoist
+  // All data params use EXPRESSION_REF or EXPRESSION_REF_OPT — the caller must hoist
   // computationSchema(data)['$defs'] to the top-level schema so that
   // '#/$defs/expression' (and all nested refs within it) resolve correctly.
   // LinesLayer overrides fData to a plain string enum since it needs CPU-side subarray slicing.
@@ -38,10 +38,7 @@ export class ScatterLayerTypeBase extends LayerType {
       yData: EXPRESSION_REF,
       vData: EXPRESSION_REF,
       vData2: EXPRESSION_REF,
-      fData: {
-        anyOf: [{ const: "none" }, EXPRESSION_REF],
-        description: "Optional filter axis values expression, or 'none' to disable"
-      },
+      fData: EXPRESSION_REF_OPT,
       xAxis: {
         type: "string",
         enum: AXES.filter(a => a.includes("x")),

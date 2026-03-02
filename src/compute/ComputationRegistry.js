@@ -31,6 +31,9 @@ export class GlslComputation extends Computation {
 // Use in computation schema() methods for params that can be a Float32Array or sub-expression
 export const EXPRESSION_REF = { '$ref': '#/$defs/expression' }
 
+// Like EXPRESSION_REF but allows "none" as an explicit sentinel value (e.g. optional axes)
+export const EXPRESSION_REF_OPT = { '$ref': '#/$defs/expression_opt' }
+
 export function registerTextureComputation(name, computation) {
   textureComputations.set(name, computation)
 }
@@ -53,14 +56,21 @@ export function computationSchema(data) {
 
   defs.expression = {
     anyOf: [
-      { type: 'string', enum: cols },
+      ...cols.map(col => ({ type: 'string', const: col, enum: [col], title: col, readOnly: true })),
       ...[...textureComputations, ...glslComputations].map(([name]) => ({
         type: 'object',
+        title: name,
         properties: { [name]: { '$ref': `#/$defs/params_${name}` } },
         required: [name],
         additionalProperties: false
       }))
     ]
+  }
+  
+  defs.expression_opt = {
+    anyOf: [
+      { type: 'string', const: 'none', enum: ['none'], title: 'none', readOnly: true }
+    ].concat(defs.expression.anyOf)
   }
 
   return { '$defs': defs, '$ref': '#/$defs/expression' }

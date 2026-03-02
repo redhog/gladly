@@ -220,6 +220,7 @@ class ConvolutionComputation extends TextureComputation {
   schema(data) {
     return {
       type: 'object',
+      title: 'convolution',
       properties: {
         signal: EXPRESSION_REF,
         kernel: EXPRESSION_REF

@@ -90,6 +90,7 @@ class KdeComputation extends TextureComputation {
   schema(data) {
     return {
       type: 'object',
+      title: 'kde',
       properties: {
         input: EXPRESSION_REF,
         bins: { type: 'number' },
