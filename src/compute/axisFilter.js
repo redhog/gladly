@@ -13,8 +13,10 @@ import makeHistogram from "./hist.js"
 // getAxisDomain(filterAxisId) returns [min|null, max|null] where null means
 // unbounded.  The computation is re-run automatically whenever the domain changes.
 class FilteredHistogramComputation extends TextureComputation {
-  compute(regl, params, getAxisDomain) {
-    const { input, filterValues, filterAxisId, bins } = params
+  compute(regl, params, data, getAxisDomain) {
+    const input = typeof params.input === 'string' ? data.getData(params.input) : params.input
+    const filterValues = typeof params.filterValues === 'string' ? data.getData(params.filterValues) : params.filterValues
+    const { filterAxisId, bins } = params
     const domain = getAxisDomain(filterAxisId)   // [min|null, max|null] or null
     const filterMin = domain?.[0] ?? null
     const filterMax = domain?.[1] ?? null

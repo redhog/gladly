@@ -212,8 +212,10 @@ export default function adaptiveConvolution(regl, signalArray, kernelArray) {
 }
 
 class ConvolutionComputation extends TextureComputation {
-  compute(regl, params) {
-    return adaptiveConvolution(regl, params.signal, params.kernel)
+  compute(regl, params, data, getAxisDomain) {
+    const signal = typeof params.signal === 'string' ? data.getData(params.signal) : params.signal
+    const kernel = typeof params.kernel === 'string' ? data.getData(params.kernel) : params.kernel
+    return adaptiveConvolution(regl, signal, kernel)
   }
   schema(data) {
     return {

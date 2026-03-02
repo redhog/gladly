@@ -162,8 +162,9 @@ export default function makeHistogram(regl, input, options = {}) {
 }
 
 class HistogramComputation extends TextureComputation {
-  compute(regl, params) {
-    return makeHistogram(regl, params.input, { bins: params.bins })
+  compute(regl, params, data, getAxisDomain) {
+    const input = this.resolveDataParam(regl, data, params.input)
+    return makeHistogram(regl, input, { bins: params.bins })
   }
   schema(data) {
     return {

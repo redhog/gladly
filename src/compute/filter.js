@@ -155,8 +155,9 @@ function bandPass(regl, input, sigmaLow, sigmaHigh) {
 export { filter1D, gaussianKernel, lowPass, highPass, bandPass }
 
 class Filter1DComputation extends TextureComputation {
-  compute(regl, params) {
-    return filter1D(regl, params.input, params.kernel)
+  compute(regl, params, data, getAxisDomain) {
+    const input = this.resolveDataParam(regl, data, params.input)
+    return filter1D(regl, input, params.kernel)
   }
   schema(data) {
     return {
@@ -171,8 +172,9 @@ class Filter1DComputation extends TextureComputation {
 }
 
 class LowPassComputation extends TextureComputation {
-  compute(regl, params) {
-    return lowPass(regl, params.input, params.sigma, params.kernelSize)
+  compute(regl, params, data, getAxisDomain) {
+    const input = this.resolveDataParam(regl, data, params.input)
+    return lowPass(regl, input, params.sigma, params.kernelSize)
   }
   schema(data) {
     return {
@@ -188,8 +190,9 @@ class LowPassComputation extends TextureComputation {
 }
 
 class HighPassComputation extends TextureComputation {
-  compute(regl, params) {
-    return highPass(regl, params.input, params.sigma, params.kernelSize)
+  compute(regl, params, data, getAxisDomain) {
+    const input = this.resolveDataParam(regl, data, params.input)
+    return highPass(regl, input, params.sigma, params.kernelSize)
   }
   schema(data) {
     return {
@@ -205,8 +208,9 @@ class HighPassComputation extends TextureComputation {
 }
 
 class BandPassComputation extends TextureComputation {
-  compute(regl, params) {
-    return bandPass(regl, params.input, params.sigmaLow, params.sigmaHigh)
+  compute(regl, params, data, getAxisDomain) {
+    const input = this.resolveDataParam(regl, data, params.input)
+    return bandPass(regl, input, params.sigmaLow, params.sigmaHigh)
   }
   schema(data) {
     return {

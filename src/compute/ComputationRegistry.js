@@ -1,3 +1,5 @@
+import { Data } from '../core/Data.js'
+
 const textureComputations = new Map()
 const glslComputations = new Map()
 
@@ -6,7 +8,20 @@ export class Computation {
 }
 
 export class TextureComputation extends Computation {
-  compute(regl, params, getAxisDomain) { throw new Error('Not implemented') }
+  compute(regl, params, data, getAxisDomain) { throw new Error('Not implemented') }
+
+  // Resolves a data parameter to a 1D regl texture.
+  // Accepts a Float32Array, an existing regl texture, or a string column name looked up from data.
+  resolveDataParam(regl, data, value) {
+    if (isTexture(value)) return value
+    let array = value
+    if (typeof value === 'string') {
+      if (!data) throw new Error(`Cannot resolve column '${value}': no data available`)
+      array = data.getData(value)
+      if (!(array instanceof Float32Array)) throw new Error(`Column '${value}' not found in data`)
+    }
+    return regl.texture({ data: array, shape: [array.length, 1], type: 'float', format: 'rgba' })
+  }
 }
 
 export class GlslComputation extends Computation {
@@ -69,7 +84,7 @@ function domainsEqual(a, b) {
 
 // Resolve expr to a raw JS value (Float32Array / texture / number).
 // Used for texture computation params — GLSL expressions are not permitted here.
-function resolveToRawValue(regl, expr, path, getAxisDomain) {
+function resolveToRawValue(regl, expr, path, data, getAxisDomain) {
   if (expr instanceof Float32Array) return expr
   if (isTexture(expr)) return expr
   if (typeof expr === 'number') return expr
@@ -84,8 +99,8 @@ function resolveToRawValue(regl, expr, path, getAxisDomain) {
       if (textureComputations.has(compName)) {
         const comp = textureComputations.get(compName)
         const params = expr[compName]
-        const resolvedParams = resolveToRawValue(regl, params, path, getAxisDomain)
-        return comp.compute(regl, resolvedParams, getAxisDomain)
+        const resolvedParams = resolveToRawValue(regl, params, path, data, getAxisDomain)
+        return comp.compute(regl, resolvedParams, data, getAxisDomain)
       }
       if (glslComputations.has(compName)) {
         throw new Error(
@@ -97,7 +112,7 @@ function resolveToRawValue(regl, expr, path, getAxisDomain) {
     // Plain params dict: resolve each value recursively.
     const resolved = {}
     for (const [k, v] of Object.entries(expr)) {
-      resolved[k] = resolveToRawValue(regl, v, `${path}_${k}`, getAxisDomain)
+      resolved[k] = resolveToRawValue(regl, v, `${path}_${k}`, data, getAxisDomain)
     }
     return resolved
   }
@@ -157,9 +172,10 @@ function resolveToGlslExpr(regl, expr, path, context, plot) {
         }
 
         // Initial computation with axis tracking.
+        const initData = plot ? Data.wrap(plot.currentData) : null
         const initGetter = makeTrackingGetter(liveRef, plot)
-        const resolvedParams = resolveToRawValue(regl, params, path, initGetter)
-        liveRef.texture = comp.compute(regl, resolvedParams, initGetter)
+        const resolvedParams = resolveToRawValue(regl, params, path, initData, initGetter)
+        liveRef.texture = comp.compute(regl, resolvedParams, initData, initGetter)
 
         // Cache the domains accessed during initial computation.
         for (const axisId of liveRef.accessedAxes) {
@@ -188,9 +204,10 @@ function resolveToGlslExpr(regl, expr, path, context, plot) {
 
             // Recompute with fresh axis tracking so new dependencies are captured.
             const newRef = { accessedAxes: new Set(), cachedDomains: {} }
+            const newData = currentPlot ? Data.wrap(currentPlot.currentData) : null
             const newGetter = makeTrackingGetter(newRef, currentPlot)
-            const newParams = resolveToRawValue(regl, params, path, newGetter)
-            newRef.texture = comp.compute(regl, newParams, newGetter)
+            const newParams = resolveToRawValue(regl, params, path, newData, newGetter)
+            newRef.texture = comp.compute(regl, newParams, newData, newGetter)
             for (const axisId of newRef.accessedAxes) {
               newRef.cachedDomains[axisId] = currentPlot.getAxisDomain(axisId)
             }

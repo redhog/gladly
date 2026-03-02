@@ -83,8 +83,9 @@ export default function smoothKDE(regl, histInput, options = {}) {
 }
 
 class KdeComputation extends TextureComputation {
-  compute(regl, params) {
-    return smoothKDE(regl, params.input, { bins: params.bins, bandwidth: params.bandwidth })
+  compute(regl, params, data, getAxisDomain) {
+    const input = this.resolveDataParam(regl, data, params.input)
+    return smoothKDE(regl, input, { bins: params.bins, bandwidth: params.bandwidth })
   }
   schema(data) {
     return {

@@ -255,8 +255,9 @@ export function fftConvolution(regl, signal, kernel) {
 }
 
 class Fft1dComputation extends TextureComputation {
-  compute(regl, params) {
-    return fft1d(regl, params.input, params.inverse ?? false)
+  compute(regl, params, data, getAxisDomain) {
+    const input = typeof params.input === 'string' ? data.getData(params.input) : params.input
+    return fft1d(regl, input, params.inverse ?? false)
   }
   schema(data) {
     return {
@@ -271,8 +272,10 @@ class Fft1dComputation extends TextureComputation {
 }
 
 class FftConvolutionComputation extends TextureComputation {
-  compute(regl, params) {
-    return fftConvolution(regl, params.signal, params.kernel)
+  compute(regl, params, data, getAxisDomain) {
+    const signal = typeof params.signal === 'string' ? data.getData(params.signal) : params.signal
+    const kernel = typeof params.kernel === 'string' ? data.getData(params.kernel) : params.kernel
+    return fftConvolution(regl, signal, kernel)
   }
   schema(data) {
     return {
