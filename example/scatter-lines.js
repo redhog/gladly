@@ -108,6 +108,7 @@ function updatePlot(plotConfig) {
 
     return true
   } catch (error) {
+    console.error(error)
     document.getElementById('tab2-validation-errors').innerHTML = `
       <div class="validation-error">
         <strong>Error:</strong> ${error.message}
