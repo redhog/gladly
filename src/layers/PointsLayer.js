@@ -45,41 +45,56 @@ class PointsLayerType extends ScatterLayerTypeBase {
   }
 
   schema(data) {
-    const dataProperties = Data.wrap(data).columns()
+    const d = Data.wrap(data)
     return {
-      $schema: "https://json-schema.org/draft/2020-12/schema",
       type: "object",
-      properties: this._commonSchemaProperties(dataProperties),
-      required: ["xData", "yData", "vData"]
+      properties: this._commonSchemaProperties(d),
+      required: ["xData", "yData", "vData", "fData"]
     }
   }
 
   _createLayer(parameters, data) {
     const d = Data.wrap(data)
-    const { xData, yData, vData, vData2, fData, xQK, yQK, vQK, vQK2, fQK, srcX, srcY, srcV, srcV2, srcF } =
-      this._resolveColorData(parameters, d)
+    const { vData: vDataRaw, vData2: vData2Raw, fData: fDataRaw } = parameters
+    const vData  = vDataRaw  === "none" ? null : vDataRaw
+    const vData2 = vData2Raw === "none" ? null : vData2Raw
+    const fData  = fDataRaw  === "none" ? null : fDataRaw
 
-    const domains = this._buildDomains(d, xData, yData, vData, vData2, xQK, yQK, vQK, vQK2)
+    // Quantity kinds — only derivable from string column names.
+    const xQK = typeof parameters.xData === 'string' ? (d.getQuantityKind(parameters.xData) ?? parameters.xData) : undefined
+    const yQK = typeof parameters.yData === 'string' ? (d.getQuantityKind(parameters.yData) ?? parameters.yData) : undefined
+    const vQK  = vData  && typeof vData  === 'string' ? (d.getQuantityKind(vData)  ?? vData)  : null
+    const vQK2 = vData2 && typeof vData2 === 'string' ? (d.getQuantityKind(vData2) ?? vData2) : null
+
+    const domains = this._buildDomains(d, parameters.xData, parameters.yData, vData, vData2, xQK, yQK, vQK, vQK2)
+
+    // Vertex count: read from data when xData is a plain column name so that
+    // Plot.render() can determine how many vertices to draw even when other
+    // attributes are computed expressions resolved at draw time.
+    const vertexCount = typeof parameters.xData === 'string'
+      ? (d.getData(parameters.xData)?.length ?? null)
+      : null
 
     return [{
       attributes: {
-        x: srcX,
-        y: srcY,
-        color_data: vData ? srcV : new Float32Array(srcX.length),
-        color_data2: vData2 ? srcV2 : new Float32Array(srcX.length),
-        ...(fData ? { filter_data: srcF } : {}),
+        x: parameters.xData,
+        y: parameters.yData,
+        color_data:  vData  !== null ? vData  : new Float32Array(vertexCount ?? 0),
+        color_data2: vData2 !== null ? vData2 : new Float32Array(vertexCount ?? 0),
+        ...(fData != null ? { filter_data: fData } : {}),
       },
       uniforms: {},
       domains,
+      vertexCount,
     }]
   }
 
-  createDrawCommand(regl, layer) {
+  createDrawCommand(regl, layer, plot) {
     const hasFilter = Object.keys(layer.filterAxes).length > 0
     const hasSecond = Object.keys(layer.colorAxes2d).length > 0
     this.vert = makePointsVert(hasFilter)
     this.frag = makePointsFrag(hasSecond)
-    return super.createDrawCommand(regl, layer)
+    return super.createDrawCommand(regl, layer, plot)
   }
 }
 

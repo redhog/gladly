@@ -9,12 +9,16 @@ import { getLayerType, getRegisteredLayerTypes } from "./LayerTypeRegistry.js"
 import { getAxisQuantityKind, getScaleTypeFloat } from "../axes/AxisQuantityKindRegistry.js"
 import { getRegisteredColorscales, getRegistered2DColorscales } from "../colorscales/ColorscaleRegistry.js"
 import { Float } from "../floats/Float.js"
+import { computationSchema } from "../compute/ComputationRegistry.js"
+import { Data } from "./Data.js"
 
 function buildPlotSchema(data) {
   const layerTypes = getRegisteredLayerTypes()
+  const { '$defs': compDefs } = computationSchema(data ? Data.wrap(data) : null)
 
   return {
     $schema: "https://json-schema.org/draft/2020-12/schema",
+    $defs: compDefs,
     type: "object",
     properties: {
       layers: {

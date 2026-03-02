@@ -1,6 +1,7 @@
 import { LayerType } from "../core/LayerType.js"
 import { AXES } from "../axes/AxisRegistry.js"
 import { Data } from "../core/Data.js"
+import { computationSchema, EXPRESSION_REF } from "../compute/ComputationRegistry.js"
 
 export class ScatterLayerTypeBase extends LayerType {
   _getAxisConfig(parameters, data) {
@@ -10,47 +11,36 @@ export class ScatterLayerTypeBase extends LayerType {
     const vData2 = vData2Raw === "none" ? null : vData2Raw
     const fData  = fDataRaw  === "none" ? null : fDataRaw
     const colorAxisQuantityKinds = {}
-    if (vData) colorAxisQuantityKinds['']  = d.getQuantityKind(vData)  ?? vData
-    if (vData2) colorAxisQuantityKinds['2'] = d.getQuantityKind(vData2) ?? vData2
+    if (vData  && typeof vData  === 'string') colorAxisQuantityKinds['']  = d.getQuantityKind(vData)  ?? vData
+    if (vData2 && typeof vData2 === 'string') colorAxisQuantityKinds['2'] = d.getQuantityKind(vData2) ?? vData2
     const colorAxis2dQuantityKinds = vData && vData2 ? { '': ['', '2'] } : {}
-    const filterAxisQuantityKinds = fData ? { '': d.getQuantityKind(fData) ?? fData } : {}
+    const filterAxisQuantityKinds = fData && typeof fData === 'string' ? { '': d.getQuantityKind(fData) ?? fData } : {}
     return {
       xAxis,
-      xAxisQuantityKind: d.getQuantityKind(xData) ?? xData,
+      xAxisQuantityKind: typeof xData === 'string' ? (d.getQuantityKind(xData) ?? xData) : undefined,
       yAxis,
-      yAxisQuantityKind: d.getQuantityKind(yData) ?? yData,
+      yAxisQuantityKind: typeof yData === 'string' ? (d.getQuantityKind(yData) ?? yData) : undefined,
       colorAxisQuantityKinds,
       colorAxis2dQuantityKinds,
       filterAxisQuantityKinds,
     }
   }
 
-  _commonSchemaProperties(dataProperties) {
+  // Returns schema properties for the common data parameters.
+  // All data params use EXPRESSION_REF (or anyOf with "none") — the caller must hoist
+  // computationSchema(data)['$defs'] to the top-level schema so that
+  // '#/$defs/expression' (and all nested refs within it) resolve correctly.
+  // LinesLayer overrides fData to a plain string enum since it needs CPU-side subarray slicing.
+  _commonSchemaProperties(data) {
+    const d = Data.wrap(data)
     return {
-      xData: {
-        type: "string",
-        enum: dataProperties,
-        description: "Property name in data object for x coordinates"
-      },
-      yData: {
-        type: "string",
-        enum: dataProperties,
-        description: "Property name in data object for y coordinates"
-      },
-      vData: {
-        type: "string",
-        enum: ["none"].concat(dataProperties),
-        description: "Primary property name in data object for color values"
-      },
-      vData2: {
-        type: "string",
-        enum: ["none"].concat(dataProperties),
-        description: "Optional secondary property name for 2D color mapping"
-      },
+      xData: EXPRESSION_REF,
+      yData: EXPRESSION_REF,
+      vData: EXPRESSION_REF,
+      vData2: EXPRESSION_REF,
       fData: {
-        type: "string",
-        enum: ["none"].concat(dataProperties),
-        description: "Optional property name for filter axis values"
+        anyOf: [{ const: "none" }, EXPRESSION_REF],
+        description: "Optional filter axis values expression, or 'none' to disable"
       },
       xAxis: {
         type: "string",
@@ -67,6 +57,8 @@ export class ScatterLayerTypeBase extends LayerType {
     }
   }
 
+  // Resolves column-name params to Float32Arrays. Used by LinesLayer which needs to
+  // slice adjacent-point pairs via subarray(). xData/yData/fData must be column name strings.
   _resolveColorData(parameters, d) {
     const { xData, yData, vData: vDataOrig, vData2: vData2Orig, fData: fDataOrig } = parameters
     const vData = vDataOrig == "none" ? null : vDataOrig
@@ -75,20 +67,20 @@ export class ScatterLayerTypeBase extends LayerType {
 
     const xQK = d.getQuantityKind(xData) ?? xData
     const yQK = d.getQuantityKind(yData) ?? yData
-    const vQK = vData ? (d.getQuantityKind(vData) ?? vData) : null
-    const vQK2 = vData2 ? (d.getQuantityKind(vData2) ?? vData2) : null
+    const vQK = vData && typeof vData === 'string' ? (d.getQuantityKind(vData) ?? vData) : null
+    const vQK2 = vData2 && typeof vData2 === 'string' ? (d.getQuantityKind(vData2) ?? vData2) : null
     const fQK = fData ? (d.getQuantityKind(fData) ?? fData) : null
 
     const srcX = d.getData(xData)
     const srcY = d.getData(yData)
-    const srcV = vData ? d.getData(vData) : null
-    const srcV2 = vData2 ? d.getData(vData2) : null
+    const srcV = vData && typeof vData === 'string' ? d.getData(vData) : null
+    const srcV2 = vData2 && typeof vData2 === 'string' ? d.getData(vData2) : null
     const srcF = fData ? d.getData(fData) : null
 
     if (!srcX) throw new Error(`Data column '${xData}' not found`)
     if (!srcY) throw new Error(`Data column '${yData}' not found`)
-    if (vData && !srcV) throw new Error(`Data column '${vData}' not found`)
-    if (vData2 && !srcV2) throw new Error(`Data column '${vData2}' not found`)
+    if (vData && typeof vData === 'string' && !srcV) throw new Error(`Data column '${vData}' not found`)
+    if (vData2 && typeof vData2 === 'string' && !srcV2) throw new Error(`Data column '${vData2}' not found`)
     if (fData && !srcF) throw new Error(`Data column '${fData}' not found`)
 
     return { xData, yData, vData, vData2, fData, xQK, yQK, vQK, vQK2, fQK, srcX, srcY, srcV, srcV2, srcF }
@@ -97,23 +89,26 @@ export class ScatterLayerTypeBase extends LayerType {
   _buildDomains(d, xData, yData, vData, vData2, xQK, yQK, vQK, vQK2) {
     const domains = {}
 
-    const xDomain = d.getDomain(xData)
-    if (xDomain) domains[xQK] = xDomain
+    if (xQK) {
+      const xDomain = d.getDomain(xData)
+      if (xDomain) domains[xQK] = xDomain
+    }
 
-    const yDomain = d.getDomain(yData)
-    if (yDomain) domains[yQK] = yDomain
+    if (yQK) {
+      const yDomain = d.getDomain(yData)
+      if (yDomain) domains[yQK] = yDomain
+    }
 
-    if (vData) {
+    if (vData && vQK) {
       const vDomain = d.getDomain(vData)
       if (vDomain) domains[vQK] = vDomain
     }
 
-    if (vData2) {
+    if (vData2 && vQK2) {
       const vDomain2 = d.getDomain(vData2)
       if (vDomain2) domains[vQK2] = vDomain2
     }
 
     return domains
   }
-
 }

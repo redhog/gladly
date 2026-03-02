@@ -77,12 +77,16 @@ class LinesLayerType extends ScatterLayerTypeBase {
   }
 
   schema(data) {
-    const dataProperties = Data.wrap(data).columns()
+    const d = Data.wrap(data)
+    const dataProperties = d.columns()
     return {
-      $schema: "https://json-schema.org/draft/2020-12/schema",
       type: "object",
       properties: {
-        ...this._commonSchemaProperties(dataProperties),
+        ...this._commonSchemaProperties(d),
+        fData: {
+          anyOf: [{ const: "none" }, { type: "string", enum: dataProperties }],
+          description: "Optional column name for filter axis values (must be a plain column — CPU-side slicing requires an array)"
+        },
         lineSegmentIdData: {
           type: "string",
           enum: dataProperties,
@@ -101,7 +105,7 @@ class LinesLayerType extends ScatterLayerTypeBase {
           description: "Line width in pixels (note: browsers may clamp values above 1)"
         }
       },
-      required: ["xData", "yData", "vData"]
+      required: ["xData", "yData", "vData", "fData"]
     }
   }
 
@@ -119,6 +123,14 @@ class LinesLayerType extends ScatterLayerTypeBase {
     const seg0 = segIds ? segIds.subarray(0, N - 1) : zeroSegs
     const seg1 = segIds ? segIds.subarray(1, N) : zeroSegs
 
+    // vData/vData2 may be computed attribute expressions (objects) rather than string
+    // column names. In that case pass them through directly as per-segment attributes;
+    // both endpoints of a segment receive the same computed value.
+    const vAttr0  = vData  ? (srcV  ? srcV.subarray(0, N - 1)  : vData)  : new Float32Array(N - 1)
+    const vAttr1  = vData  ? (srcV  ? srcV.subarray(1, N)      : vData)  : new Float32Array(N - 1)
+    const vAttr20 = vData2 ? (srcV2 ? srcV2.subarray(0, N - 1) : vData2) : new Float32Array(N - 1)
+    const vAttr21 = vData2 ? (srcV2 ? srcV2.subarray(1, N)     : vData2) : new Float32Array(N - 1)
+
     return [{
       attributes: {
         a_endPoint: new Float32Array([0.0, 1.0]),
@@ -126,10 +138,10 @@ class LinesLayerType extends ScatterLayerTypeBase {
         a_x1: srcX.subarray(1, N),
         a_y0: srcY.subarray(0, N - 1),
         a_y1: srcY.subarray(1, N),
-        a_v0: vData ? srcV.subarray(0, N - 1) : new Float32Array(N - 1),
-        a_v1: vData ? srcV.subarray(1, N) : new Float32Array(N - 1),
-        a_v20: vData2 ? srcV2.subarray(0, N - 1) : new Float32Array(N - 1),
-        a_v21: vData2 ? srcV2.subarray(1, N) : new Float32Array(N - 1),
+        a_v0:  vAttr0,
+        a_v1:  vAttr1,
+        a_v20: vAttr20,
+        a_v21: vAttr21,
         a_seg0: seg0,
         a_seg1: seg1,
         ...(fData ? {

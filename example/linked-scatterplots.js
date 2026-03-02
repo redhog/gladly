@@ -195,6 +195,8 @@ function attachPickHandler(plot) {
 attachPickHandler(plot1)
 attachPickHandler(plot2)
 
+  console.log("XXXXXXXXXXXXXXXXX", Plot.schema(data))
+  
 editor = new JSONEditor(document.getElementById('tab1-editor-container'), {
   schema: Plot.schema(data),
   startval: plot1Config,

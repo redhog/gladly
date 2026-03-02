@@ -242,6 +242,13 @@ export function resolveAttributeExpr(regl, expr, attrShaderName, plot) {
     return { kind: 'buffer', value: expr }
   }
 
+  if (typeof expr === 'string') {
+    const data = plot ? Data.wrap(plot.currentData) : null
+    const arr = data?.getData(expr)
+    if (!arr) throw new Error(`Column '${expr}' not found in data`)
+    return { kind: 'buffer', value: arr }
+  }
+
   const context = {
     bufferAttrs: {},
     textureUniforms: {},
