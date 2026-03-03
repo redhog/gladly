@@ -56,9 +56,9 @@ class PointsLayerType extends ScatterLayerTypeBase {
   _createLayer(parameters, data) {
     const d = Data.wrap(data)
     const { vData: vDataRaw, vData2: vData2Raw, fData: fDataRaw } = parameters
-    const vData  = vDataRaw  === "none" ? null : vDataRaw
-    const vData2 = vData2Raw === "none" ? null : vData2Raw
-    const fData  = fDataRaw  === "none" ? null : fDataRaw
+    const vData  = (vDataRaw  == null || vDataRaw  === "none") ? null : vDataRaw
+    const vData2 = (vData2Raw == null || vData2Raw === "none") ? null : vData2Raw
+    const fData  = (fDataRaw  == null || fDataRaw  === "none") ? null : fDataRaw
 
     // Quantity kinds — only derivable from string column names.
     const xQK = typeof parameters.xData === 'string' ? (d.getQuantityKind(parameters.xData) ?? parameters.xData) : undefined
