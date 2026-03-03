@@ -3,19 +3,19 @@ import { Data } from "../core/Data.js"
 import { registerLayerType } from "../core/LayerTypeRegistry.js"
 
 function makePointsVert(hasFilter) {
-  return `
+  return `#version 300 es
   precision mediump float;
-  attribute float x;
-  attribute float y;
-  attribute float color_data;
-  attribute float color_data2;
-  ${hasFilter ? 'attribute float filter_data;\n  uniform vec4 filter_range;' : ''}
+  in float x;
+  in float y;
+  in float color_data;
+  in float color_data2;
+  ${hasFilter ? 'in float filter_data;' : ''}
   uniform vec2 xDomain;
   uniform vec2 yDomain;
   uniform float xScaleType;
   uniform float yScaleType;
-  varying float value;
-  varying float value2;
+  out float value;
+  out float value2;
   void main() {
     ${hasFilter ? 'if (!filter_(filter_data)) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }' : ''}
     gl_Position = plot_pos(vec2(x, y));
@@ -27,14 +27,14 @@ function makePointsVert(hasFilter) {
 }
 
 function makePointsFrag(hasSecond) {
-  return `
+  return `#version 300 es
   precision mediump float;
-  varying float value;
-  varying float value2;
+  in float value;
+  in float value2;
   void main() {
     ${hasSecond
-      ? 'gl_FragColor = map_color_2d_(vec2(value, value2));'
-      : 'gl_FragColor = map_color_(value);'}
+      ? 'fragColor = map_color_2d_(vec2(value, value2));'
+      : 'fragColor = map_color_(value);'}
   }
 `
 }

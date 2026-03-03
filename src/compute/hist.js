@@ -103,7 +103,7 @@ export default function makeHistogram(regl, input, options = {}) {
     type: 'float',
     format: 'rgba'
   });
-  const histFBO = regl.framebuffer({ color: histTex });
+  const histFBO = regl.framebuffer({ color: histTex, depth: false, stencil: false });
 
   // Clear histogram
   regl.clear({ color: [0, 0, 0, 0], framebuffer: histFBO });
@@ -132,16 +132,16 @@ export default function makeHistogram(regl, input, options = {}) {
     const drawPoints = regl({
       framebuffer: histFBO,
       blend: { enable: true, func: { src: 'one', dst: 'one' } },
-      vert: `
+      vert: `#version 300 es
         precision highp float;
-        attribute float value;
+        in float value;
         void main() {
           float x = (floor(value * ${bins}.0) + 0.5)/${bins}.0*2.0 - 1.0;
           gl_Position = vec4(x, 0.0, 0.0, 1.0);
           gl_PointSize = 1.0;
         }
       `,
-      frag: `
+      frag: `#version 300 es
         precision highp float;
         out vec4 fragColor;
         void main() { fragColor = vec4(1.0, 0.0, 0.0, 1.0); }

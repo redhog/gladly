@@ -33,7 +33,9 @@ function makeFBO(regl, width) {
       height: 1,
       format: "rgba",
       type: "float"
-    })
+    }),
+    depth: false,
+    stencil: false,
   });
 }
 

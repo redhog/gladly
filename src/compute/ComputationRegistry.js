@@ -149,7 +149,7 @@ function resolveToGlslExpr(regl, expr, path, context, plot) {
   if (expr instanceof Float32Array) {
     const attrName = `a_cgen_${path}`
     context.bufferAttrs[attrName] = expr
-    context.globalDecls.push(`attribute float ${attrName};`)
+    context.globalDecls.push(`in float ${attrName};`)
     return attrName
   }
 
@@ -168,13 +168,13 @@ function resolveToGlslExpr(regl, expr, path, context, plot) {
       context.globalDecls.push(`float ${fnName}(float pickId) {
   float _tid = floor(pickId / 4.0);
   float _tx = mod(_tid, ${widthName}); float _ty = floor(_tid / ${widthName});
-  vec4 _t = texture2D(${uniformName}, vec2((_tx + 0.5) / ${widthName}, (_ty + 0.5) / ${heightName}));
+  vec4 _t = texture(${uniformName}, vec2((_tx + 0.5) / ${widthName}, (_ty + 0.5) / ${heightName}));
   float _ch = pickId - 4.0 * _tid;
   return mix(mix(_t.r, _t.g, clamp(_ch, 0.0, 1.0)), mix(_t.b, _t.a, clamp(_ch - 2.0, 0.0, 1.0)), step(1.5, _ch));
 }`)
       return `${fnName}(a_pickId)`
     }
-    return `texture2D(${uniformName}, vec2((mod(a_pickId, ${widthName}) + 0.5) / ${widthName}, (floor(a_pickId / ${widthName}) + 0.5) / ${heightName})).r`
+    return `texture(${uniformName}, vec2((mod(a_pickId, ${widthName}) + 0.5) / ${widthName}, (floor(a_pickId / ${widthName}) + 0.5) / ${heightName})).r`
   }
 
   if (typeof expr === 'number') {
@@ -233,7 +233,7 @@ function resolveToGlslExpr(regl, expr, path, context, plot) {
           context.globalDecls.push(`float ${fnName}(float pickId) {
   float _tid = floor(pickId / 4.0);
   float _tx = mod(_tid, ${widthName}); float _ty = floor(_tid / ${widthName});
-  vec4 _t = texture2D(${uniformName}, vec2((_tx + 0.5) / ${widthName}, (_ty + 0.5) / ${heightName}));
+  vec4 _t = texture(${uniformName}, vec2((_tx + 0.5) / ${widthName}, (_ty + 0.5) / ${heightName}));
   float _ch = pickId - 4.0 * _tid;
   return mix(mix(_t.r, _t.g, clamp(_ch, 0.0, 1.0)), mix(_t.b, _t.a, clamp(_ch - 2.0, 0.0, 1.0)), step(1.5, _ch));
 }`)
@@ -271,7 +271,7 @@ function resolveToGlslExpr(regl, expr, path, context, plot) {
 
         return liveRef.texture._packed
           ? `_samplePacked_${path}(a_pickId)`
-          : `texture2D(${uniformName}, vec2((mod(a_pickId, ${widthName}) + 0.5) / ${widthName}, (floor(a_pickId / ${widthName}) + 0.5) / ${heightName})).r`
+          : `texture(${uniformName}, vec2((mod(a_pickId, ${widthName}) + 0.5) / ${widthName}, (floor(a_pickId / ${widthName}) + 0.5) / ${heightName})).r`
       }
 
       if (glslComputations.has(compName)) {

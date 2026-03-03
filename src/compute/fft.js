@@ -39,7 +39,7 @@ function makeEmptyComplexTexture(regl, N) {
 }
 
 function makeFBO(regl, tex) {
-  return regl.framebuffer({ color: tex });
+  return regl.framebuffer({ color: tex, depth: false, stencil: false });
 }
 
 /* ============================================================

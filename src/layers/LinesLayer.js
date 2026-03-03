@@ -14,24 +14,24 @@ import { Data } from "../core/Data.js"
 import { registerLayerType } from "../core/LayerTypeRegistry.js"
 
 function makeLinesVert(hasFilter) {
-  return `
+  return `#version 300 es
   precision mediump float;
-  attribute float a_endPoint;
-  attribute float a_x0, a_y0;
-  attribute float a_x1, a_y1;
-  attribute float a_v0, a_v1;
-  attribute float a_v20, a_v21;
-  attribute float a_seg0, a_seg1;
-  ${hasFilter ? 'attribute float a_f0, a_f1;\n  uniform vec4 filter_range;' : ''}
+  in float a_endPoint;
+  in float a_x0, a_y0;
+  in float a_x1, a_y1;
+  in float a_v0, a_v1;
+  in float a_v20, a_v21;
+  in float a_seg0, a_seg1;
+  ${hasFilter ? 'in float a_f0, a_f1;' : ''}
   uniform vec2 xDomain;
   uniform vec2 yDomain;
   uniform float xScaleType;
   uniform float yScaleType;
-  varying float v_color_start;
-  varying float v_color_end;
-  varying float v_color2_start;
-  varying float v_color2_end;
-  varying float v_t;
+  out float v_color_start;
+  out float v_color_end;
+  out float v_color2_start;
+  out float v_color2_end;
+  out float v_t;
   void main() {
     float same_seg = abs(a_seg0 - a_seg1) < 0.5 ? 1.0 : 0.0;
     ${hasFilter ? 'if (!filter_(a_f0) || !filter_(a_f1)) same_seg = 0.0;' : ''}
@@ -49,14 +49,14 @@ function makeLinesVert(hasFilter) {
 }
 
 function makeLinesFrag(hasSecond) {
-  return `
+  return `#version 300 es
   precision mediump float;
   uniform float u_lineColorMode;
-  varying float v_color_start;
-  varying float v_color_end;
-  varying float v_color2_start;
-  varying float v_color2_end;
-  varying float v_t;
+  in float v_color_start;
+  in float v_color_end;
+  in float v_color2_start;
+  in float v_color2_end;
+  in float v_t;
   void main() {
     float value = u_lineColorMode > 0.5
       ? (v_t < 0.5 ? v_color_start : v_color_end)
@@ -65,8 +65,8 @@ function makeLinesFrag(hasSecond) {
     float value2 = u_lineColorMode > 0.5
       ? (v_t < 0.5 ? v_color2_start : v_color2_end)
       : mix(v_color2_start, v_color2_end, v_t);
-    gl_FragColor = map_color_2d_(vec2(value, value2));` : `
-    gl_FragColor = map_color_(value);`}
+    fragColor = map_color_2d_(vec2(value, value2));` : `
+    fragColor = map_color_(value);`}
   }
 `
 }

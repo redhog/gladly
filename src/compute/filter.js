@@ -17,7 +17,7 @@ function subtractTextures(regl, texA, texB) {
   const w = texA.width
   const h = texA.height
   const outputTex = regl.texture({ width: w, height: h, type: 'float', format: 'rgba' })
-  const outputFBO = regl.framebuffer({ color: outputTex })
+  const outputFBO = regl.framebuffer({ color: outputTex, depth: false, stencil: false })
 
   regl({
     framebuffer: outputFBO,
@@ -66,7 +66,7 @@ function filter1D(regl, input, kernel) {
   for (let i = 0; i < kernel.length; i++) kernelData[i * 4] = kernel[i]
   const kernelTex = regl.texture({ data: kernelData, shape: [kernel.length, 1], type: 'float', format: 'rgba' })
   const outputTex = regl.texture({ width: w, height: h, type: 'float', format: 'rgba' })
-  const outputFBO = regl.framebuffer({ color: outputTex })
+  const outputFBO = regl.framebuffer({ color: outputTex, depth: false, stencil: false })
 
   const radius = Math.floor(kernel.length / 2)
 

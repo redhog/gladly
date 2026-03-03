@@ -317,19 +317,53 @@ export class Plot {
   _initialize() {
     const { layers = [], axes = {}, colorbars = [] } = this.currentConfig
 
+    const gl = this.canvas.getContext('webgl2')
+    if (!gl) throw new Error('WebGL 2.0 is required but not supported by this browser')
+
+    // In WebGL 2.0, float texture support is core and is no longer exposed as
+    // OES_texture_float / OES_texture_float_linear extensions — getExtension()
+    // returns null for them. Regl v2.1.0 doesn't bypass its extension check for
+    // WebGL 2.0 contexts, so shim these two capability-only extensions (they have
+    // no methods, so returning {} is safe).
+    // The comparison is case-insensitive: regl normalises names to lowercase
+    // before calling getExtension (e.g. 'oes_texture_float').
+    const origGetExtension = gl.getExtension.bind(gl)
+    gl.getExtension = (name) => {
+      const lname = name.toLowerCase()
+      // OES_texture_float / OES_texture_float_linear: core in WebGL 2.0, no methods needed.
+      const wgl2CoreExts = ['oes_texture_float', 'oes_texture_float_linear']
+      if (wgl2CoreExts.includes(lname)) return origGetExtension(name) ?? {}
+      // ANGLE_instanced_arrays: core in WebGL 2.0 — proxy to native instancing methods.
+      if (lname === 'angle_instanced_arrays') {
+        return origGetExtension(name) ?? {
+          vertexAttribDivisorANGLE: gl.vertexAttribDivisor.bind(gl),
+          drawArraysInstancedANGLE: gl.drawArraysInstanced.bind(gl),
+          drawElementsInstancedANGLE: gl.drawElementsInstanced.bind(gl),
+          VERTEX_ATTRIB_ARRAY_DIVISOR_ANGLE: 0x88FE
+        }
+      }
+      return origGetExtension(name)
+    }
+
+    // In WebGL 2.0, texImage2D with unsized internalformat GL_RGBA (0x1908) and
+    // type GL_FLOAT (0x1406) is invalid — WebGL 2.0 requires the sized format
+    // GL_RGBA32F (0x8814). Regl v2.1.0 does not upgrade the internal format
+    // automatically, so shim texImage2D to do it here.
+    const GL_RGBA = 0x1908, GL_FLOAT = 0x1406, GL_RGBA32F = 0x8814
+    const origTexImage2D = gl.texImage2D.bind(gl)
+    gl.texImage2D = function (...args) {
+      // signature: texImage2D(target, level, internalformat, width, height, border, format, type, data)
+      if (args.length >= 8 && args[2] === GL_RGBA && args[7] === GL_FLOAT) {
+        args = [...args]
+        args[2] = GL_RGBA32F
+      }
+      return origTexImage2D(...args)
+    }
+
     this.regl = reglInit({
-      canvas: this.canvas,
-      extensions: [
-        'ANGLE_instanced_arrays',
-        'OES_texture_float',
-        'OES_texture_float_linear',
-      ],
-      optionalExtensions: [
-        // WebGL1: render to float framebuffers (needed by compute passes)
-        'WEBGL_color_buffer_float',
-        // WebGL2: render to float framebuffers (standard but must be opted in)
-        'EXT_color_buffer_float',
-      ]
+      gl,
+      extensions: ['OES_texture_float', 'EXT_color_buffer_float', 'ANGLE_instanced_arrays'],
+      optionalExtensions: ['OES_texture_float_linear'],
     })
 
     this.layers = []

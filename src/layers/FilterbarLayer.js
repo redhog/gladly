@@ -16,15 +16,15 @@ export const filterbarLayerType = new LayerType({
 
   // Nothing is rendered — vertexCount is always 0.
   // These minimal shaders satisfy the WebGL compiler but never execute.
-  vert: `
+  vert: `#version 300 es
     precision mediump float;
     uniform vec2 xDomain;
     uniform vec2 yDomain;
     void main() { gl_Position = vec4(0.0, 0.0, 0.0, 1.0); }
   `,
-  frag: `
+  frag: `#version 300 es
     precision mediump float;
-    void main() { gl_FragColor = gladly_apply_color(vec4(0.0, 0.0, 0.0, 0.0)); }
+    void main() { fragColor = gladly_apply_color(vec4(0.0, 0.0, 0.0, 0.0)); }
   `,
 
   schema: () => ({

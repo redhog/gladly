@@ -22,7 +22,7 @@ export default function smoothKDE(regl, histInput, options = {}) {
     : histInput;
 
   const kdeTex = regl.texture({ width: bins, height: 1, type: 'float', format: 'rgba' });
-  const kdeFBO = regl.framebuffer({ color: kdeTex });
+  const kdeFBO = regl.framebuffer({ color: kdeTex, depth: false, stencil: false });
 
   const kernelRadius = Math.ceil(bandwidth * 3);
   const kernelSize = kernelRadius * 2 + 1;

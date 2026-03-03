@@ -22,9 +22,10 @@ vec4 plot_pos(vec2 pos) {
 }
 
 function buildApplyColorGlsl() {
-  return `uniform float u_pickingMode;
+  return `out vec4 fragColor;
+uniform float u_pickingMode;
 uniform float u_pickLayerIndex;
-varying float v_pickId;
+in float v_pickId;
 vec4 gladly_apply_color(vec4 color) {
   if (u_pickingMode > 0.5) {
     float layerIdx = u_pickLayerIndex + 1.0;
@@ -40,10 +41,10 @@ vec4 gladly_apply_color(vec4 color) {
 }`
 }
 
-// Removes `attribute [precision] type varName;` from GLSL source.
+// Removes `in [precision] type varName;` from GLSL source.
 function removeAttributeDecl(src, varName) {
   return src.replace(
-    new RegExp(`[ \\t]*attribute\\s+(?:(?:lowp|mediump|highp)\\s+)?\\w+\\s+${varName}\\s*;[ \\t]*\\n?`, 'g'),
+    new RegExp(`[ \\t]*in\\s+(?:(?:lowp|mediump|highp)\\s+)?\\w+\\s+${varName}\\s*;[ \\t]*\\n?`, 'g'),
     ''
   )
 }
@@ -211,7 +212,7 @@ export class LayerType {
     const spatialGlsl = buildSpatialGlsl()
     const colorGlsl = (Object.keys(layer.colorAxes).length > 0 || Object.keys(layer.colorAxes2d).length > 0) ? buildColorGlsl() : ''
     const filterGlsl = Object.keys(layer.filterAxes).length > 0 ? buildFilterGlsl() : ''
-    const pickVertDecls = `attribute float a_pickId;\nvarying float v_pickId;`
+    const pickVertDecls = `in float a_pickId;\nout float v_pickId;`
 
     // Per-suffix color wrapper: uniform declarations + map_color_SUFFIX(value).
     // Uniforms are declared here so they precede the function body (GLSL requires

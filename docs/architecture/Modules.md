@@ -57,7 +57,21 @@ this._renderCallbacks    // Set<function> — called after each render()
 
 **`update({ config, data })`** — Stores config/data, then calls `_initialize()` if both are present.
 
-**`_initialize()`** — Rebuilds regl context, processes layers, sets domains, initialises zoom, renders.
+**`_initialize()`** — Rebuilds the WebGL 2.0 context, processes layers, sets domains, initialises zoom, renders.
+
+**WebGL 2.0 context setup (inside `_initialize`):**
+
+Gladly requires WebGL 2.0 (GLSL ES 3.00) because the compute shaders use integer bitwise operations that are unavailable in GLSL ES 1.00. Regl v2.1.0 targets WebGL 1.0 and needs three compatibility shims applied to the raw `WebGL2RenderingContext` before being passed to `reglInit`:
+
+1. **`gl.getExtension` shim** — Intercepts extension lookups for capabilities that became core in WebGL 2.0:
+   - `OES_texture_float` / `OES_texture_float_linear`: returns `{}` (no methods needed; just presence check).
+   - `ANGLE_instanced_arrays`: returns a proxy mapping `*ANGLE` method names to the WebGL 2.0 core equivalents (`gl.vertexAttribDivisor`, `gl.drawArraysInstanced`, `gl.drawElementsInstanced`). Also explicitly listed in the `extensions` array passed to `reglInit` to ensure regl calls `getExtension` for it.
+
+2. **`gl.texImage2D` shim** — Intercepts float texture creation. In WebGL 2.0, the unsized internal format `GL_RGBA` (0x1908) with type `GL_FLOAT` (0x1406) is invalid; the sized format `GL_RGBA32F` (0x8814) is required. Upgrades `internalformat` automatically when `internalformat === GL_RGBA && type === GL_FLOAT`.
+
+Both shims compare extension names case-insensitively because regl normalises to lowercase before calling `getExtension`.
+
+See architectural decision #7 in [ARCHITECTURE.md](../ARCHITECTURE.md) for the full rationale.
 
 **`_processLayers(layersConfig, data)`**
 1. For each `{ typeName: parameters }`, looks up the `LayerType`

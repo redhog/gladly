@@ -15,12 +15,12 @@ import "../compute/axisFilter.js"
 // The `count` attribute is resolved via the 'histogram' texture computation so
 // its value equals the bin count sampled at a_pickId.
 
-const HIST_VERT = `
+const HIST_VERT = `#version 300 es
   precision mediump float;
 
-  attribute float a_corner;
-  attribute float x_center;
-  attribute float count;
+  in float a_corner;
+  in float x_center;
+  in float count;
 
   uniform vec2  xDomain;
   uniform vec2  yDomain;
@@ -39,11 +39,11 @@ const HIST_VERT = `
   }
 `
 
-const HIST_FRAG = `
+const HIST_FRAG = `#version 300 es
   precision mediump float;
   uniform vec4 u_color;
   void main() {
-    gl_FragColor = gladly_apply_color(u_color);
+    fragColor = gladly_apply_color(u_color);
   }
 `
 
