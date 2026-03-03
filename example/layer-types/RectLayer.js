@@ -23,23 +23,22 @@ export const rectLayerType = new LayerType({
     }
   },
 
-  // GLSL ES 1.00 — uses instanced attributes; cx/cy are per-vertex, rest are per-instance.
-  vert: `
+  vert: `#version 300 es
     precision mediump float;
-    attribute float cx;
-    attribute float cy;
-    attribute float x;
-    attribute float xPrev;
-    attribute float xNext;
-    attribute float top;
-    attribute float bot;
-    attribute float color_data;
+    in float cx;
+    in float cy;
+    in float x;
+    in float xPrev;
+    in float xNext;
+    in float top;
+    in float bot;
+    in float color_data;
     uniform float uE;
     uniform vec2 xDomain;
     uniform vec2 yDomain;
     uniform float xScaleType;
     uniform float yScaleType;
-    varying float value;
+    out float value;
 
     void main() {
       float halfLeft  = (x - xPrev) / 2.0;
@@ -57,15 +56,12 @@ export const rectLayerType = new LayerType({
     }
   `,
 
-  frag: `
+  frag: `#version 300 es
     precision mediump float;
-    uniform int colorscale;
-    uniform vec2 color_range;
-    uniform float color_scale_type;
-    varying float value;
+    in float value;
 
     void main() {
-      gl_FragColor = map_color_(value);
+      fragColor = map_color_(value);
     }
   `,
 

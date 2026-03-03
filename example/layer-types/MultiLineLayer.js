@@ -20,18 +20,18 @@ export const multiLineLayerType = new LayerType({
     }
   },
 
-  vert: `
+  vert: `#version 300 es
     precision mediump float;
-    attribute float x;
-    attribute float y;
-    attribute float line_index;
-    attribute float bad_segment;
+    in float x;
+    in float y;
+    in float line_index;
+    in float bad_segment;
     uniform vec2 xDomain;
     uniform vec2 yDomain;
     uniform float xScaleType;
     uniform float yScaleType;
-    varying float vLineIndex;
-    varying float vBadSegment;
+    out float vLineIndex;
+    out float vBadSegment;
     void main() {
       gl_Position = plot_pos(vec2(x, y));
       vLineIndex = line_index;
@@ -39,19 +39,16 @@ export const multiLineLayerType = new LayerType({
     }
   `,
 
-  frag: `
+  frag: `#version 300 es
     precision mediump float;
-    uniform int colorscale;
-    uniform vec2 color_range;
-    uniform float color_scale_type;
     uniform vec4 bad_color;
-    varying float vLineIndex;
-    varying float vBadSegment;
+    in float vLineIndex;
+    in float vBadSegment;
     void main() {
       if (vBadSegment > 0.5) {
-        gl_FragColor = gladly_apply_color(bad_color);
+        fragColor = gladly_apply_color(bad_color);
       } else {
-        gl_FragColor = map_color_(vLineIndex);
+        fragColor = map_color_(vLineIndex);
       }
     }
   `,
