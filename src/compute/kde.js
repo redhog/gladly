@@ -14,7 +14,11 @@ export default function smoothKDE(regl, histInput, options = {}) {
   const bandwidth = options.bandwidth || 5.0;
 
   const histTex = (histInput instanceof Float32Array)
-    ? regl.texture({ data: histInput, shape: [bins, 1], type: 'float' })
+    ? (() => {
+        const d = new Float32Array(bins * 4)
+        for (let i = 0; i < bins; i++) d[i * 4] = histInput[i]
+        return regl.texture({ data: d, shape: [bins, 1], type: 'float', format: 'rgba' })
+      })()
     : histInput;
 
   const kdeTex = regl.texture({ width: bins, height: 1, type: 'float', format: 'rgba' });
@@ -31,20 +35,21 @@ export default function smoothKDE(regl, histInput, options = {}) {
   }
   for (let i = 0; i < kernel.length; i++) kernel[i] /= sum;
 
-  const kernelTex = regl.texture({ data: kernel, shape: [kernelSize, 1], type: 'float' });
+  const kernelData = new Float32Array(kernelSize * 4)
+  for (let i = 0; i < kernelSize; i++) kernelData[i * 4] = kernel[i]
+  const kernelTex = regl.texture({ data: kernelData, shape: [kernelSize, 1], type: 'float', format: 'rgba' });
 
   const drawKDE = regl({
     framebuffer: kdeFBO,
-    vert: `
+    vert: `#version 300 es
       precision highp float;
-      attribute float bin;
+      in float bin;
       void main() {
         float x = (bin + 0.5)/${bins}.0*2.0 - 1.0;
         gl_Position = vec4(x, 0.0, 0.0, 1.0);
       }
     `,
-    frag: `
-      #version 300 es
+    frag: `#version 300 es
       precision highp float;
       uniform sampler2D histTex;
       uniform sampler2D kernelTex;

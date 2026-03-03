@@ -1,47 +1,52 @@
-import { registerTextureComputation, TextureComputation, EXPRESSION_REF } from "./ComputationRegistry.js"
+import { registerTextureComputation, TextureComputation, EXPRESSION_REF, dataShape } from "./ComputationRegistry.js"
 
 function toTexture(regl, input, length) {
   if (input instanceof Float32Array) {
-    return regl.texture({ data: input, shape: [length, 1], type: 'float', format: 'rgba' });
+    const [w, h] = dataShape(regl, length)
+    const data = new Float32Array(w * h * 4)
+    data.set(input)
+    const tex = regl.texture({ data, shape: [w, h], type: 'float', format: 'rgba' })
+    tex._dataLength = length
+    tex._packed = true
+    return tex
   }
-  return input; // already a texture
+  return input // already a texture
 }
 
 function subtractTextures(regl, texA, texB) {
-  const length = texA.width;
-  const outputTex = regl.texture({ width: length, height: 1, type: 'float', format: 'rgba' });
-  const outputFBO = regl.framebuffer({ color: outputTex });
+  const w = texA.width
+  const h = texA.height
+  const outputTex = regl.texture({ width: w, height: h, type: 'float', format: 'rgba' })
+  const outputFBO = regl.framebuffer({ color: outputTex })
 
-  const drawSub = regl({
+  regl({
     framebuffer: outputFBO,
-    vert: `
+    vert: `#version 300 es
       precision highp float;
-      attribute float bin;
+      in vec2 position;
       void main() {
-        float x = (bin + 0.5)/${length}.0*2.0 - 1.0;
-        gl_Position = vec4(x,0.0,0.0,1.0);
+        gl_Position = vec4(position, 0.0, 1.0);
       }
     `,
-    frag: `
+    frag: `#version 300 es
       precision highp float;
       uniform sampler2D texA;
       uniform sampler2D texB;
       out vec4 fragColor;
       void main() {
-        int idx = int(gl_FragCoord.x-0.5);
-        float a = texelFetch(texA, ivec2(idx,0),0).r;
-        float b = texelFetch(texB, ivec2(idx,0),0).r;
-        fragColor = vec4(a-b,0.0,0.0,1.0);
+        ivec2 coord = ivec2(gl_FragCoord.xy);
+        fragColor = texelFetch(texA, coord, 0) - texelFetch(texB, coord, 0);
       }
     `,
-    attributes: { bin: Array.from({ length }, (_, i) => i) },
+    attributes: { position: [[-1, -1], [1, -1], [-1, 1], [1, 1]] },
     uniforms: { texA, texB },
-    count: length,
-    primitive: 'points'
-  });
+    count: 4,
+    primitive: 'triangle strip'
+  })()
 
-  drawSub();
-  return outputTex;
+  if (texA._dataLength !== undefined) outputTex._dataLength = texA._dataLength
+  outputTex._packed = true
+  return outputTex
 }
 
 /**
@@ -52,63 +57,62 @@ function subtractTextures(regl, texA, texB) {
  * @returns {Texture} - filtered output texture
  */
 function filter1D(regl, input, kernel) {
-  const length = input instanceof Float32Array ? input.length : input.width;
-  const inputTex = toTexture(regl, input, length);
+  const length = input instanceof Float32Array ? input.length : (input._dataLength ?? input.width * input.height)
+  const inputTex = toTexture(regl, input, length)
+  const w = inputTex.width
+  const h = inputTex.height
 
-  const kernelTex = regl.texture({ data: kernel, shape: [kernel.length, 1], type: 'float' });
+  const kernelData = new Float32Array(kernel.length * 4)
+  for (let i = 0; i < kernel.length; i++) kernelData[i * 4] = kernel[i]
+  const kernelTex = regl.texture({ data: kernelData, shape: [kernel.length, 1], type: 'float', format: 'rgba' })
+  const outputTex = regl.texture({ width: w, height: h, type: 'float', format: 'rgba' })
+  const outputFBO = regl.framebuffer({ color: outputTex })
 
-  const outputTex = regl.texture({ width: length, height: 1, type: 'float', format: 'rgba' });
-  const outputFBO = regl.framebuffer({ color: outputTex });
+  const radius = Math.floor(kernel.length / 2)
 
-  const radius = Math.floor(kernel.length / 2);
-
-  const drawFilter = regl({
+  regl({
     framebuffer: outputFBO,
-    vert: `
+    vert: `#version 300 es
       precision highp float;
-      attribute float bin;
+      in vec2 position;
       void main() {
-        float x = (bin + 0.5)/${length}.0*2.0 - 1.0;
-        gl_Position = vec4(x, 0.0, 0.0, 1.0);
+        gl_Position = vec4(position, 0.0, 1.0);
       }
     `,
-    frag: `
-      #version 300 es
+    frag: `#version 300 es
       precision highp float;
       uniform sampler2D inputTex;
       uniform sampler2D kernelTex;
       uniform int radius;
-      uniform int length;
+      uniform int texWidth;
+      uniform int totalLength;
       out vec4 fragColor;
 
       void main() {
-        float idx = gl_FragCoord.x - 0.5;
-        float sum = 0.0;
-        for (int i=-16; i<=16; i++) { // max kernel radius 16
-          if (i+16 >= radius*2+1) break;
-          int sampleIdx = int(clamp(idx + float(i), 0.0, float(length-1)));
-          float val = texelFetch(inputTex, ivec2(sampleIdx,0),0).r;
-          float w = texelFetch(kernelTex, ivec2(i+radius,0),0).r;
-          sum += val * w;
+        ivec2 coord = ivec2(gl_FragCoord.xy);
+        int di = (coord.y * texWidth + coord.x) * 4;
+        vec4 sums = vec4(0.0);
+        for (int i = -16; i <= 16; i++) { // max kernel radius 16
+          if (i + 16 >= radius * 2 + 1) break;
+          float kw = texelFetch(kernelTex, ivec2(i + radius, 0), 0).r;
+          for (int c = 0; c < 4; c++) {
+            int si = clamp(di + c + i, 0, totalLength - 1);
+            ivec2 sc = ivec2((si / 4) % texWidth, (si / 4) / texWidth);
+            sums[c] += texelFetch(inputTex, sc, 0)[si % 4] * kw;
+          }
         }
-        fragColor = vec4(sum,0.0,0.0,1.0);
+        fragColor = sums;
       }
     `,
-    attributes: {
-      bin: Array.from({ length }, (_, i) => i)
-    },
-    uniforms: {
-      inputTex,
-      kernelTex,
-      radius,
-      length
-    },
-    count: length,
-    primitive: 'points'
-  });
+    attributes: { position: [[-1, -1], [1, -1], [-1, 1], [1, 1]] },
+    uniforms: { inputTex, kernelTex, radius, texWidth: w, totalLength: length },
+    count: 4,
+    primitive: 'triangle strip'
+  })()
 
-  drawFilter();
-  return outputTex;
+  outputTex._dataLength = length
+  outputTex._packed = true
+  return outputTex
 }
 
 // Gaussian kernel helper

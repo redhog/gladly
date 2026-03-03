@@ -7,10 +7,17 @@ export class Computation {
   schema(data) { throw new Error('Not implemented') }
 }
 
+export function dataShape(regl, n) {
+  const numTexels = Math.ceil(n / 4)
+  const w = Math.min(numTexels, regl.limits.maxTextureSize)
+  const h = Math.ceil(numTexels / w)
+  return [w, h]
+}
+
 export class TextureComputation extends Computation {
   compute(regl, params, data, getAxisDomain) { throw new Error('Not implemented') }
 
-  // Resolves a data parameter to a 1D regl texture.
+  // Resolves a data parameter to a regl texture, folding into 2D if length exceeds maxTextureSize.
   // Accepts a Float32Array, an existing regl texture, or a string column name looked up from data.
   resolveDataParam(regl, data, value) {
     if (isTexture(value)) return value
@@ -20,7 +27,13 @@ export class TextureComputation extends Computation {
       array = data.getData(value)
       if (!(array instanceof Float32Array)) throw new Error(`Column '${value}' not found in data`)
     }
-    return regl.texture({ data: array, shape: [array.length, 1], type: 'float', format: 'rgba' })
+    const [w, h] = dataShape(regl, array.length)
+    const texData = new Float32Array(w * h * 4)
+    texData.set(array)
+    const tex = regl.texture({ data: texData, shape: [w, h], type: 'float', format: 'rgba' })
+    tex._dataLength = array.length
+    tex._packed = true
+    return tex
   }
 }
 
@@ -143,11 +156,25 @@ function resolveToGlslExpr(regl, expr, path, context, plot) {
   if (isTexture(expr)) {
     const uniformName = `u_cgen_${path}`
     const widthName = `u_cgen_${path}_width`
+    const heightName = `u_cgen_${path}_height`
     context.textureUniforms[uniformName] = expr
     context.scalarUniforms[widthName] = expr.width
+    context.scalarUniforms[heightName] = expr.height
     context.globalDecls.push(`uniform sampler2D ${uniformName};`)
     context.globalDecls.push(`uniform float ${widthName};`)
-    return `texture2D(${uniformName}, vec2((a_pickId + 0.5) / ${widthName}, 0.5)).r`
+    context.globalDecls.push(`uniform float ${heightName};`)
+    if (expr._packed) {
+      const fnName = `_samplePacked_${path}`
+      context.globalDecls.push(`float ${fnName}(float pickId) {
+  float _tid = floor(pickId / 4.0);
+  float _tx = mod(_tid, ${widthName}); float _ty = floor(_tid / ${widthName});
+  vec4 _t = texture2D(${uniformName}, vec2((_tx + 0.5) / ${widthName}, (_ty + 0.5) / ${heightName}));
+  float _ch = pickId - 4.0 * _tid;
+  return mix(mix(_t.r, _t.g, clamp(_ch, 0.0, 1.0)), mix(_t.b, _t.a, clamp(_ch - 2.0, 0.0, 1.0)), step(1.5, _ch));
+}`)
+      return `${fnName}(a_pickId)`
+    }
+    return `texture2D(${uniformName}, vec2((mod(a_pickId, ${widthName}) + 0.5) / ${widthName}, (floor(a_pickId / ${widthName}) + 0.5) / ${heightName})).r`
   }
 
   if (typeof expr === 'number') {
@@ -168,6 +195,7 @@ function resolveToGlslExpr(regl, expr, path, context, plot) {
         const comp = textureComputations.get(compName)
         const uniformName = `u_cgen_${path}`
         const widthName = `u_cgen_${path}_width`
+        const heightName = `u_cgen_${path}_height`
 
         // Live reference updated when axis domains change.
         const liveRef = {
@@ -194,10 +222,22 @@ function resolveToGlslExpr(regl, expr, path, context, plot) {
 
         // Use a function so regl reads the current texture each frame.
         context.textureUniforms[uniformName] = () => liveRef.texture
-        // Texture width is constant across recomputes (same bins count).
+        // Width and height are constant across recomputes (same data length).
         context.scalarUniforms[widthName] = liveRef.texture.width
+        context.scalarUniforms[heightName] = liveRef.texture.height
         context.globalDecls.push(`uniform sampler2D ${uniformName};`)
         context.globalDecls.push(`uniform float ${widthName};`)
+        context.globalDecls.push(`uniform float ${heightName};`)
+        if (liveRef.texture._packed) {
+          const fnName = `_samplePacked_${path}`
+          context.globalDecls.push(`float ${fnName}(float pickId) {
+  float _tid = floor(pickId / 4.0);
+  float _tx = mod(_tid, ${widthName}); float _ty = floor(_tid / ${widthName});
+  vec4 _t = texture2D(${uniformName}, vec2((_tx + 0.5) / ${widthName}, (_ty + 0.5) / ${heightName}));
+  float _ch = pickId - 4.0 * _tid;
+  return mix(mix(_t.r, _t.g, clamp(_ch, 0.0, 1.0)), mix(_t.b, _t.a, clamp(_ch - 2.0, 0.0, 1.0)), step(1.5, _ch));
+}`)
+        }
 
         context.axisUpdaters.push({
           refreshIfNeeded(currentPlot) {
@@ -229,7 +269,9 @@ function resolveToGlslExpr(regl, expr, path, context, plot) {
           }
         })
 
-        return `texture2D(${uniformName}, vec2((a_pickId + 0.5) / ${widthName}, 0.5)).r`
+        return liveRef.texture._packed
+          ? `_samplePacked_${path}(a_pickId)`
+          : `texture2D(${uniformName}, vec2((mod(a_pickId, ${widthName}) + 0.5) / ${widthName}, (floor(a_pickId / ${widthName}) + 0.5) / ${heightName})).r`
       }
 
       if (glslComputations.has(compName)) {
