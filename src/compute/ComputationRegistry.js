@@ -5,6 +5,7 @@ const glslComputations = new Map()
 
 export class Computation {
   schema(data) { throw new Error('Not implemented') }
+  getQuantityKind(params, data) { return null }
 }
 
 export function dataShape(regl, n) {
@@ -53,6 +54,25 @@ export function registerTextureComputation(name, computation) {
 
 export function registerGlslComputation(name, computation) {
   glslComputations.set(name, computation)
+}
+
+// Resolve the quantity kind of an expression (string column name or computed expression).
+// For a string column name: returns data.getQuantityKind(expr) falling back to expr itself.
+// For a computed expression { compName: params }: delegates to computation.getQuantityKind().
+// Returns null when the quantity kind cannot be determined.
+export function resolveQuantityKind(expr, data) {
+  if (typeof expr === 'string') {
+    return (data ? data.getQuantityKind(expr) : null) ?? expr
+  }
+  if (expr && typeof expr === 'object') {
+    const keys = Object.keys(expr)
+    if (keys.length === 1) {
+      const compName = keys[0]
+      const comp = textureComputations.get(compName) ?? glslComputations.get(compName)
+      if (comp) return comp.getQuantityKind(expr[compName], data)
+    }
+  }
+  return null
 }
 
 export function computationSchema(data) {

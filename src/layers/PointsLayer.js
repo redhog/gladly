@@ -1,6 +1,7 @@
 import { ScatterLayerTypeBase } from "./ScatterShared.js"
 import { Data } from "../core/Data.js"
 import { registerLayerType } from "../core/LayerTypeRegistry.js"
+import { resolveQuantityKind } from "../compute/ComputationRegistry.js"
 
 function makePointsVert(hasFilter) {
   return `#version 300 es
@@ -60,11 +61,10 @@ class PointsLayerType extends ScatterLayerTypeBase {
     const vData2 = (vData2Raw == null || vData2Raw === "none") ? null : vData2Raw
     const fData  = (fDataRaw  == null || fDataRaw  === "none") ? null : fDataRaw
 
-    // Quantity kinds — only derivable from string column names.
-    const xQK = typeof parameters.xData === 'string' ? (d.getQuantityKind(parameters.xData) ?? parameters.xData) : undefined
-    const yQK = typeof parameters.yData === 'string' ? (d.getQuantityKind(parameters.yData) ?? parameters.yData) : undefined
-    const vQK  = vData  && typeof vData  === 'string' ? (d.getQuantityKind(vData)  ?? vData)  : null
-    const vQK2 = vData2 && typeof vData2 === 'string' ? (d.getQuantityKind(vData2) ?? vData2) : null
+    const xQK  = resolveQuantityKind(parameters.xData, d) ?? undefined
+    const yQK  = resolveQuantityKind(parameters.yData, d) ?? undefined
+    const vQK  = vData  ? resolveQuantityKind(vData,  d) : null
+    const vQK2 = vData2 ? resolveQuantityKind(vData2, d) : null
 
     const domains = this._buildDomains(d, parameters.xData, parameters.yData, vData, vData2, xQK, yQK, vQK, vQK2)
 

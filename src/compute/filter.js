@@ -1,4 +1,4 @@
-import { registerTextureComputation, TextureComputation, EXPRESSION_REF, dataShape } from "./ComputationRegistry.js"
+import { registerTextureComputation, TextureComputation, EXPRESSION_REF, dataShape, resolveQuantityKind } from "./ComputationRegistry.js"
 
 function toTexture(regl, input, length) {
   if (input instanceof Float32Array) {
@@ -159,6 +159,7 @@ function bandPass(regl, input, sigmaLow, sigmaHigh) {
 export { filter1D, gaussianKernel, lowPass, highPass, bandPass }
 
 class Filter1DComputation extends TextureComputation {
+  getQuantityKind(params, data) { return resolveQuantityKind(params.input, data) }
   compute(regl, params, data, getAxisDomain) {
     const input = this.resolveDataParam(regl, data, params.input)
     return filter1D(regl, input, params.kernel)
@@ -177,6 +178,7 @@ class Filter1DComputation extends TextureComputation {
 }
 
 class LowPassComputation extends TextureComputation {
+  getQuantityKind(params, data) { return resolveQuantityKind(params.input, data) }
   compute(regl, params, data, getAxisDomain) {
     const input = this.resolveDataParam(regl, data, params.input)
     return lowPass(regl, input, params.sigma, params.kernelSize)
@@ -196,6 +198,7 @@ class LowPassComputation extends TextureComputation {
 }
 
 class HighPassComputation extends TextureComputation {
+  getQuantityKind(params, data) { return resolveQuantityKind(params.input, data) }
   compute(regl, params, data, getAxisDomain) {
     const input = this.resolveDataParam(regl, data, params.input)
     return highPass(regl, input, params.sigma, params.kernelSize)
@@ -215,6 +218,7 @@ class HighPassComputation extends TextureComputation {
 }
 
 class BandPassComputation extends TextureComputation {
+  getQuantityKind(params, data) { return resolveQuantityKind(params.input, data) }
   compute(regl, params, data, getAxisDomain) {
     const input = this.resolveDataParam(regl, data, params.input)
     return bandPass(regl, input, params.sigmaLow, params.sigmaHigh)

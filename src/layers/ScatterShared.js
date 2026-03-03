@@ -1,7 +1,7 @@
 import { LayerType } from "../core/LayerType.js"
 import { AXES } from "../axes/AxisRegistry.js"
 import { Data } from "../core/Data.js"
-import { computationSchema, EXPRESSION_REF, EXPRESSION_REF_OPT } from "../compute/ComputationRegistry.js"
+import { computationSchema, EXPRESSION_REF, EXPRESSION_REF_OPT, resolveQuantityKind } from "../compute/ComputationRegistry.js"
 
 export class ScatterLayerTypeBase extends LayerType {
   _getAxisConfig(parameters, data) {
@@ -11,15 +11,17 @@ export class ScatterLayerTypeBase extends LayerType {
     const vData2 = vData2Raw === "none" ? null : vData2Raw
     const fData  = fDataRaw  === "none" ? null : fDataRaw
     const colorAxisQuantityKinds = {}
-    if (vData  && typeof vData  === 'string') colorAxisQuantityKinds['']  = d.getQuantityKind(vData)  ?? vData
-    if (vData2 && typeof vData2 === 'string') colorAxisQuantityKinds['2'] = d.getQuantityKind(vData2) ?? vData2
+    const vQK  = vData  ? resolveQuantityKind(vData,  d) : null
+    const vQK2 = vData2 ? resolveQuantityKind(vData2, d) : null
+    if (vQK)  colorAxisQuantityKinds['']  = vQK
+    if (vQK2) colorAxisQuantityKinds['2'] = vQK2
     const colorAxis2dQuantityKinds = vData && vData2 ? { '': ['', '2'] } : {}
-    const filterAxisQuantityKinds = fData && typeof fData === 'string' ? { '': d.getQuantityKind(fData) ?? fData } : {}
+    const filterAxisQuantityKinds = fData ? { '': resolveQuantityKind(fData, d) } : {}
     return {
       xAxis,
-      xAxisQuantityKind: typeof xData === 'string' ? (d.getQuantityKind(xData) ?? xData) : undefined,
+      xAxisQuantityKind: resolveQuantityKind(xData, d) ?? undefined,
       yAxis,
-      yAxisQuantityKind: typeof yData === 'string' ? (d.getQuantityKind(yData) ?? yData) : undefined,
+      yAxisQuantityKind: resolveQuantityKind(yData, d) ?? undefined,
       colorAxisQuantityKinds,
       colorAxis2dQuantityKinds,
       filterAxisQuantityKinds,
@@ -64,8 +66,8 @@ export class ScatterLayerTypeBase extends LayerType {
 
     const xQK = d.getQuantityKind(xData) ?? xData
     const yQK = d.getQuantityKind(yData) ?? yData
-    const vQK = vData && typeof vData === 'string' ? (d.getQuantityKind(vData) ?? vData) : null
-    const vQK2 = vData2 && typeof vData2 === 'string' ? (d.getQuantityKind(vData2) ?? vData2) : null
+    const vQK = vData ? resolveQuantityKind(vData, d) : null
+    const vQK2 = vData2 ? resolveQuantityKind(vData2, d) : null
     const fQK = fData ? (d.getQuantityKind(fData) ?? fData) : null
 
     const srcX = d.getData(xData)

@@ -1,4 +1,4 @@
-import { registerTextureComputation, TextureComputation, EXPRESSION_REF } from "./ComputationRegistry.js"
+import { registerTextureComputation, TextureComputation, EXPRESSION_REF, resolveQuantityKind } from "./ComputationRegistry.js"
 
 /* ============================================================
    Utilities
@@ -273,6 +273,7 @@ class Fft1dComputation extends TextureComputation {
 }
 
 class FftConvolutionComputation extends TextureComputation {
+  getQuantityKind(params, data) { return resolveQuantityKind(params.signal, data) }
   compute(regl, params, data, getAxisDomain) {
     const signal = typeof params.signal === 'string' ? data.getData(params.signal) : params.signal
     const kernel = typeof params.kernel === 'string' ? data.getData(params.kernel) : params.kernel
