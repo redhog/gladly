@@ -55,8 +55,7 @@ let plot1Config = {
         "vData": "v1",
         "vData2": "v2",
         "xAxis": "xaxis_bottom",
-        "yAxis": "yaxis_left",
-        "alphaBlend": false
+        "yAxis": "yaxis_left"
       }
     }
   ],
@@ -115,8 +114,7 @@ let plot2Config = {
         "vData": "v1",
         "vData2": "none",
         "xAxis": "xaxis_top",
-        "yAxis": "yaxis_left",
-        "alphaBlend": false
+        "yAxis": "yaxis_left"
       }
     }
   ],

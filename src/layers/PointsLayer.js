@@ -27,15 +27,17 @@ function makePointsVert(hasFilter) {
 `
 }
 
-function makePointsFrag(hasSecond) {
+function makePointsFrag(hasFirst, hasSecond) {
   return `#version 300 es
   precision mediump float;
   in float value;
   in float value2;
   void main() {
-    ${hasSecond
-      ? 'fragColor = map_color_2d_(vec2(value, value2));'
-      : 'fragColor = map_color_(value);'}
+    ${!hasFirst
+      ? 'fragColor = vec4(0.0, 0.0, 0.0, 1.0);'
+      : hasSecond
+        ? 'fragColor = map_color_2d_(vec2(value, value2));'
+        : 'fragColor = map_color_(value);'}
   }
 `
 }
@@ -50,16 +52,19 @@ class PointsLayerType extends ScatterLayerTypeBase {
     return {
       type: "object",
       properties: this._commonSchemaProperties(d),
-      required: ["xData", "yData", "vData", "fData"]
+      required: ["xData", "yData"]
     }
   }
 
   _createLayer(parameters, data) {
     const d = Data.wrap(data)
     const { vData: vDataRaw, vData2: vData2Raw, fData: fDataRaw } = parameters
-    const vData  = (vDataRaw  == null || vDataRaw  === "none") ? null : vDataRaw
-    const vData2 = (vData2Raw == null || vData2Raw === "none") ? null : vData2Raw
-    const fData  = (fDataRaw  == null || fDataRaw  === "none") ? null : fDataRaw
+    const vDataIn  = (vDataRaw  == null || vDataRaw  === "none") ? null : vDataRaw
+    const vData2In = (vData2Raw == null || vData2Raw === "none") ? null : vData2Raw
+    const fData    = (fDataRaw  == null || fDataRaw  === "none") ? null : fDataRaw
+    // Remap: whichever single value is present becomes primary; secondary only when both present
+    const vData  = vDataIn  ?? vData2In
+    const vData2 = vDataIn  ?  vData2In : null
 
     const xQK  = resolveQuantityKind(parameters.xData, d) ?? undefined
     const yQK  = resolveQuantityKind(parameters.yData, d) ?? undefined
@@ -91,9 +96,10 @@ class PointsLayerType extends ScatterLayerTypeBase {
 
   createDrawCommand(regl, layer, plot) {
     const hasFilter = Object.keys(layer.filterAxes).length > 0
-    const hasSecond = Object.keys(layer.colorAxes2d).length > 0
+    const hasFirst = '' in layer.colorAxes
+    const hasSecond = '2' in layer.colorAxes
     this.vert = makePointsVert(hasFilter)
-    this.frag = makePointsFrag(hasSecond)
+    this.frag = makePointsFrag(hasFirst, hasSecond)
     return super.createDrawCommand(regl, layer, plot)
   }
 }

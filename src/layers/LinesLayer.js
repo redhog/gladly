@@ -48,7 +48,7 @@ function makeLinesVert(hasFilter) {
 `
 }
 
-function makeLinesFrag(hasSecond) {
+function makeLinesFrag(hasFirst, hasSecond) {
   return `#version 300 es
   precision mediump float;
   uniform float u_lineColorMode;
@@ -58,14 +58,18 @@ function makeLinesFrag(hasSecond) {
   in float v_color2_end;
   in float v_t;
   void main() {
+    ${!hasFirst ? `
+    fragColor = vec4(0.0, 0.0, 0.0, 1.0);` : hasSecond ? `
     float value = u_lineColorMode > 0.5
       ? (v_t < 0.5 ? v_color_start : v_color_end)
       : mix(v_color_start, v_color_end, v_t);
-    ${hasSecond ? `
     float value2 = u_lineColorMode > 0.5
       ? (v_t < 0.5 ? v_color2_start : v_color2_end)
       : mix(v_color2_start, v_color2_end, v_t);
     fragColor = map_color_2d_(vec2(value, value2));` : `
+    float value = u_lineColorMode > 0.5
+      ? (v_t < 0.5 ? v_color_start : v_color_end)
+      : mix(v_color_start, v_color_end, v_t);
     fragColor = map_color_(value);`}
   }
 `
@@ -105,7 +109,7 @@ class LinesLayerType extends ScatterLayerTypeBase {
           description: "Line width in pixels (note: browsers may clamp values above 1)"
         }
       },
-      required: ["xData", "yData", "vData", "fData"]
+      required: ["xData", "yData"]
     }
   }
 
@@ -170,9 +174,10 @@ class LinesLayerType extends ScatterLayerTypeBase {
 
   createDrawCommand(regl, layer) {
     const hasFilter = Object.keys(layer.filterAxes).length > 0
-    const hasSecond = Object.keys(layer.colorAxes2d).length > 0
+    const hasFirst = '' in layer.colorAxes
+    const hasSecond = '2' in layer.colorAxes
     this.vert = makeLinesVert(hasFilter)
-    this.frag = makeLinesFrag(hasSecond)
+    this.frag = makeLinesFrag(hasFirst, hasSecond)
     return super.createDrawCommand(regl, layer)
   }
 }

@@ -328,10 +328,9 @@ Imported by `index.js` as a side-effect alongside `MatplotlibColorscales.js`.
 
 **Shared methods:**
 - `_getAxisConfig(parameters, data)` — resolves spatial and color axis quantity kinds from column metadata
-- `_commonSchemaProperties(dataProperties)` — returns JSON Schema properties common to both layer types (`xData`, `yData`, `vData`, `vData2`, `xAxis`, `yAxis`, `alphaBlend`)
+- `_commonSchemaProperties(dataProperties)` — returns JSON Schema properties common to both layer types (`xData`, `yData`, `vData`, `vData2`, `fData`, `xAxis`, `yAxis`)
 - `_resolveColorData(parameters, d)` — strips `"none"` sentinels, validates columns exist, returns resolved data arrays and quantity kinds
 - `_buildDomains(...)` — constructs the `domains` object from data metadata
-- `_buildBlendConfig(alphaBlend)` — returns a regl blend config or `null`
 
 ---
 
@@ -342,7 +341,7 @@ Imported by `index.js` as a side-effect alongside `MatplotlibColorscales.js`.
 - Registered as `"points"`
 - Point size: 4.0 px
 - Supports optional second color data (`vData2`) for 2D colorscale mapping
-- **Schema parameters:** `xData`, `yData`, `vData` (required); `vData2`, `xAxis`, `yAxis`, `alphaBlend` (optional)
+- **Schema parameters:** `xData`, `yData` (required); `vData`, `vData2`, `fData`, `xAxis`, `yAxis` (optional)
 
 ---
 
@@ -353,7 +352,7 @@ Imported by `index.js` as a side-effect alongside `MatplotlibColorscales.js`.
 - Registered as `"lines"`
 - One instance per segment (N−1 instances for N points); two-vertex template
 - Segment boundary collapses: when `a_seg0 ≠ a_seg1`, produces a zero-length degenerate line
-- **Schema parameters:** `xData`, `yData`, `vData` (required); `vData2`, `xAxis`, `yAxis`, `alphaBlend`, `lineSegmentIdData`, `lineColorMode`, `lineWidth` (optional)
+- **Schema parameters:** `xData`, `yData` (required); `vData`, `vData2`, `fData`, `xAxis`, `yAxis`, `lineSegmentIdData`, `lineColorMode`, `lineWidth` (optional)
 
 ---
 

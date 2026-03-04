@@ -7,9 +7,12 @@ export class ScatterLayerTypeBase extends LayerType {
   _getAxisConfig(parameters, data) {
     const d = Data.wrap(data)
     const { xData, yData, vData: vDataRaw, vData2: vData2Raw, fData: fDataRaw, xAxis, yAxis } = parameters
-    const vData  = vDataRaw  === "none" ? null : vDataRaw
-    const vData2 = vData2Raw === "none" ? null : vData2Raw
-    const fData  = fDataRaw  === "none" ? null : fDataRaw
+    const vDataIn  = (vDataRaw  == null || vDataRaw  === "none") ? null : vDataRaw
+    const vData2In = (vData2Raw == null || vData2Raw === "none") ? null : vData2Raw
+    const fData    = (fDataRaw  == null || fDataRaw  === "none") ? null : fDataRaw
+    // Remap: whichever single value is present becomes primary (''); secondary only when both present
+    const vData  = vDataIn  ?? vData2In
+    const vData2 = vDataIn  ?  vData2In : null
     const colorAxisQuantityKinds = {}
     const vQK  = vData  ? resolveQuantityKind(vData,  d) : null
     const vQK2 = vData2 ? resolveQuantityKind(vData2, d) : null
@@ -38,8 +41,8 @@ export class ScatterLayerTypeBase extends LayerType {
     return {
       xData: EXPRESSION_REF,
       yData: EXPRESSION_REF,
-      vData: EXPRESSION_REF,
-      vData2: EXPRESSION_REF,
+      vData: EXPRESSION_REF_OPT,
+      vData2: EXPRESSION_REF_OPT,
       fData: EXPRESSION_REF_OPT,
       xAxis: {
         type: "string",
@@ -60,9 +63,12 @@ export class ScatterLayerTypeBase extends LayerType {
   // slice adjacent-point pairs via subarray(). xData/yData/fData must be column name strings.
   _resolveColorData(parameters, d) {
     const { xData, yData, vData: vDataOrig, vData2: vData2Orig, fData: fDataOrig } = parameters
-    const vData = vDataOrig == "none" ? null : vDataOrig
-    const vData2 = vData2Orig == "none" ? null : vData2Orig
-    const fData = fDataOrig == "none" ? null : fDataOrig
+    const vDataIn  = (vDataOrig  == null || vDataOrig  === "none") ? null : vDataOrig
+    const vData2In = (vData2Orig == null || vData2Orig === "none") ? null : vData2Orig
+    const fData    = (fDataOrig  == null || fDataOrig  === "none") ? null : fDataOrig
+    // Remap: whichever single value is present becomes primary; secondary only when both present
+    const vData  = vDataIn  ?? vData2In
+    const vData2 = vDataIn  ?  vData2In : null
 
     const xQK = d.getQuantityKind(xData) ?? xData
     const yQK = d.getQuantityKind(yData) ?? yData

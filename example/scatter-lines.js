@@ -41,8 +41,7 @@ const plotConfig = {
         "vData2": "none",
         "fData": "f2",
         "xAxis": "xaxis_bottom",
-        "yAxis": "yaxis_left",
-        "alphaBlend": false
+        "yAxis": "yaxis_left"
       }
     },
     {
