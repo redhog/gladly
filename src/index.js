@@ -21,8 +21,10 @@ export { Filterbar } from "./floats/Filterbar.js"
 export { filterbarLayerType } from "./layers/FilterbarLayer.js"
 export { tileLayerType, TileLayerType } from "./layers/TileLayer.js"
 export { histogramLayerType } from "./layers/HistogramLayer.js"
+export { barsLayerType } from "./layers/BarsLayer.js"
 export { registerEpsgDef, parseCrsCode, crsToQkX, crsToQkY, qkToEpsgCode, reproject } from "./geo/EpsgUtils.js"
-export { Computation, TextureComputation, GlslComputation, EXPRESSION_REF, computationSchema, registerTextureComputation, registerGlslComputation, isTexture } from "./compute/ComputationRegistry.js"
+export { Computation, TextureComputation, GlslComputation, ComputedData, EXPRESSION_REF, computationSchema, buildTransformSchema, registerTextureComputation, registerGlslComputation, registerComputedData, getComputedData, isTexture } from "./compute/ComputationRegistry.js"
+export { ComputedDataNode } from "./core/Data.js"
 
 // Register all matplotlib colorscales (side-effect import)
 import "./colorscales/MatplotlibColorscales.js"
@@ -35,3 +37,6 @@ import "./compute/fft.js"
 import "./compute/conv.js"
 import "./compute/hist.js"
 import "./compute/axisFilter.js"
+
+// Register BarsLayer (side-effect import)
+import "./layers/BarsLayer.js"

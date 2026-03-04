@@ -9,18 +9,53 @@ import { getLayerType, getRegisteredLayerTypes } from "./LayerTypeRegistry.js"
 import { getAxisQuantityKind, getScaleTypeFloat } from "../axes/AxisQuantityKindRegistry.js"
 import { getRegisteredColorscales, getRegistered2DColorscales } from "../colorscales/ColorscaleRegistry.js"
 import { Float } from "../floats/Float.js"
-import { computationSchema } from "../compute/ComputationRegistry.js"
-import { Data } from "./Data.js"
+import { computationSchema, buildTransformSchema, getComputedData } from "../compute/ComputationRegistry.js"
+import { Data, DataGroup, ComputedDataNode } from "./Data.js"
 
-function buildPlotSchema(data) {
+function buildPlotSchema(data, config) {
   const layerTypes = getRegisteredLayerTypes()
-  const { '$defs': compDefs } = computationSchema(data ? Data.wrap(data) : null)
+  const wrappedData = data ? Data.wrap(data) : null
+
+  // Build fullSchemaData: DataGroup with input data + lightweight stubs for each declared
+  // transform so that layer schemas (e.g. BarsLayer) enumerate transform output columns.
+  // Stubs only need columns() — getData/getQuantityKind/getDomain return null (schema only).
+  const transforms = config?.transforms ?? {}
+  let fullSchemaData = wrappedData
+  if (wrappedData && Object.keys(transforms).length > 0) {
+    const group = new DataGroup({ input: wrappedData })
+    for (const [name, spec] of Object.entries(transforms)) {
+      const entries = Object.entries(spec)
+      if (entries.length !== 1) continue
+      const [className] = entries[0]
+      const cd = getComputedData(className)
+      if (!cd) continue
+      group._children[name] = {
+        columns: () => cd.columns(),
+        getData: () => null,
+        getQuantityKind: () => null,
+        getDomain: () => null,
+      }
+    }
+    fullSchemaData = group
+  }
+
+  const { '$defs': compDefs } = computationSchema(fullSchemaData)
+
+  // For transform params, wrap original data as { input: data } so the column enum
+  // inside each ComputedData schema shows the correct runtime paths (e.g. "input.y1").
+  const transformInputData = wrappedData ? new DataGroup({ input: wrappedData }) : null
+  const { '$defs': transformDefs } = buildTransformSchema(transformInputData)
 
   return {
     $schema: "https://json-schema.org/draft/2020-12/schema",
-    $defs: compDefs,
+    $defs: { ...compDefs, ...transformDefs },
     type: "object",
     properties: {
+      transforms: {
+        type: "object",
+        description: "Named data transforms applied before layers. Each value is a { ClassName: params } expression.",
+        additionalProperties: { '$ref': '#/$defs/transform_expression' }
+      },
       layers: {
         type: "array",
         items: {
@@ -30,7 +65,7 @@ function buildPlotSchema(data) {
             return {
               title: typeName,
               properties: {
-                [typeName]: layerType.schema(data)
+                [typeName]: layerType.schema(fullSchemaData)
               },
               required: [typeName],
               additionalProperties: false
@@ -165,8 +200,10 @@ export class Plot {
 
     this.currentConfig = null
     this.currentData = null
+    this._rawData = null          // last user-provided data (pre-transform)
     this.regl = null
     this.layers = []
+    this._dataTransformNodes = [] // ComputedDataNode instances from _processTransforms
     this.axisRegistry = null
     this.colorAxisRegistry = null
     this.filterAxisRegistry = null
@@ -196,6 +233,7 @@ export class Plot {
       }
       if (data !== undefined) {
         this.currentData = data
+        this._rawData = data   // keep original for re-initialization
       }
 
       if (!this.currentConfig || !this.currentData) {
@@ -311,11 +349,11 @@ export class Plot {
       }
     }
 
-    return { colorbars: [], ...this.currentConfig, axes}
+    return { transforms: {}, colorbars: [], ...this.currentConfig, axes}
   }
 
   _initialize() {
-    const { layers = [], axes = {}, colorbars = [] } = this.currentConfig
+    const { layers = [], axes = {}, colorbars = [], transforms = {} } = this.currentConfig
 
     const gl = this.canvas.getContext('webgl2')
     if (!gl) throw new Error('WebGL 2.0 is required but not supported by this browser')
@@ -367,6 +405,12 @@ export class Plot {
     })
 
     this.layers = []
+    this._dataTransformNodes = []
+
+    // Restore original user data before applying transforms (handles re-initialization)
+    if (this._rawData != null) {
+      this.currentData = this._rawData
+    }
 
     AXES.forEach(a => this.svg.append("g").attr("class", a))
 
@@ -374,6 +418,7 @@ export class Plot {
     this.colorAxisRegistry = new ColorAxisRegistry()
     this.filterAxisRegistry = new FilterAxisRegistry()
 
+    this._processTransforms(transforms)
     this._processLayers(layers, this.currentData)
     this._setDomains(axes)
 
@@ -547,6 +592,29 @@ export class Plot {
     this.svg.remove()
   }
 
+  _processTransforms(transforms) {
+    if (!transforms || Object.keys(transforms).length === 0) return
+
+    // Wrap currentData in a DataGroup if it isn't already, so transforms can be added as named children.
+    if (!(this.currentData instanceof DataGroup)) {
+      this.currentData = new DataGroup({ input: this.currentData })
+    }
+
+    for (const [name, spec] of Object.entries(transforms)) {
+      const entries = Object.entries(spec)
+      if (entries.length !== 1) throw new Error(`Transform '${name}' must have exactly one key`)
+      const [className, params] = entries[0]
+
+      const computedData = getComputedData(className)
+      if (!computedData) throw new Error(`Unknown computed data type: '${className}'`)
+
+      const node = new ComputedDataNode(computedData, params)
+      node._initialize(this.regl, this.currentData, this)
+      this.currentData._children[name] = node
+      this._dataTransformNodes.push(node)
+    }
+  }
+
   _processLayers(layersConfig, data) {
     for (let configLayerIndex = 0; configLayerIndex < layersConfig.length; configLayerIndex++) {
       const layerSpec = layersConfig[configLayerIndex]
@@ -599,8 +667,8 @@ export class Plot {
     return getScaleTypeFloat(quantityKind, this.currentConfig?.axes)
   }
 
-  static schema(data) {
-    return buildPlotSchema(data)
+  static schema(data, config) {
+    return buildPlotSchema(data, config)
   }
 
   scheduleRender() {
@@ -626,6 +694,11 @@ export class Plot {
       height: this.plotHeight
     }
     const axesConfig = this.currentConfig?.axes
+
+    // Refresh transform nodes before drawing (recomputes if tracked axis domains changed)
+    for (const node of this._dataTransformNodes) {
+      node.refreshIfNeeded(this)
+    }
 
     for (const layer of this.layers) {
       if (layer._axisUpdaters) {
@@ -713,6 +786,11 @@ export class Plot {
     const glX = Math.round(x)
     const glY = this.height - Math.round(y) - 1
     const axesConfig = this.currentConfig?.axes
+
+    // Refresh transform nodes before picking (same as render)
+    for (const node of this._dataTransformNodes) {
+      node.refreshIfNeeded(this)
+    }
 
     let result = null
     this.regl({ framebuffer: fbo })(() => {

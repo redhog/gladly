@@ -2,10 +2,45 @@ import { Data } from '../core/Data.js'
 
 const textureComputations = new Map()
 const glslComputations = new Map()
+const computedDataRegistry = new Map()
 
 export class Computation {
   schema(data) { throw new Error('Not implemented') }
   getQuantityKind(params, data) { return null }
+}
+
+// Base class for GPU data transforms that produce multiple named output columns.
+// Unlike TextureComputation (single texture), ComputedData produces { colName: texture, ..., _meta?: {...} }.
+export class ComputedData {
+  // Returns the list of output column names (known statically, no regl needed).
+  columns() { throw new Error('Not implemented') }
+
+  // Resolves a data parameter without regl. Accepts Float32Array, string column ref, or pass-through.
+  resolveDataParam(data, value) {
+    if (value instanceof Float32Array) return value
+    if (typeof value === 'string') {
+      if (!data) throw new Error(`Cannot resolve column '${value}': no data available`)
+      return data.getData(value)
+    }
+    return value
+  }
+
+  // Returns { colName: reglTexture, ..., _meta?: { domains, quantityKinds, ... } }
+  compute(regl, params, data, getAxisDomain) { throw new Error('Not implemented') }
+
+  schema(data) { throw new Error('Not implemented') }
+}
+
+export function registerComputedData(name, instance) {
+  computedDataRegistry.set(name, instance)
+}
+
+export function getComputedData(name) {
+  return computedDataRegistry.get(name)
+}
+
+export function getRegisteredComputedData() {
+  return computedDataRegistry
 }
 
 export function dataShape(regl, n) {
@@ -73,6 +108,29 @@ export function resolveQuantityKind(expr, data) {
     }
   }
   return null
+}
+
+// Schema for the transforms config block: { transformName: { ClassName: params } }
+// data should already be wrapped as the DataGroup the transform will receive at runtime
+// (e.g. new DataGroup({ input: rawData })) so that column enums show the correct paths.
+export function buildTransformSchema(data) {
+  const defs = {}
+
+  for (const [name, comp] of computedDataRegistry) {
+    defs[`params_computeddata_${name}`] = comp.schema(data)
+  }
+
+  defs.transform_expression = {
+    anyOf: [...computedDataRegistry].map(([name]) => ({
+      type: 'object',
+      title: name,
+      properties: { [name]: { '$ref': `#/$defs/params_computeddata_${name}` } },
+      required: [name],
+      additionalProperties: false
+    }))
+  }
+
+  return { '$defs': defs }
 }
 
 export function computationSchema(data) {
@@ -171,6 +229,22 @@ function resolveToGlslExpr(regl, expr, path, context, plot) {
     context.bufferAttrs[attrName] = expr
     context.globalDecls.push(`in float ${attrName};`)
     return attrName
+  }
+
+  // Live reference from a ComputedDataNode — checked BEFORE isTexture.
+  // Uses a dynamic uniform function so the current texture is read each frame.
+  if (expr && typeof expr === 'object' && expr._isLive) {
+    const uniformName = `u_cgen_${path}`
+    const widthName = `u_cgen_${path}_width`
+    const heightName = `u_cgen_${path}_height`
+    context.textureUniforms[uniformName] = () => expr.texture
+    context.scalarUniforms[widthName] = expr.texture.width
+    context.scalarUniforms[heightName] = expr.texture.height
+    context.globalDecls.push(`uniform sampler2D ${uniformName};`)
+    context.globalDecls.push(`uniform float ${widthName};`)
+    context.globalDecls.push(`uniform float ${heightName};`)
+    // Non-packed sampling: each bin i stores its value in the R channel at texel i.
+    return `texture(${uniformName}, vec2((mod(a_pickId, ${widthName}) + 0.5) / ${widthName}, (floor(a_pickId / ${widthName}) + 0.5) / ${heightName})).r`
   }
 
   if (isTexture(expr)) {
@@ -316,9 +390,20 @@ export function resolveAttributeExpr(regl, expr, attrShaderName, plot) {
 
   if (typeof expr === 'string') {
     const data = plot ? Data.wrap(plot.currentData) : null
-    const arr = data?.getData(expr)
-    if (!arr) throw new Error(`Column '${expr}' not found in data`)
-    return { kind: 'buffer', value: arr }
+    const val = data?.getData(expr)
+    if (!val) throw new Error(`Column '${expr}' not found in data`)
+    // Plain array → buffer attribute.
+    if (val instanceof Float32Array) return { kind: 'buffer', value: val }
+    // Live ref or texture → resolve as GLSL computed attribute.
+    const context = {
+      bufferAttrs: {},
+      textureUniforms: {},
+      scalarUniforms: {},
+      globalDecls: [],
+      axisUpdaters: []
+    }
+    const glslExpr = resolveToGlslExpr(regl, val, attrShaderName, context, plot)
+    return { kind: 'computed', glslExpr, context }
   }
 
   const context = {

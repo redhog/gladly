@@ -1,3 +1,101 @@
+function domainsEqual(a, b) {
+  if (a === b) return true
+  if (a == null || b == null) return a === b
+  return a[0] === b[0] && a[1] === b[1]
+}
+
+// Runtime wrapper for a ComputedData instance. Manages live texture references
+// and tracks which axes were accessed so it can recompute when they change.
+export class ComputedDataNode {
+  constructor(computedData, params) {
+    this._computedData = computedData
+    this._params = params
+    this._liveRefs = {}   // { colName: { texture, _isLive: true } }
+    this._meta = null
+    this._accessedAxes = new Set()
+    this._cachedDomains = {}
+    this._regl = null
+    this._dataGroup = null
+  }
+
+  columns() {
+    return this._computedData.columns()
+  }
+
+  getData(col) {
+    return this._liveRefs[col] ?? null
+  }
+
+  getQuantityKind(col) {
+    return this._meta?.quantityKinds?.[col] ?? null
+  }
+
+  getDomain(col) {
+    return this._meta?.domains?.[col] ?? null
+  }
+
+  _initialize(regl, dataGroup, plot) {
+    this._regl = regl
+    this._dataGroup = dataGroup
+
+    const getAxisDomain = (axisId) => {
+      this._accessedAxes.add(axisId)
+      return plot ? plot.getAxisDomain(axisId) : null
+    }
+
+    const result = this._computedData.compute(regl, this._params, dataGroup, getAxisDomain)
+    this._meta = result._meta ?? null
+
+    for (const [key, val] of Object.entries(result)) {
+      if (key === '_meta') continue
+      this._liveRefs[key] = { texture: val, _isLive: true }
+    }
+
+    for (const axisId of this._accessedAxes) {
+      this._cachedDomains[axisId] = plot ? plot.getAxisDomain(axisId) : null
+    }
+  }
+
+  refreshIfNeeded(plot) {
+    if (this._accessedAxes.size === 0) return
+
+    let needsRecompute = false
+    for (const axisId of this._accessedAxes) {
+      if (!domainsEqual(plot.getAxisDomain(axisId), this._cachedDomains[axisId])) {
+        needsRecompute = true
+        break
+      }
+    }
+    if (!needsRecompute) return
+
+    const newAccessedAxes = new Set()
+    const newCachedDomains = {}
+    const getAxisDomain = (axisId) => {
+      newAccessedAxes.add(axisId)
+      return plot ? plot.getAxisDomain(axisId) : null
+    }
+
+    const result = this._computedData.compute(this._regl, this._params, this._dataGroup, getAxisDomain)
+    this._meta = result._meta ?? null
+
+    for (const [key, val] of Object.entries(result)) {
+      if (key === '_meta') continue
+      // Mutate the existing live ref so dynamic uniform closures pick up the new texture.
+      if (this._liveRefs[key]) {
+        this._liveRefs[key].texture = val
+      } else {
+        this._liveRefs[key] = { texture: val, _isLive: true }
+      }
+    }
+
+    this._accessedAxes = newAccessedAxes
+    for (const axisId of newAccessedAxes) {
+      newCachedDomains[axisId] = plot ? plot.getAxisDomain(axisId) : null
+    }
+    this._cachedDomains = newCachedDomains
+  }
+}
+
 export class DataGroup {
   constructor(raw) {
     this._children = {}

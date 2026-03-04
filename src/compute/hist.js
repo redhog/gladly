@@ -1,4 +1,4 @@
-import { registerTextureComputation, TextureComputation, EXPRESSION_REF } from "./ComputationRegistry.js"
+import { registerTextureComputation, TextureComputation, EXPRESSION_REF, ComputedData, registerComputedData } from "./ComputationRegistry.js"
 
 /**
  * Auto-select number of histogram bins using Scott's rule.
@@ -180,3 +180,88 @@ class HistogramComputation extends TextureComputation {
 }
 
 registerTextureComputation('histogram', new HistogramComputation())
+
+// ComputedData transform that produces binCenters + counts textures from a raw data column.
+class HistogramData extends ComputedData {
+  columns() { return ['binCenters', 'counts'] }
+
+  compute(regl, params, data, getAxisDomain) {
+    const srcV = this.resolveDataParam(data, params.input)
+    if (!srcV) throw new Error(`HistogramData: cannot resolve input '${params.input}'`)
+
+    let min = Infinity, max = -Infinity
+    for (let i = 0; i < srcV.length; i++) {
+      if (srcV[i] < min) min = srcV[i]
+      if (srcV[i] > max) max = srcV[i]
+    }
+    const range = max - min || 1
+
+    const bins = params.bins || Math.max(10, Math.min(200, Math.ceil(Math.sqrt(srcV.length))))
+    const binWidth = range / bins
+
+    const normalized = new Float32Array(srcV.length)
+    for (let i = 0; i < srcV.length; i++) {
+      normalized[i] = (srcV[i] - min) / range
+    }
+
+    // binCenters texture: width=bins, texel i stores [binCenter_i, 0, 0, 0]
+    const centersData = new Float32Array(bins * 4)
+    for (let i = 0; i < bins; i++) {
+      centersData[i * 4] = min + (i + 0.5) * binWidth
+    }
+    const binCentersTex = regl.texture({ data: centersData, shape: [bins, 1], type: 'float', format: 'rgba' })
+
+    const countsTex = makeHistogram(regl, normalized, { bins })
+
+    // CPU pass to find maxCount for y-axis domain
+    const histCpu = new Float32Array(bins)
+    for (let i = 0; i < srcV.length; i++) {
+      const b = Math.min(Math.floor(normalized[i] * bins), bins - 1)
+      histCpu[b] += 1
+    }
+    const maxCount = Math.max(...histCpu)
+
+    const xQK = (typeof params.input === 'string' && data)
+      ? (data.getQuantityKind(params.input) ?? params.input)
+      : null
+
+    return {
+      binCenters: binCentersTex,
+      counts: countsTex,
+      _meta: {
+        domains: {
+          binCenters: [min, max],
+          counts: [0, maxCount],
+        },
+        quantityKinds: {
+          binCenters: xQK,
+          counts: 'count',
+        },
+        binHalfWidth: binWidth / 2,
+      }
+    }
+  }
+
+  schema(data) {
+    const cols = data ? data.columns() : []
+    return {
+      type: 'object',
+      title: 'HistogramData',
+      properties: {
+        input: {
+          type: 'string',
+          enum: cols,
+          description: 'Input data column'
+        },
+        bins: {
+          type: 'integer',
+          description: 'Number of bins (0 for auto)',
+          default: 0
+        }
+      },
+      required: ['input']
+    }
+  }
+}
+
+registerComputedData('HistogramData', new HistogramData())

@@ -1,4 +1,5 @@
 import { Plot, registerAxisQuantityKind } from "../src/index.js"
+import "../src/layers/BarsLayer.js"
 import { JSONEditor } from '@json-editor/json-editor'
 import { data as dataPromise } from "./shared.js"
 
@@ -41,18 +42,15 @@ registerAxisQuantityKind("count", { label: "Count", scale: "linear" })
 dataPromise.then(data => {
 
 const plotConfig = {
+    "transforms": {
+        "hist": { "HistogramData": { "input": "input.y1", "bins": 0 } }
+    },
     "layers": [
         {
-            "histogram": {
-                "vData": "y1",
-                "filterColumn": "v1",
-                "bins": 0,
-                "color": [
-                    0.2,
-                    0.5,
-                    0.8,
-                    1
-                ],
+            "bars": {
+                "xData": "hist.binCenters",
+                "yData": "hist.counts",
+                "color": [0.2, 0.5, 0.8, 1.0],
                 "xAxis": "xaxis_bottom",
                 "yAxis": "yaxis_left"
             }
@@ -61,11 +59,6 @@ const plotConfig = {
     "axes": {
         "voltage_V": {
             "label": "Voltage (V)"
-        },
-        "reflectance_au": {
-          "filterbar": "horizontal",
-          "min": -0.5,
-          "max": 0.5
         },
         "count": {
             "label": "Count"
@@ -114,7 +107,7 @@ plot.on('mouseup', (e) => {
 })
 
 editor = new JSONEditor(document.getElementById('tab5-editor-container'), {
-  schema: Plot.schema(data),
+  schema: Plot.schema(data, currentPlotConfig),
   startval: currentPlotConfig,
   theme: 'html',
   iconlib: 'fontawesome4',
