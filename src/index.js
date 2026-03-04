@@ -1,6 +1,6 @@
 export { LayerType } from "./core/LayerType.js"
 export { Layer } from "./core/Layer.js"
-export { Data } from "./core/Data.js"
+export { Data, DataGroup } from "./core/Data.js"
 export { AxisRegistry, AXES } from "./axes/AxisRegistry.js"
 export { ColorAxisRegistry } from "./axes/ColorAxisRegistry.js"
 export { FilterAxisRegistry, buildFilterGlsl } from "./axes/FilterAxisRegistry.js"

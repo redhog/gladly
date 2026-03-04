@@ -1,3 +1,66 @@
+export class DataGroup {
+  constructor(raw) {
+    this._children = {}
+    for (const [key, value] of Object.entries(raw)) {
+      this._children[key] = Data.wrap(value)
+    }
+  }
+
+  // Returns { key: Data } for immediate Data children only.
+  listData() {
+    const result = {}
+    for (const [key, child] of Object.entries(this._children)) {
+      if (child instanceof Data) result[key] = child
+    }
+    return result
+  }
+
+  // Returns { key: DataGroup } for immediate DataGroup children only.
+  subgroups() {
+    const result = {}
+    for (const [key, child] of Object.entries(this._children)) {
+      if (child instanceof DataGroup) result[key] = child
+    }
+    return result
+  }
+
+  // All dotted column names across all children recursively.
+  columns() {
+    const cols = []
+    for (const [key, child] of Object.entries(this._children)) {
+      for (const col of child.columns()) {
+        cols.push(`${key}.${col}`)
+      }
+    }
+    return cols
+  }
+
+  _resolve(col) {
+    const dotIdx = col.indexOf('.')
+    if (dotIdx === -1) return null
+    const prefix = col.slice(0, dotIdx)
+    const rest = col.slice(dotIdx + 1)
+    const child = this._children[prefix]
+    if (!child) return null
+    return { child, rest }
+  }
+
+  getData(col) {
+    const r = this._resolve(col)
+    return r ? r.child.getData(r.rest) : undefined
+  }
+
+  getQuantityKind(col) {
+    const r = this._resolve(col)
+    return r ? r.child.getQuantityKind(r.rest) : undefined
+  }
+
+  getDomain(col) {
+    const r = this._resolve(col)
+    return r ? r.child.getDomain(r.rest) : undefined
+  }
+}
+
 export class Data {
   constructor(raw) {
     raw = raw ?? {}
@@ -18,6 +81,25 @@ export class Data {
     if (data != null && typeof data.columns === 'function' && typeof data.getData === 'function') {
       return data
     }
+
+    if (data != null && typeof data === 'object') {
+      const isColumnar = data.data != null && typeof data.data === 'object' && !(data.data instanceof Float32Array)
+
+      if (!isColumnar) {
+        // Not columnar → check if raw format: every value must be Float32Array or {data: Float32Array, ...}
+        const vals = Object.values(data)
+        if (vals.length > 0) {
+          const isRawFormat = vals.every(v =>
+            v instanceof Float32Array ||
+            (v && typeof v === 'object' && v.data instanceof Float32Array)
+          )
+          if (!isRawFormat) {
+            return new DataGroup(data)
+          }
+        }
+      }
+    }
+
     return new Data(data)
   }
 

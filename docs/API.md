@@ -103,11 +103,17 @@ const bad = { x: [1, 2, 3], y: [4, 5, 6] }
 
 See [Computed Attributes](api/ComputedAttributes.md) for the full expression syntax, built-in computations, and how to write custom ones.
 
-#### Optional: the `Data` class
+#### Optional: the `Data` and `DataGroup` classes
 
-For convenience, Gladly provides an optional `Data` class that normalises several common plain-object shapes — including per-column metadata (quantity kinds, pre-computed domains) and a columnar format separating arrays from their metadata — into a single consistent interface. The built-in layer types use it internally; custom layer types may adopt it voluntarily.
+For convenience, Gladly provides optional utility classes that normalise common plain-object shapes into a consistent interface. The built-in layer types use them internally; custom layer types may adopt them voluntarily.
 
-The framework itself never calls `Data`. See [`Data`](api/Reference.md#data) in the API reference for the full interface and all supported formats.
+**`Data`** wraps a flat dataset — a plain object whose top-level values are `Float32Array` columns, with optional per-column metadata (quantity kinds, pre-computed domains). It supports three equivalent input shapes (simple, per-column rich, and columnar) and exposes a uniform `columns()` / `getData()` / `getQuantityKind()` / `getDomain()` API.
+
+**`DataGroup`** wraps a nested object — where the top-level values are themselves datasets or sub-groups rather than typed arrays. It exposes the same four methods using **dot-notation column names** (`"child.col"`, `"subgroup.child.col"`, etc.) and adds `listData()` / `subgroups()` for navigating the hierarchy.
+
+`Data.wrap()` is the single entry point for both. It inspects the plain object and returns the appropriate type automatically. See [`Data`](api/Reference.md#data) and [`DataGroup`](api/Reference.md#datagroup) in the API reference for the full interface, all supported formats, and the detection rules.
+
+The framework itself never calls `Data.wrap()`.
 
 ### Config Structure
 
@@ -142,4 +148,4 @@ plot.update({
 - **[Writing Layer Types](api/LayerTypes.md)** — `LayerType` constructor, shaders, color axes, filter axes, GLSL helpers, constants
 - **[Computed Attributes](api/ComputedAttributes.md)** — GPU texture and GLSL computations in layer attributes; `TextureComputation` / `GlslComputation` base classes; `EXPRESSION_REF`; `computationSchema`; built-in computations
 - **[Built-in Layer Types](api/BuiltInLayerTypes.md)** — `points`, `lines`, `colorbar`, `filterbar` layer type reference
-- **[API Reference](api/Reference.md)** — `Plot`, `registerLayerType`, `getLayerType`, `Data` and other public API entries
+- **[API Reference](api/Reference.md)** — `Plot`, `registerLayerType`, `getLayerType`, `Data`, `DataGroup` and other public API entries

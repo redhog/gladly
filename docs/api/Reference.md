@@ -651,7 +651,17 @@ import { Data } from './src/index.js'
 const d = Data.wrap(rawData)
 ```
 
-The primary entry point. Returns `data` **unchanged** if it already has `columns` and `getData` methods (duck-typing — any conforming class works, not just `Data` itself). Otherwise wraps the plain object, auto-detecting which format it uses.
+The primary entry point. Returns `data` **unchanged** if it already has `columns` and `getData` methods (duck-typing — any conforming class works, not just `Data` itself). Otherwise inspects the plain object and selects the appropriate wrapper:
+
+| Input shape | Result |
+|-------------|--------|
+| Already has `columns` + `getData` methods | returned unchanged |
+| Has a top-level `data` key whose value is a plain object | `Data` — columnar format |
+| All top-level values are `Float32Array` | `Data` — simple format |
+| All top-level values are `{ data: Float32Array, ... }` | `Data` — per-column rich format |
+| Any other case (top-level values are plain objects) | [`DataGroup`](#datagroup) — hierarchical |
+
+When a `DataGroup` is created, each child value is recursively passed through `Data.wrap()`, so any nesting depth is handled automatically.
 
 ### `data.columns()`
 
@@ -674,6 +684,89 @@ When a quantity kind is present, it is used as the axis identity (the key in `co
 ### `data.getDomain(col)`
 
 Returns `[min, max]` for column `col`, or `undefined` if no domain was specified. When returned, the built-in layers pass it as the `domains` entry in the `createLayer` return value, which tells the plot to skip its own min/max scan of the data array for that axis.
+
+---
+
+## `DataGroup`
+
+A utility class that wraps a **nested** plain JavaScript object — where the top-level values are themselves data collections rather than typed arrays — into a consistent hierarchical interface. Column names are expressed in **dot notation**: `"child.column"` or `"subgroup.child.column"` at any depth.
+
+> `DataGroup` is created automatically by `Data.wrap()` when the input does not match any of the flat `Data` formats. You do not normally construct it directly.
+
+### Examples
+
+**Nested datasets → `DataGroup` of flat `Data` objects:**
+
+```javascript
+import { Data } from './src/index.js'
+
+const group = Data.wrap({
+  survey1: { x: new Float32Array([1, 2, 3]), y: new Float32Array([4, 5, 6]) },
+  survey2: { x: new Float32Array([7, 8, 9]), y: new Float32Array([0, 1, 2]) }
+})
+// → DataGroup
+//   group.columns()            → ['survey1.x', 'survey1.y', 'survey2.x', 'survey2.y']
+//   group.getData('survey1.x') → Float32Array([1, 2, 3])
+//   group.listData()           → { survey1: Data, survey2: Data }
+```
+
+**Columnar children → each child is detected as columnar `Data`:**
+
+```javascript
+const group = Data.wrap({
+  run1: {
+    data: { depth: new Float32Array([...]), vp: new Float32Array([...]) },
+    quantity_kinds: { depth: 'depth_m', vp: 'velocity_ms' }
+  },
+  run2: {
+    data: { depth: new Float32Array([...]), vp: new Float32Array([...]) }
+  }
+})
+// group.getQuantityKind('run1.depth') → 'depth_m'
+// group.getData('run2.vp')           → Float32Array([...])
+```
+
+**Multi-level nesting → `DataGroup` of `DataGroup` of `Data`:**
+
+```javascript
+const group = Data.wrap({
+  region_a: {
+    shallow: { depth: new Float32Array([...]), vp: new Float32Array([...]) },
+    deep:    { depth: new Float32Array([...]), vp: new Float32Array([...]) }
+  },
+  region_b: { depth: new Float32Array([...]), vp: new Float32Array([...]) }
+})
+// group.columns() →
+//   ['region_a.shallow.depth', 'region_a.shallow.vp',
+//    'region_a.deep.depth',    'region_a.deep.vp',
+//    'region_b.depth',         'region_b.vp']
+// group.subgroups()  → { region_a: DataGroup }
+// group.listData()   → { region_b: Data }
+```
+
+### `dataGroup.listData()`
+
+Returns `{ [key]: Data }` — a plain object of the immediate children that are `Data` instances (not sub-groups).
+
+### `dataGroup.subgroups()`
+
+Returns `{ [key]: DataGroup }` — a plain object of the immediate children that are `DataGroup` instances.
+
+### `dataGroup.columns()`
+
+Returns all dotted column names recursively across all children. The order follows insertion order of the top-level keys, recursing depth-first.
+
+### `dataGroup.getData(col)`
+
+Returns the `Float32Array` for the dotted column name `col`, or `undefined` if the path does not exist.
+
+### `dataGroup.getQuantityKind(col)`
+
+Returns the quantity kind string for the dotted column name, or `undefined` if none was specified.
+
+### `dataGroup.getDomain(col)`
+
+Returns `[min, max]` for the dotted column name, or `undefined` if none was specified.
 
 ---
 
