@@ -42,9 +42,9 @@ registerAxisQuantityKind("count", { label: "Count", scale: "linear" })
 dataPromise.then(data => {
 
 const plotConfig = {
-    "transforms": {
-        "hist": { "HistogramData": { "input": "input.y1", "bins": 0 } }
-    },
+    "transforms": [
+        { "name": "hist", "transform": { "HistogramData": { "input": "input.y1", "bins": 0 } } }
+    ],
     "layers": [
         {
             "bars": {
@@ -75,7 +75,7 @@ let editor
 
 function updatePlot(config) {
   try {
-    plot.update({ config, data })
+    plot.update({ config, data: { input: data } })
     document.getElementById('tab5-validation-errors').innerHTML = ''
     const fullConfig = plot.getConfig()
     currentPlotConfig = fullConfig
@@ -107,7 +107,7 @@ plot.on('mouseup', (e) => {
 })
 
 editor = new JSONEditor(document.getElementById('tab5-editor-container'), {
-  schema: Plot.schema(data, currentPlotConfig),
+  schema: Plot.schema({ input: data }, currentPlotConfig),
   startval: currentPlotConfig,
   theme: 'html',
   iconlib: 'fontawesome4',

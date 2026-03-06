@@ -19,7 +19,7 @@ export class ComputedDataNode {
   }
 
   columns() {
-    return this._computedData.columns()
+    return this._computedData.columns(this._params)
   }
 
   getData(col) {

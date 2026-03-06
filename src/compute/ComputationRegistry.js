@@ -110,7 +110,7 @@ export function resolveQuantityKind(expr, data) {
   return null
 }
 
-// Schema for the transforms config block: { transformName: { ClassName: params } }
+// Schema for the transforms config block: [{ name: transformName, transform: { ClassName: params } }]
 // data should already be wrapped as the DataGroup the transform will receive at runtime
 // (e.g. new DataGroup({ input: rawData })) so that column enums show the correct paths.
 export function buildTransformSchema(data) {

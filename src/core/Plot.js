@@ -19,11 +19,11 @@ function buildPlotSchema(data, config) {
   // Build fullSchemaData: DataGroup with input data + lightweight stubs for each declared
   // transform so that layer schemas (e.g. BarsLayer) enumerate transform output columns.
   // Stubs only need columns() — getData/getQuantityKind/getDomain return null (schema only).
-  const transforms = config?.transforms ?? {}
+  const transforms = config?.transforms ?? []
   let fullSchemaData = wrappedData
-  if (wrappedData && Object.keys(transforms).length > 0) {
+  if (wrappedData && transforms.length > 0) {
     const group = new DataGroup({ input: wrappedData })
-    for (const [name, spec] of Object.entries(transforms)) {
+    for (const { name, transform: spec } of transforms) {
       const entries = Object.entries(spec)
       if (entries.length !== 1) continue
       const [className] = entries[0]
@@ -52,9 +52,17 @@ function buildPlotSchema(data, config) {
     type: "object",
     properties: {
       transforms: {
-        type: "object",
-        description: "Named data transforms applied before layers. Each value is a { ClassName: params } expression.",
-        additionalProperties: { '$ref': '#/$defs/transform_expression' }
+        type: "array",
+        description: "Named data transforms applied before layers. Each item is a { name, transform: { ClassName: params } } object.",
+        items: {
+          type: "object",
+          properties: {
+            name: { type: "string" },
+            transform: { '$ref': '#/$defs/transform_expression' }
+          },
+          required: ["name", "transform"],
+          additionalProperties: false
+        }
       },
       layers: {
         type: "array",
@@ -349,11 +357,11 @@ export class Plot {
       }
     }
 
-    return { transforms: {}, colorbars: [], ...this.currentConfig, axes}
+    return { transforms: [], colorbars: [], ...this.currentConfig, axes}
   }
 
   _initialize() {
-    const { layers = [], axes = {}, colorbars = [], transforms = {} } = this.currentConfig
+    const { layers = [], axes = {}, colorbars = [], transforms = [] } = this.currentConfig
 
     const gl = this.canvas.getContext('webgl2')
     if (!gl) throw new Error('WebGL 2.0 is required but not supported by this browser')
@@ -593,14 +601,14 @@ export class Plot {
   }
 
   _processTransforms(transforms) {
-    if (!transforms || Object.keys(transforms).length === 0) return
+    if (!transforms || transforms.length === 0) return
 
     // Wrap currentData in a DataGroup if it isn't already, so transforms can be added as named children.
     if (!(this.currentData instanceof DataGroup)) {
       this.currentData = new DataGroup({ input: this.currentData })
     }
 
-    for (const [name, spec] of Object.entries(transforms)) {
+    for (const { name, transform: spec } of transforms) {
       const entries = Object.entries(spec)
       if (entries.length !== 1) throw new Error(`Transform '${name}' must have exactly one key`)
       const [className, params] = entries[0]

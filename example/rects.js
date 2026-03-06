@@ -77,7 +77,7 @@ const data = {
 
 const plotConfig = {
   layers: [
-    { rects: { xData: "barX", yTopData: "barTop", yBottomData: "barBottom", vData: "barColor", e: 250000 } }
+    { rects: { xData: "input.barX", yTopData: "input.barTop", yBottomData: "input.barBottom", vData: "input.barColor", e: 250000 } }
   ],
   axes: {
     reflectance_au: { colorbar: "vertical", colorscale: "viridis" }
@@ -92,7 +92,7 @@ let editor
 
 function updatePlot(cfg) {
   try {
-    plot.update({ config: cfg, data })
+    plot.update({ config: cfg, data: { input: data } })
     document.getElementById('tab3-validation-errors').innerHTML = ''
     const fullConfig = plot.getConfig()
     currentPlotConfig = fullConfig
@@ -124,7 +124,7 @@ plot.on('mouseup', (e) => {
 })
 
 editor = new JSONEditor(document.getElementById('tab3-editor-container'), {
-  schema: Plot.schema(data),
+  schema: Plot.schema({ input: data }),
   startval: currentPlotConfig,
   theme: 'html',
   iconlib: 'fontawesome4',

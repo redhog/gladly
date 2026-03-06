@@ -35,19 +35,19 @@ const plotConfig = {
   "layers": [
     {
       "points": {
-        "xData": "x2",
-        "yData": "y2",
-        "vData": "v2",
+        "xData": "input.x2",
+        "yData": "input.y2",
+        "vData": "input.v2",
         "vData2": "none",
-        "fData": "f2",
+        "fData": "input.f2",
         "xAxis": "xaxis_bottom",
         "yAxis": "yaxis_left"
       }
     },
     {
       "multi-line": {
-        "xData": "time_s",
-        "filterData": "quality_flag",
+        "xData": "input.time_s",
+        "filterData": "input.quality_flag",
         "cutoff": 0.5,
         "badColor": [
           0.7,
@@ -95,7 +95,7 @@ let editor
 
 function updatePlot(plotConfig) {
   try {
-    plot.update({ config: plotConfig, data })
+    plot.update({ config: plotConfig, data: { input: data } })
     document.getElementById('tab2-validation-errors').innerHTML = ''
 
     const fullConfig = plot.getConfig()
@@ -137,7 +137,7 @@ plot.on('mouseup', (e) => {
 })
 
 editor = new JSONEditor(document.getElementById('tab2-editor-container'), {
-  schema: Plot.schema(data),
+  schema: Plot.schema({ input: data }),
   startval: currentPlotConfig,
   theme: 'html',
   iconlib: 'fontawesome4',

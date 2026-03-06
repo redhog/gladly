@@ -50,10 +50,10 @@ let plot1Config = {
   "layers": [
     {
       "points": {
-        "xData": "x1",
-        "yData": "y1",
-        "vData": "v1",
-        "vData2": "v2",
+        "xData": "input.x1",
+        "yData": "input.y1",
+        "vData": "input.v1",
+        "vData2": "input.v2",
         "xAxis": "xaxis_bottom",
         "yAxis": "yaxis_left"
       }
@@ -109,9 +109,9 @@ let plot2Config = {
   "layers": [
     {
       "points": {
-        "xData": "x1",
-        "yData": "y2",
-        "vData": "v1",
+        "xData": "input.x1",
+        "yData": "input.y2",
+        "vData": "input.v1",
         "vData2": "none",
         "xAxis": "xaxis_top",
         "yAxis": "yaxis_left"
@@ -145,7 +145,7 @@ let plot2Config = {
 function updatePlot(plotId, plotConfig) {
   const plot = plotId === 'plot1' ? plot1 : plot2
   try {
-    plot.update({ config: plotConfig, data })
+    plot.update({ config: plotConfig, data: { input: data } })
     document.getElementById('tab1-validation-errors').innerHTML = ''
 
     const fullConfig = plot.getConfig()
@@ -194,10 +194,10 @@ function attachPickHandler(plot) {
 attachPickHandler(plot1)
 attachPickHandler(plot2)
 
-  console.log("XXXXXXXXXXXXXXXXX", Plot.schema(data))
+  console.log("XXXXXXXXXXXXXXXXX", Plot.schema({ input: data }))
   
 editor = new JSONEditor(document.getElementById('tab1-editor-container'), {
-  schema: Plot.schema(data),
+  schema: Plot.schema({ input: data }),
   startval: plot1Config,
   theme: 'html',
   iconlib: 'fontawesome4',

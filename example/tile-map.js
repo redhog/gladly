@@ -125,9 +125,9 @@ const plotConfig = {
     },
     {
       points: {
-        xData: 'lon',
-        yData: 'lat',
-        vData: 'popDens',
+        xData: 'input.lon',
+        yData: 'input.lat',
+        vData: 'input.popDens',
         xAxis: 'xaxis_bottom',
         yAxis: 'yaxis_left',
       },
@@ -148,7 +148,7 @@ let editor
 
 function updatePlot(plotConfig) {
   try {
-    plot.update({ config: plotConfig, data })
+    plot.update({ config: plotConfig, data: { input: data } })
     document.getElementById('tab4-validation-errors').innerHTML = ''
 
     const fullConfig = plot.getConfig()
@@ -173,7 +173,7 @@ function updatePlot(plotConfig) {
 updatePlot(currentPlotConfig)
 
 editor = new JSONEditor(document.getElementById('tab4-editor-container'), {
-  schema: Plot.schema(data),
+  schema: Plot.schema({ input: data }),
   startval: currentPlotConfig,
   theme: 'html',
   iconlib: 'fontawesome4',
