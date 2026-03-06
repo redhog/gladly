@@ -786,13 +786,16 @@ export class Plot {
   pick(x, y) {
     if (!this.regl || !this.layers.length) return null
 
+    const glX = Math.round(x)
+    const glY = this.height - Math.round(y) - 1
+
+    if (glX < 0 || glX >= this.width || glY < 0 || glY >= this.height) return null
+
     const fbo = this.regl.framebuffer({
       width: this.width, height: this.height,
       colorFormat: 'rgba', colorType: 'uint8', depth: false,
     })
 
-    const glX = Math.round(x)
-    const glY = this.height - Math.round(y) - 1
     const axesConfig = this.currentConfig?.axes
 
     // Refresh transform nodes before picking (same as render)
@@ -801,6 +804,7 @@ export class Plot {
     }
 
     let result = null
+    try {
     this.regl({ framebuffer: fbo })(() => {
       this.regl.clear({ color: [0, 0, 0, 0] })
       const viewport = {
@@ -854,8 +858,9 @@ export class Plot {
         result = { layerIndex, configLayerIndex: layer.configLayerIndex, dataIndex, layer }
       }
     })
-
-    fbo.destroy()
+    } finally {
+      fbo.destroy()
+    }
     return result
   }
 }
