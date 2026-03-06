@@ -38,7 +38,7 @@ function makePointsFrag(hasFirst, hasSecond) {
            ? 'fragColor = map_color_2d_(vec2(value, value2));'
            : 'fragColor = map_color_2d_x_(value);')
        : (hasSecond
-           ? 'fragColor = map_color_2d_y_(value2);'
+           ? 'fragColor = map_color_2d_y_2(value2);'
            : 'fragColor = vec4(0.0, 0.0, 0.0, 1.0);')}
   }
 `
@@ -64,9 +64,8 @@ class PointsLayerType extends ScatterLayerTypeBase {
     const vDataIn  = (vDataRaw  == null || vDataRaw  === "none") ? null : vDataRaw
     const vData2In = (vData2Raw == null || vData2Raw === "none") ? null : vData2Raw
     const fData    = (fDataRaw  == null || fDataRaw  === "none") ? null : fDataRaw
-    // Remap: whichever single value is present becomes primary; secondary only when both present
-    const vData  = vDataIn  ?? vData2In
-    const vData2 = vDataIn  ?  vData2In : null
+    const vData  = vDataIn
+    const vData2 = vData2In
 
     const xQK  = resolveQuantityKind(parameters.xData, d) ?? undefined
     const yQK  = resolveQuantityKind(parameters.yData, d) ?? undefined

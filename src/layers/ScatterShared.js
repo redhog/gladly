@@ -10,9 +10,8 @@ export class ScatterLayerTypeBase extends LayerType {
     const vDataIn  = (vDataRaw  == null || vDataRaw  === "none") ? null : vDataRaw
     const vData2In = (vData2Raw == null || vData2Raw === "none") ? null : vData2Raw
     const fData    = (fDataRaw  == null || fDataRaw  === "none") ? null : fDataRaw
-    // Remap: whichever single value is present becomes primary (''); secondary only when both present
-    const vData  = vDataIn  ?? vData2In
-    const vData2 = vDataIn  ?  vData2In : null
+    const vData  = vDataIn
+    const vData2 = vData2In
     const colorAxisQuantityKinds = {}
     const vQK  = vData  ? resolveQuantityKind(vData,  d) : null
     const vQK2 = vData2 ? resolveQuantityKind(vData2, d) : null
@@ -66,9 +65,8 @@ export class ScatterLayerTypeBase extends LayerType {
     const vDataIn  = (vDataOrig  == null || vDataOrig  === "none") ? null : vDataOrig
     const vData2In = (vData2Orig == null || vData2Orig === "none") ? null : vData2Orig
     const fData    = (fDataOrig  == null || fDataOrig  === "none") ? null : fDataOrig
-    // Remap: whichever single value is present becomes primary; secondary only when both present
-    const vData  = vDataIn  ?? vData2In
-    const vData2 = vDataIn  ?  vData2In : null
+    const vData  = vDataIn
+    const vData2 = vData2In
 
     const xQK = d.getQuantityKind(xData) ?? xData
     const yQK = d.getQuantityKind(yData) ?? yData
