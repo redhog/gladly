@@ -232,6 +232,12 @@ export class LayerType {
         `uniform float alpha_blend${suffix};`,
         `vec4 map_color_${fnSuffix(suffix)}(float value) {`,
         `  return map_color_s(colorscale${suffix}, color_range${suffix}, value, color_scale_type${suffix}, alpha_blend${suffix});`,
+        `}`,
+        `vec4 map_color_2d_x_${fnSuffix(suffix)}(float value) {`,
+        `  return map_color_s_2d(colorscale${suffix}, color_range${suffix}, value, color_scale_type${suffix}, colorscale${suffix}, color_range${suffix}, 0.0/0.0, color_scale_type${suffix});`,
+        `}`,
+        `vec4 map_color_2d_y_${fnSuffix(suffix)}(float value) {`,
+        `  return map_color_s_2d(colorscale${suffix}, color_range${suffix}, 0.0/0.0, color_scale_type${suffix}, colorscale${suffix}, color_range${suffix}, value, color_scale_type${suffix});`,
         `}`
       )
       fragSrc = removeUniformDecl(fragSrc, `colorscale${suffix}`)

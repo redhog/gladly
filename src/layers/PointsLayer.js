@@ -33,11 +33,13 @@ function makePointsFrag(hasFirst, hasSecond) {
   in float value;
   in float value2;
   void main() {
-    ${!hasFirst
-      ? 'fragColor = vec4(0.0, 0.0, 0.0, 1.0);'
-      : hasSecond
-        ? 'fragColor = map_color_2d_(vec2(value, value2));'
-        : 'fragColor = map_color_(value);'}
+    ${hasFirst
+       ? (hasSecond
+           ? 'fragColor = map_color_2d_(vec2(value, value2));'
+           : 'fragColor = map_color_2d_x_(value);')
+       : (hasSecond
+           ? 'fragColor = map_color_2d_y_(value2);'
+           : 'fragColor = vec4(0.0, 0.0, 0.0, 1.0);')}
   }
 `
 }
@@ -84,8 +86,8 @@ class PointsLayerType extends ScatterLayerTypeBase {
       attributes: {
         x: parameters.xData,
         y: parameters.yData,
-        color_data:  vData  !== null ? vData  : new Float32Array(vertexCount ?? 0),
-        color_data2: vData2 !== null ? vData2 : new Float32Array(vertexCount ?? 0),
+        color_data:  vData  !== null ? vData  : new Float32Array(vertexCount ?? 0).fill(NaN),
+        color_data2: vData2 !== null ? vData2 : new Float32Array(vertexCount ?? 0).fill(NaN),
         ...(fData != null ? { filter_data: fData } : {}),
       },
       uniforms: {},
