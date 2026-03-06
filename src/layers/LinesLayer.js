@@ -87,10 +87,6 @@ class LinesLayerType extends ScatterLayerTypeBase {
       type: "object",
       properties: {
         ...this._commonSchemaProperties(d),
-        fData: {
-          anyOf: [{ const: "none" }, { type: "string", enum: dataProperties }],
-          description: "Optional column name for filter axis values (must be a plain column — CPU-side slicing requires an array)"
-        },
         lineSegmentIdData: {
           type: "string",
           enum: dataProperties,
