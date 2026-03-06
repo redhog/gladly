@@ -159,6 +159,16 @@ export class DataGroup {
   }
 }
 
+// Normalise any user-supplied data value into a DataGroup so the rest of the
+// framework always sees a uniform DataGroup interface.  Plain Data (or raw
+// objects that Data.wrap converts to Data) are wrapped under an "input" key,
+// matching the runtime convention in _processTransforms.
+export function normalizeData(data) {
+  if (data == null) return null
+  const wrapped = Data.wrap(data)
+  return (wrapped instanceof DataGroup) ? wrapped : new DataGroup({ input: wrapped })
+}
+
 export class Data {
   constructor(raw) {
     raw = raw ?? {}

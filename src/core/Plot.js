@@ -10,19 +10,21 @@ import { getAxisQuantityKind, getScaleTypeFloat } from "../axes/AxisQuantityKind
 import { getRegisteredColorscales, getRegistered2DColorscales } from "../colorscales/ColorscaleRegistry.js"
 import { Float } from "../floats/Float.js"
 import { computationSchema, buildTransformSchema, getComputedData } from "../compute/ComputationRegistry.js"
-import { Data, DataGroup, ComputedDataNode } from "./Data.js"
+import { Data, DataGroup, ComputedDataNode, normalizeData } from "./Data.js"
 
 function buildPlotSchema(data, config) {
   const layerTypes = getRegisteredLayerTypes()
-  const wrappedData = data ? Data.wrap(data) : null
+  // Normalise once — always a DataGroup (or null). Columns are e.g. "input.x1".
+  const wrappedData = normalizeData(data)
 
-  // Build fullSchemaData: DataGroup with input data + lightweight stubs for each declared
-  // transform so that layer schemas (e.g. BarsLayer) enumerate transform output columns.
+  // Build fullSchemaData: the normalised DataGroup plus lightweight stubs for each
+  // declared transform so that layer schemas enumerate transform output columns.
   // Stubs only need columns() — getData/getQuantityKind/getDomain return null (schema only).
   const transforms = config?.transforms ?? []
   let fullSchemaData = wrappedData
   if (wrappedData && transforms.length > 0) {
-    const group = new DataGroup({ input: wrappedData })
+    const group = new DataGroup({})
+    group._children = { ...wrappedData._children }
     for (const { name, transform: spec } of transforms) {
       const entries = Object.entries(spec)
       if (entries.length !== 1) continue
@@ -41,10 +43,8 @@ function buildPlotSchema(data, config) {
 
   const { '$defs': compDefs } = computationSchema(fullSchemaData)
 
-  // For transform params, wrap original data as { input: data } so the column enum
-  // inside each ComputedData schema shows the correct runtime paths (e.g. "input.y1").
-  const transformInputData = wrappedData ? new DataGroup({ input: wrappedData }) : null
-  const { '$defs': transformDefs } = buildTransformSchema(transformInputData)
+  // wrappedData is already the correctly-shaped DataGroup (columns "input.x1" etc.)
+  const { '$defs': transformDefs } = buildTransformSchema(wrappedData)
 
   return {
     $schema: "https://json-schema.org/draft/2020-12/schema",
@@ -240,8 +240,8 @@ export class Plot {
         this.currentConfig = config
       }
       if (data !== undefined) {
-        this.currentData = data
-        this._rawData = data   // keep original for re-initialization
+        this._rawData = normalizeData(data)  // normalise once; kept immutable
+        this.currentData = this._rawData
       }
 
       if (!this.currentConfig || !this.currentData) {
@@ -415,9 +415,13 @@ export class Plot {
     this.layers = []
     this._dataTransformNodes = []
 
-    // Restore original user data before applying transforms (handles re-initialization)
+    // Restore original user data before applying transforms (handles re-initialization).
+    // Create a fresh shallow copy of _rawData's children so _rawData is never mutated
+    // and transform nodes from previous runs don't carry over.
     if (this._rawData != null) {
-      this.currentData = this._rawData
+      const fresh = new DataGroup({})
+      fresh._children = { ...this._rawData._children }
+      this.currentData = fresh
     }
 
     AXES.forEach(a => this.svg.append("g").attr("class", a))
@@ -603,11 +607,7 @@ export class Plot {
   _processTransforms(transforms) {
     if (!transforms || transforms.length === 0) return
 
-    // Wrap currentData in a DataGroup if it isn't already, so transforms can be added as named children.
-    if (!(this.currentData instanceof DataGroup)) {
-      this.currentData = new DataGroup({ input: this.currentData })
-    }
-
+    // currentData is always a DataGroup at this point (normalised in update()).
     for (const { name, transform: spec } of transforms) {
       const entries = Object.entries(spec)
       if (entries.length !== 1) throw new Error(`Transform '${name}' must have exactly one key`)
