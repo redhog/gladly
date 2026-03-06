@@ -39,7 +39,49 @@ dataPromise.then(data => {
 
 let activePlot = 'plot1'
 let lastEditorValue = ''
+let lastTransforms = JSON.stringify([])
 let editor
+
+function createEditor(config) {
+  lastTransforms = JSON.stringify(config.transforms ?? [])
+  if (editor) editor.destroy()
+  editor = new JSONEditor(document.getElementById('tab1-editor-container'), {
+    schema: Plot.schema({ input: data }, config),
+    startval: config,
+    theme: 'html',
+    iconlib: 'fontawesome4',
+    disable_collapse: false,
+    disable_edit_json: false,
+    disable_properties: false,
+    no_additional_properties: false,
+    required_by_default: false,
+    show_errors: 'always',
+    compact: false
+  })
+  editor.on('ready', () => {
+    const rootEditor = editor.editors['root']
+    if (rootEditor && rootEditor.editjson_control) {
+      rootEditor.editjson_control.classList.add('je-root-editjson')
+    }
+    lastEditorValue = JSON.stringify(editor.getValue())
+  })
+  editor.on('change', () => {
+    const value = editor.getValue()
+    if (JSON.stringify(value) === lastEditorValue) return
+    lastEditorValue = JSON.stringify(value)
+    const errors = editor.validate()
+    if (errors.length === 0) {
+      updatePlot(activePlot, value)
+    } else {
+      const errorMessages = errors.map(err => `${err.path}: ${err.message}`).join('<br>')
+      document.getElementById('tab1-validation-errors').innerHTML = `
+        <div class="validation-error">
+          <strong>Validation Errors:</strong><br>${errorMessages}
+        </div>
+      `
+    }
+  })
+}
 
 const plot1 = new Plot(document.getElementById('tab1-plot1'))
 const plot2 = new Plot(document.getElementById('tab1-plot2'))
@@ -154,9 +196,14 @@ function updatePlot(plotId, plotConfig) {
     } else {
       plot2Config = fullConfig
     }
-    if (editor && plotId === activePlot) {
-      editor.setValue(fullConfig)
-      lastEditorValue = JSON.stringify(editor.getValue())
+    if (plotId === activePlot) {
+      const newTransforms = JSON.stringify(fullConfig.transforms ?? [])
+      if (newTransforms !== lastTransforms) {
+        createEditor(fullConfig)
+      } else if (editor) {
+        editor.setValue(fullConfig)
+        lastEditorValue = JSON.stringify(editor.getValue())
+      }
     }
     return true
   } catch (error) {
@@ -194,48 +241,7 @@ function attachPickHandler(plot) {
 attachPickHandler(plot1)
 attachPickHandler(plot2)
 
-  console.log("XXXXXXXXXXXXXXXXX", Plot.schema({ input: data }))
-  
-editor = new JSONEditor(document.getElementById('tab1-editor-container'), {
-  schema: Plot.schema({ input: data }),
-  startval: plot1Config,
-  theme: 'html',
-  iconlib: 'fontawesome4',
-  disable_collapse: false,
-  disable_edit_json: false,
-  disable_properties: false,
-  no_additional_properties: false,
-  required_by_default: false,
-  show_errors: 'always',
-  compact: false
-})
-
-editor.on('ready', () => {
-  const rootEditor = editor.editors['root']
-  if (rootEditor && rootEditor.editjson_control) {
-    rootEditor.editjson_control.classList.add('je-root-editjson')
-  }
-  lastEditorValue = JSON.stringify(editor.getValue())
-})
-
-editor.on('change', () => {
-  const value = editor.getValue()
-  if (JSON.stringify(value) === lastEditorValue) return
-  lastEditorValue = JSON.stringify(value)
-
-  const errors = editor.validate()
-
-  if (errors.length === 0) {
-    updatePlot(activePlot, value)
-  } else {
-    const errorMessages = errors.map(err => `${err.path}: ${err.message}`).join('<br>')
-    document.getElementById('tab1-validation-errors').innerHTML = `
-      <div class="validation-error">
-        <strong>Validation Errors:</strong><br>${errorMessages}
-      </div>
-    `
-  }
-})
+createEditor(plot1Config)
 
 function switchToPlot(plotId) {
   activePlot = plotId
@@ -244,8 +250,13 @@ function switchToPlot(plotId) {
   document.getElementById('tab1-plot2').classList.toggle('active', plotId === 'plot2')
 
   const newConfig = plotId === 'plot1' ? plot1Config : plot2Config
-  editor.setValue(newConfig)
-  lastEditorValue = JSON.stringify(editor.getValue())
+  const newTransforms = JSON.stringify(newConfig.transforms ?? [])
+  if (newTransforms !== lastTransforms) {
+    createEditor(newConfig)
+  } else {
+    editor.setValue(newConfig)
+    lastEditorValue = JSON.stringify(editor.getValue())
+  }
 
   document.getElementById('tab1-validation-errors').innerHTML = ''
 }
