@@ -9,6 +9,7 @@
 import { ScatterLayerTypeBase } from "./ScatterShared.js"
 import { Data } from "../core/Data.js"
 import { registerLayerType } from "../core/LayerTypeRegistry.js"
+import { EXPRESSION_REF_OPT } from "../compute/ComputationRegistry.js"
 
 function makeLinesVert(hasFilter, hasSegIds, hasV, hasV2) {
   return `#version 300 es
@@ -85,11 +86,7 @@ class LinesLayerType extends ScatterLayerTypeBase {
       type: "object",
       properties: {
         ...this._commonSchemaProperties(d),
-        lineSegmentIdData: {
-          type: "string",
-          enum: d.columns(),
-          description: "Column for segment IDs; only consecutive points sharing the same ID are connected"
-        },
+        lineSegmentIdData: EXPRESSION_REF_OPT,
         lineColorMode: {
           type: "string",
           enum: ["gradient", "midpoint"],
@@ -109,7 +106,8 @@ class LinesLayerType extends ScatterLayerTypeBase {
 
   _createLayer(parameters, data) {
     const d = Data.wrap(data)
-    const { lineSegmentIdData, lineColorMode = "gradient", lineWidth = 1.0 } = parameters
+    const { lineSegmentIdData: lineSegmentIdDataRaw, lineColorMode = "gradient", lineWidth = 1.0 } = parameters
+    const lineSegmentIdData = (lineSegmentIdDataRaw == null || lineSegmentIdDataRaw === "none") ? null : lineSegmentIdDataRaw
     const { xData, yData, vData: vDataOrig, vData2: vData2Orig, fData: fDataOrig } = parameters
     const vData  = (vDataOrig  == null || vDataOrig  === "none") ? null : vDataOrig
     const vData2 = (vData2Orig == null || vData2Orig === "none") ? null : vData2Orig
