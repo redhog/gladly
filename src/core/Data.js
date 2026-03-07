@@ -1,3 +1,5 @@
+import { ArrayColumn, TextureColumn } from '../compute/ComputationRegistry.js'
+
 function domainsEqual(a, b) {
   if (a === b) return true
   if (a == null || b == null) return a === b
@@ -10,7 +12,7 @@ export class ComputedDataNode {
   constructor(computedData, params) {
     this._computedData = computedData
     this._params = params
-    this._liveRefs = {}   // { colName: { texture, _isLive: true } }
+    this._liveRefs = {}   // { colName: { texture } }
     this._meta = null
     this._accessedAxes = new Set()
     this._cachedDomains = {}
@@ -23,7 +25,13 @@ export class ComputedDataNode {
   }
 
   getData(col) {
-    return this._liveRefs[col] ?? null
+    const ref = this._liveRefs[col]
+    if (!ref) return null
+    return new TextureColumn(ref, {
+      domain: this._meta?.domains?.[col] ?? null,
+      quantityKind: this._meta?.quantityKinds?.[col] ?? null,
+      length: ref.texture ? (ref.texture._dataLength ?? ref.texture.width) : null
+    })
   }
 
   getQuantityKind(col) {
@@ -48,7 +56,7 @@ export class ComputedDataNode {
 
     for (const [key, val] of Object.entries(result)) {
       if (key === '_meta') continue
-      this._liveRefs[key] = { texture: val, _isLive: true }
+      this._liveRefs[key] = { texture: val }
     }
 
     for (const axisId of this._accessedAxes) {
@@ -80,11 +88,10 @@ export class ComputedDataNode {
 
     for (const [key, val] of Object.entries(result)) {
       if (key === '_meta') continue
-      // Mutate the existing live ref so dynamic uniform closures pick up the new texture.
       if (this._liveRefs[key]) {
         this._liveRefs[key].texture = val
       } else {
-        this._liveRefs[key] = { texture: val, _isLive: true }
+        this._liveRefs[key] = { texture: val }
       }
     }
 
@@ -104,7 +111,6 @@ export class DataGroup {
     }
   }
 
-  // Returns { key: Data } for immediate Data children only.
   listData() {
     const result = {}
     for (const [key, child] of Object.entries(this._children)) {
@@ -113,7 +119,6 @@ export class DataGroup {
     return result
   }
 
-  // Returns { key: DataGroup } for immediate DataGroup children only.
   subgroups() {
     const result = {}
     for (const [key, child] of Object.entries(this._children)) {
@@ -122,7 +127,6 @@ export class DataGroup {
     return result
   }
 
-  // All dotted column names across all children recursively.
   columns() {
     const cols = []
     for (const [key, child] of Object.entries(this._children)) {
@@ -159,10 +163,6 @@ export class DataGroup {
   }
 }
 
-// Normalise any user-supplied data value into a DataGroup so the rest of the
-// framework always sees a uniform DataGroup interface.  Plain Data (or raw
-// objects that Data.wrap converts to Data) are wrapped under an "input" key,
-// matching the runtime convention in _processTransforms.
 export function normalizeData(data) {
   if (data == null) return null
   const wrapped = Data.wrap(data)
@@ -172,8 +172,6 @@ export function normalizeData(data) {
 export class Data {
   constructor(raw) {
     raw = raw ?? {}
-    // Columnar format: { data: {col: Float32Array}, quantity_kinds?: {...}, domains?: {...} }
-    // Detected by the presence of a top-level `data` property that is a plain object.
     if (raw.data != null && typeof raw.data === 'object' && !(raw.data instanceof Float32Array)) {
       this._columnar = true
       this._data = raw.data
@@ -194,7 +192,6 @@ export class Data {
       const isColumnar = data.data != null && typeof data.data === 'object' && !(data.data instanceof Float32Array)
 
       if (!isColumnar) {
-        // Not columnar → check if raw format: every value must be Float32Array or {data: Float32Array, ...}
         const vals = Object.values(data)
         if (vals.length > 0) {
           const isRawFormat = vals.every(v =>
@@ -243,8 +240,11 @@ export class Data {
     return this._columnar ? Object.keys(this._data) : Object.keys(this._raw)
   }
 
+  // Returns ArrayColumn (with domain + quantityKind) or null if column not found.
   getData(col) {
-    return this._entry(col).data
+    const entry = this._entry(col)
+    if (!entry.data) return null
+    return new ArrayColumn(entry.data, { domain: entry.domain ?? null, quantityKind: entry.quantityKind ?? null })
   }
 
   getQuantityKind(col) {

@@ -1,17 +1,4 @@
-import { registerTextureComputation, TextureComputation, EXPRESSION_REF, dataShape, resolveQuantityKind } from "./ComputationRegistry.js"
-
-function toTexture(regl, input, length) {
-  if (input instanceof Float32Array) {
-    const [w, h] = dataShape(regl, length)
-    const data = new Float32Array(w * h * 4)
-    data.set(input)
-    const tex = regl.texture({ data, shape: [w, h], type: 'float', format: 'rgba' })
-    tex._dataLength = length
-    tex._packed = true
-    return tex
-  }
-  return input // already a texture
-}
+import { registerTextureComputation, TextureComputation, EXPRESSION_REF, ArrayColumn, resolveQuantityKind, SAMPLE_COLUMN_GLSL } from "./ComputationRegistry.js"
 
 function subtractTextures(regl, texA, texB) {
   const w = texA.width
@@ -35,7 +22,9 @@ function subtractTextures(regl, texA, texB) {
       out vec4 fragColor;
       void main() {
         ivec2 coord = ivec2(gl_FragCoord.xy);
-        fragColor = texelFetch(texA, coord, 0) - texelFetch(texB, coord, 0);
+        float a = texelFetch(texA, coord, 0).r;
+        float b = texelFetch(texB, coord, 0).r;
+        fragColor = vec4(a - b, 0.0, 0.0, 1.0);
       }
     `,
     attributes: { position: [[-1, -1], [1, -1], [-1, 1], [1, 1]] },
@@ -45,20 +34,18 @@ function subtractTextures(regl, texA, texB) {
   })()
 
   if (texA._dataLength !== undefined) outputTex._dataLength = texA._dataLength
-  outputTex._packed = true
   return outputTex
 }
 
 /**
  * Generic 1D convolution filter
  * @param {regl} regl - regl context
- * @param {Float32Array | Texture} input - CPU array or GPU texture
- * @param {Float32Array} kernel - 1D kernel
+ * @param {Texture} inputTex - GPU texture with values in R channel, _dataLength set
+ * @param {Float32Array} kernel - 1D kernel weights
  * @returns {Texture} - filtered output texture
  */
-function filter1D(regl, input, kernel) {
-  const length = input instanceof Float32Array ? input.length : (input._dataLength ?? input.width * input.height)
-  const inputTex = toTexture(regl, input, length)
+function filter1D(regl, inputTex, kernel) {
+  const length = inputTex._dataLength ?? inputTex.width * inputTex.height
   const w = inputTex.width
   const h = inputTex.height
 
@@ -81,88 +68,91 @@ function filter1D(regl, input, kernel) {
     `,
     frag: `#version 300 es
       precision highp float;
+      precision highp sampler2D;
       uniform sampler2D inputTex;
       uniform sampler2D kernelTex;
       uniform int radius;
-      uniform int texWidth;
       uniform int totalLength;
       out vec4 fragColor;
-
+      ${SAMPLE_COLUMN_GLSL}
       void main() {
+        ivec2 sz = textureSize(inputTex, 0);
         ivec2 coord = ivec2(gl_FragCoord.xy);
-        int di = (coord.y * texWidth + coord.x) * 4;
-        vec4 sums = vec4(0.0);
-        for (int i = -16; i <= 16; i++) { // max kernel radius 16
+        int di = coord.y * sz.x + coord.x;
+        float sum = 0.0;
+        for (int i = -16; i <= 16; i++) {
           if (i + 16 >= radius * 2 + 1) break;
+          int si = clamp(di + i, 0, totalLength - 1);
           float kw = texelFetch(kernelTex, ivec2(i + radius, 0), 0).r;
-          for (int c = 0; c < 4; c++) {
-            int si = clamp(di + c + i, 0, totalLength - 1);
-            ivec2 sc = ivec2((si / 4) % texWidth, (si / 4) / texWidth);
-            sums[c] += texelFetch(inputTex, sc, 0)[si % 4] * kw;
-          }
+          sum += sampleColumn(inputTex, float(si)) * kw;
         }
-        fragColor = sums;
+        fragColor = vec4(sum, 0.0, 0.0, 1.0);
       }
     `,
     attributes: { position: [[-1, -1], [1, -1], [-1, 1], [1, 1]] },
-    uniforms: { inputTex, kernelTex, radius, texWidth: w, totalLength: length },
+    uniforms: { inputTex, kernelTex, radius, totalLength: length },
     count: 4,
     primitive: 'triangle strip'
   })()
 
   outputTex._dataLength = length
-  outputTex._packed = true
   return outputTex
 }
 
 // Gaussian kernel helper
 function gaussianKernel(size, sigma) {
-  const radius = Math.floor(size / 2);
-  const kernel = new Float32Array(size);
-  let sum = 0;
+  const radius = Math.floor(size / 2)
+  const kernel = new Float32Array(size)
+  let sum = 0
   for (let i = -radius; i <= radius; i++) {
-    const v = Math.exp(-0.5 * (i / sigma) ** 2);
-    kernel[i + radius] = v;
-    sum += v;
+    const v = Math.exp(-0.5 * (i / sigma) ** 2)
+    kernel[i + radius] = v
+    sum += v
   }
-  for (let i = 0; i < size; i++) kernel[i] /= sum;
-  return kernel;
+  for (let i = 0; i < size; i++) kernel[i] /= sum
+  return kernel
 }
 
 /**
  * Low-pass filter
+ * @param {regl} regl
+ * @param {Texture} inputTex - GPU texture with values in R channel
  */
-function lowPass(regl, input, sigma = 3, kernelSize = null) {
-  const size = kernelSize || Math.ceil(sigma*6)|1; // ensure odd
-  const kernel = gaussianKernel(size, sigma);
-  return filter1D(regl, input, kernel);
+function lowPass(regl, inputTex, sigma = 3, kernelSize = null) {
+  const size = kernelSize || (Math.ceil(sigma * 6) | 1) // ensure odd
+  const kernel = gaussianKernel(size, sigma)
+  return filter1D(regl, inputTex, kernel)
 }
 
 /**
  * High-pass filter: subtract low-pass
+ * @param {regl} regl
+ * @param {Texture} inputTex - GPU texture with values in R channel
  */
-function highPass(regl, input, sigma = 3, kernelSize = null) {
-  const low = lowPass(regl, input, sigma, kernelSize);
-  // high = input - low (using a shader)
-  return subtractTextures(regl, input, low);
+function highPass(regl, inputTex, sigma = 3, kernelSize = null) {
+  const low = lowPass(regl, inputTex, sigma, kernelSize)
+  return subtractTextures(regl, inputTex, low)
 }
 
 /**
  * Band-pass filter: difference of low-pass filters
+ * @param {regl} regl
+ * @param {Texture} inputTex - GPU texture with values in R channel
  */
-function bandPass(regl, input, sigmaLow, sigmaHigh) {
-  const lowHigh = lowPass(regl, input, sigmaHigh);
-  const lowLow = lowPass(regl, input, sigmaLow);
-  return subtractTextures(regl, lowHigh, lowLow);
+function bandPass(regl, inputTex, sigmaLow, sigmaHigh) {
+  const lowHigh = lowPass(regl, inputTex, sigmaHigh)
+  const lowLow  = lowPass(regl, inputTex, sigmaLow)
+  return subtractTextures(regl, lowHigh, lowLow)
 }
 
 export { filter1D, gaussianKernel, lowPass, highPass, bandPass }
 
 class Filter1DComputation extends TextureComputation {
   getQuantityKind(params, data) { return resolveQuantityKind(params.input, data) }
-  compute(regl, params, data, getAxisDomain) {
-    const input = this.resolveDataParam(regl, data, params.input)
-    return filter1D(regl, input, params.kernel)
+  compute(regl, inputs, getAxisDomain) {
+    const inputTex = inputs.input.toTexture(regl)
+    const kernelArr = inputs.kernel instanceof ArrayColumn ? inputs.kernel.array : inputs.kernel
+    return filter1D(regl, inputTex, kernelArr)
   }
   schema(data) {
     return {
@@ -179,9 +169,8 @@ class Filter1DComputation extends TextureComputation {
 
 class LowPassComputation extends TextureComputation {
   getQuantityKind(params, data) { return resolveQuantityKind(params.input, data) }
-  compute(regl, params, data, getAxisDomain) {
-    const input = this.resolveDataParam(regl, data, params.input)
-    return lowPass(regl, input, params.sigma, params.kernelSize)
+  compute(regl, inputs, getAxisDomain) {
+    return lowPass(regl, inputs.input.toTexture(regl), inputs.sigma, inputs.kernelSize)
   }
   schema(data) {
     return {
@@ -199,9 +188,8 @@ class LowPassComputation extends TextureComputation {
 
 class HighPassComputation extends TextureComputation {
   getQuantityKind(params, data) { return resolveQuantityKind(params.input, data) }
-  compute(regl, params, data, getAxisDomain) {
-    const input = this.resolveDataParam(regl, data, params.input)
-    return highPass(regl, input, params.sigma, params.kernelSize)
+  compute(regl, inputs, getAxisDomain) {
+    return highPass(regl, inputs.input.toTexture(regl), inputs.sigma, inputs.kernelSize)
   }
   schema(data) {
     return {
@@ -219,9 +207,8 @@ class HighPassComputation extends TextureComputation {
 
 class BandPassComputation extends TextureComputation {
   getQuantityKind(params, data) { return resolveQuantityKind(params.input, data) }
-  compute(regl, params, data, getAxisDomain) {
-    const input = this.resolveDataParam(regl, data, params.input)
-    return bandPass(regl, input, params.sigmaLow, params.sigmaHigh)
+  compute(regl, inputs, getAxisDomain) {
+    return bandPass(regl, inputs.input.toTexture(regl), inputs.sigmaLow, inputs.sigmaHigh)
   }
   schema(data) {
     return {

@@ -709,9 +709,7 @@ export class Plot {
     }
 
     for (const layer of this.layers) {
-      if (layer._axisUpdaters) {
-        for (const updater of layer._axisUpdaters) updater.refreshIfNeeded(this)
-      }
+      for (const col of layer._dataColumns ?? []) col.refresh(this)
 
       const xIsLog = layer.xAxis ? this.axisRegistry.isLogScale(layer.xAxis) : false
       const yIsLog = layer.yAxis ? this.axisRegistry.isLogScale(layer.yAxis) : false
@@ -813,9 +811,7 @@ export class Plot {
       }
       for (let i = 0; i < this.layers.length; i++) {
         const layer = this.layers[i]
-        if (layer._axisUpdaters) {
-          for (const updater of layer._axisUpdaters) updater.refreshIfNeeded(this)
-        }
+        for (const col of layer._dataColumns ?? []) col.refresh(this)
 
         const xIsLog = layer.xAxis ? this.axisRegistry.isLogScale(layer.xAxis) : false
         const yIsLog = layer.yAxis ? this.axisRegistry.isLogScale(layer.yAxis) : false

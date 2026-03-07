@@ -1,0 +1,91 @@
+ColumnData Unification Plan
+============================
+
+GOAL
+----
+Replace the current zoo of data representations (Float32Array, regl texture,
+_packed textures, { texture, _isLive: true } live refs, ad-hoc duck-typed
+objects) with a single ColumnData class hierarchy. Every column resolves to:
+
+  col.resolve(path, regl)  ->  { glslExpr: string, textures: { name: () => texture } }
+  col.toTexture(regl)      ->  regl texture (R channel, 1 value/texel, 2D layout)
+  col.refresh(plot)        ->  boolean (true if texture was updated)
+  col.length / .domain / .quantityKind
+
+Three concrete subtypes:
+  ArrayColumn(array, meta)      - Float32Array, lazy-uploads to texture on demand
+  TextureColumn(ref, meta)      - { texture } mutable ref, axis-dependent refreshFn
+  GlslColumn(inputs, glslFn)    - expression tree node; collects inputs' textures,
+                                   composes GLSL expression inline
+
+KEY DESIGN DECISIONS
+--------------------
+1. No roundtrip via CPU: data stays on GPU once uploaded.
+2. All column data stored as textures (R channel, 1 value per texel, 2D).
+   One GLSL helper: sampleColumn(sampler2D, float idx) using texelFetch+textureSize.
+3. Float32Array in layer attributes still means fixed geometry (corners, indices).
+4. GlslColumn inputs are listed explicitly; resolve() recurses and merges textures.
+5. TextureComputation.compute() still returns raw regl texture (impls unchanged).
+   createColumn() wraps it in TextureColumn with refreshFn for axis tracking.
+6. GlslComputation.createColumn(inputs) returns GlslColumn.
+7. All textures are effectively "live" (dynamic uniforms) - no static vs live split.
+8. textureSize() in GLSL eliminates separate width/height uniforms entirely.
+9. refresh() returns boolean; chain: GlslColumn propagates to inputs, consumer
+   TextureComputations recompute if inputs refreshed OR own axes changed.
+
+PIPELINE
+--------
+Data (ArrayColumn via Data.getData)
+  -> ComputedData (top-level transform, produces TextureColumns in ComputedDataNode)
+  -> TextureComputation / GlslComputation expressions in layer params
+
+GlslComputation can be input to TextureComputation:
+  TextureComputation.compute() calls inputs.someCol.toTexture(regl), which for
+  GlslColumn runs a GPU point-render pass to materialize the expression.
+
+TEXTURE FORMAT
+--------------
+All column textures: RGBA float, values in R channel, 1 value per texel.
+  w = min(n, maxTextureSize), h = ceil(n/w), tex._dataLength = n
+  sampleColumn GLSL: texelFetch(tex, ivec2(i%sz.x, i/sz.x), 0).r
+
+Intermediate compute textures (FFT=complex RG, filter=R) stay in their own
+formats since they are not directly consumed via sampleColumn.
+FFT/conv require ArrayColumn inputs (CPU data) - GPU readback not supported.
+
+REMOVED
+-------
+- resolveToGlslExpr / resolveToRawValue
+- TextureComputation.resolveDataParam
+- ComputedData.resolveDataParam
+- isTexture(), dataShape()
+- _isLive: true flag
+- context.axisUpdaters / layer._axisUpdaters -> layer._dataColumns
+- Packed texture format (_packed, _samplePacked_* GLSL)
+- Scalar uniforms for texture width/height
+
+LINES LAYER EXCEPTION
+---------------------
+LinesLayer uses subarray() to slice adjacent point pairs. It requires
+ArrayColumn inputs (calls .array). Does not support computed columns.
+
+FILES CHANGED
+-------------
+src/compute/ComputationRegistry.js  - major rewrite: add ColumnData classes,
+                                       resolveExprToColumn, resolveParams, update
+                                       base classes, simplify resolveAttributeExpr
+src/core/Data.js                    - getData returns ArrayColumn/TextureColumn
+src/core/LayerType.js               - createDrawCommand uses textures map,
+                                       injects SAMPLE_COLUMN_GLSL, sets _dataColumns
+src/core/Plot.js                    - render()/pick() refresh _dataColumns
+src/compute/hist.js                 - update to new API
+src/compute/elementwise.js          - simplify: col.toTexture() replaces evalExpr
+src/compute/axisFilter.js           - update to new API
+src/compute/kde.js                  - update to new API
+src/compute/filter.js               - update texture format (R channel), update API
+src/compute/fft.js                  - update API (ArrayColumn inputs only)
+src/compute/conv.js                 - update API (ArrayColumn inputs only)
+src/layers/BarsLayer.js             - use col.length, col.domain
+src/layers/ScatterShared.js         - update _resolveColorData to use .array
+src/layers/PointsLayer.js           - use col.length for vertexCount
+src/layers/LinesLayer.js            - explicit .array calls for subarray()

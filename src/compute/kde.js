@@ -3,41 +3,33 @@ import { registerTextureComputation, TextureComputation, EXPRESSION_REF } from "
 /**
  * Smooth a histogram to produce a KDE texture
  * @param {regl} regl - regl context
- * @param {Float32Array | Texture} histInput - histogram data
+ * @param {Texture} histTex - histogram texture (values in R channel, width=bins, height=1)
  * @param {Object} options
  *   - bandwidth: Gaussian sigma in bins (default 5)
  *   - bins: output bins (default same as input)
  * @returns {Texture} - smoothed KDE texture
  */
-export default function smoothKDE(regl, histInput, options = {}) {
-  const bins = options.bins || (histInput instanceof Float32Array ? histInput.length : histInput.width);
-  const bandwidth = options.bandwidth || 5.0;
+export default function smoothKDE(regl, histTex, options = {}) {
+  const bins = options.bins || histTex.width
+  const bandwidth = options.bandwidth || 5.0
 
-  const histTex = (histInput instanceof Float32Array)
-    ? (() => {
-        const d = new Float32Array(bins * 4)
-        for (let i = 0; i < bins; i++) d[i * 4] = histInput[i]
-        return regl.texture({ data: d, shape: [bins, 1], type: 'float', format: 'rgba' })
-      })()
-    : histInput;
+  const kdeTex = regl.texture({ width: bins, height: 1, type: 'float', format: 'rgba' })
+  const kdeFBO = regl.framebuffer({ color: kdeTex, depth: false, stencil: false })
 
-  const kdeTex = regl.texture({ width: bins, height: 1, type: 'float', format: 'rgba' });
-  const kdeFBO = regl.framebuffer({ color: kdeTex, depth: false, stencil: false });
-
-  const kernelRadius = Math.ceil(bandwidth * 3);
-  const kernelSize = kernelRadius * 2 + 1;
-  const kernel = new Float32Array(kernelSize);
-  let sum = 0;
+  const kernelRadius = Math.ceil(bandwidth * 3)
+  const kernelSize = kernelRadius * 2 + 1
+  const kernel = new Float32Array(kernelSize)
+  let sum = 0
   for (let i = -kernelRadius; i <= kernelRadius; i++) {
-    const w = Math.exp(-0.5 * (i / bandwidth) ** 2);
-    kernel[i + kernelRadius] = w;
-    sum += w;
+    const w = Math.exp(-0.5 * (i / bandwidth) ** 2)
+    kernel[i + kernelRadius] = w
+    sum += w
   }
-  for (let i = 0; i < kernel.length; i++) kernel[i] /= sum;
+  for (let i = 0; i < kernel.length; i++) kernel[i] /= sum
 
   const kernelData = new Float32Array(kernelSize * 4)
   for (let i = 0; i < kernelSize; i++) kernelData[i * 4] = kernel[i]
-  const kernelTex = regl.texture({ data: kernelData, shape: [kernelSize, 1], type: 'float', format: 'rgba' });
+  const kernelTex = regl.texture({ data: kernelData, shape: [kernelSize, 1], type: 'float', format: 'rgba' })
 
   const drawKDE = regl({
     framebuffer: kdeFBO,
@@ -80,18 +72,19 @@ export default function smoothKDE(regl, histInput, options = {}) {
     },
     count: bins,
     primitive: 'points'
-  });
+  })
 
-  drawKDE();
+  drawKDE()
 
-  return kdeTex;
+  return kdeTex
 }
 
 class KdeComputation extends TextureComputation {
-  compute(regl, params, data, getAxisDomain) {
-    const input = this.resolveDataParam(regl, data, params.input)
-    return smoothKDE(regl, input, { bins: params.bins, bandwidth: params.bandwidth })
+  compute(regl, inputs, getAxisDomain) {
+    const inputTex = inputs.input.toTexture(regl)
+    return smoothKDE(regl, inputTex, { bins: inputs.bins, bandwidth: inputs.bandwidth })
   }
+
   schema(data) {
     return {
       type: 'object',

@@ -4,31 +4,335 @@ const textureComputations = new Map()
 const glslComputations = new Map()
 const computedDataRegistry = new Map()
 
+// ─── GLSL helper injected into any shader that samples column data ─────────────
+export const SAMPLE_COLUMN_GLSL = `float sampleColumn(sampler2D tex, float idx) {
+  ivec2 sz = textureSize(tex, 0);
+  int i = int(idx);
+  return texelFetch(tex, ivec2(i % sz.x, i / sz.x), 0).r;
+}`
+
+// Upload a Float32Array as a 2D RGBA texture with values in the R channel.
+export function uploadToTexture(regl, array) {
+  const w = Math.min(array.length, regl.limits.maxTextureSize)
+  const h = Math.ceil(array.length / w)
+  const texData = new Float32Array(w * h * 4)
+  for (let i = 0; i < array.length; i++) texData[i * 4] = array[i]
+  const tex = regl.texture({ data: texData, shape: [w, h], type: 'float', format: 'rgba' })
+  tex._dataLength = array.length
+  return tex
+}
+
+function domainsEqual(a, b) {
+  if (a === b) return true
+  if (a == null || b == null) return a === b
+  return a[0] === b[0] && a[1] === b[1]
+}
+
+// ─── ColumnData base class ────────────────────────────────────────────────────
+export class ColumnData {
+  get length()       { return null }
+  get domain()       { return null }
+  get quantityKind() { return null }
+
+  // Returns { glslExpr: string, textures: { uniformName: () => reglTexture } }
+  // path must be a valid GLSL identifier fragment (no dots or special chars)
+  resolve(path, regl) { throw new Error('Not implemented') }
+
+  // Returns a regl texture (R channel, 1 value per texel, 2D layout).
+  // May run a GPU render pass for GlslColumn.
+  toTexture(regl) { throw new Error('Not implemented') }
+
+  // Called before each render to refresh axis-dependent textures.
+  // Returns true if the texture was updated.
+  refresh(plot) { return false }
+}
+
+// ─── ArrayColumn ──────────────────────────────────────────────────────────────
+export class ArrayColumn extends ColumnData {
+  constructor(array, { domain = null, quantityKind = null } = {}) {
+    super()
+    this._array = array
+    this._domain = domain
+    this._quantityKind = quantityKind
+    this._ref = null  // { texture } lazy
+  }
+
+  get length()       { return this._array.length }
+  get domain()       { return this._domain }
+  get quantityKind() { return this._quantityKind }
+  get array()        { return this._array }
+
+  _upload(regl) {
+    if (!this._ref) this._ref = { texture: uploadToTexture(regl, this._array) }
+    return this._ref
+  }
+
+  resolve(path, regl) {
+    const ref = this._upload(regl)
+    const uName = `u_col_${path}`
+    return {
+      glslExpr: `sampleColumn(${uName}, a_pickId)`,
+      textures: { [uName]: () => ref.texture }
+    }
+  }
+
+  toTexture(regl) { return this._upload(regl).texture }
+}
+
+// ─── TextureColumn ────────────────────────────────────────────────────────────
+export class TextureColumn extends ColumnData {
+  constructor(ref, { domain = null, quantityKind = null, length = null, refreshFn = null } = {}) {
+    super()
+    this._ref = ref           // { texture } mutable so hot-swaps propagate
+    this._domain = domain
+    this._quantityKind = quantityKind
+    this._length = length
+    this._refreshFn = refreshFn
+  }
+
+  get length()       { return this._length }
+  get domain()       { return this._domain }
+  get quantityKind() { return this._quantityKind }
+
+  resolve(path, regl) {
+    const uName = `u_col_${path}`
+    return {
+      glslExpr: `sampleColumn(${uName}, a_pickId)`,
+      textures: { [uName]: () => this._ref.texture }
+    }
+  }
+
+  toTexture(regl) { return this._ref.texture }
+
+  refresh(plot) {
+    if (this._refreshFn) return this._refreshFn(plot, this._ref) ?? false
+    return false
+  }
+}
+
+// ─── GlslColumn ───────────────────────────────────────────────────────────────
+export class GlslColumn extends ColumnData {
+  constructor(inputs, glslFn, { domain = null, quantityKind = null } = {}) {
+    super()
+    this._inputs = inputs   // { name: ColumnData }
+    this._glslFn = glslFn   // (resolvedExprs: { name: string }) => string
+    this._domain = domain
+    this._quantityKind = quantityKind
+  }
+
+  get length()       { return Object.values(this._inputs)[0]?.length ?? null }
+  get domain()       { return this._domain }
+  get quantityKind() { return this._quantityKind }
+
+  resolve(path, regl) {
+    const resolvedExprs = {}
+    const textures = {}
+    for (const [name, col] of Object.entries(this._inputs)) {
+      const { glslExpr, textures: colTextures } = col.resolve(`${path}_${name}`, regl)
+      resolvedExprs[name] = glslExpr
+      Object.assign(textures, colTextures)
+    }
+    return { glslExpr: this._glslFn(resolvedExprs), textures }
+  }
+
+  toTexture(regl) {
+    const N = this.length
+    if (N === null) throw new Error('GlslColumn: cannot determine length for toTexture()')
+    const w = Math.min(N, regl.limits.maxTextureSize)
+    const h = Math.ceil(N / w)
+    const { glslExpr, textures } = this.resolve('glsl_mat', regl)
+    const pickIds = new Float32Array(N)
+    for (let i = 0; i < N; i++) pickIds[i] = i
+    const outputTex = regl.texture({ width: w, height: h, type: 'float', format: 'rgba' })
+    const outputFBO = regl.framebuffer({ color: outputTex, depth: false, stencil: false })
+    const samplerDecls = Object.keys(textures).map(n => `uniform sampler2D ${n};`).join('\n')
+    const vert = `#version 300 es
+precision highp float;
+precision highp sampler2D;
+in float a_pickId;
+${samplerDecls}
+${SAMPLE_COLUMN_GLSL}
+out float v_value;
+void main() {
+  float tx = mod(a_pickId, ${w}.0);
+  float ty = floor(a_pickId / ${w}.0);
+  float x = (tx + 0.5) / ${w}.0 * 2.0 - 1.0;
+  float y = (ty + 0.5) / ${h}.0 * 2.0 - 1.0;
+  gl_Position = vec4(x, y, 0.0, 1.0);
+  gl_PointSize = 1.0;
+  v_value = ${glslExpr};
+}`
+    const frag = `#version 300 es
+precision highp float;
+in float v_value;
+out vec4 fragColor;
+void main() { fragColor = vec4(v_value, 0.0, 0.0, 1.0); }`
+    const uniforms = {}
+    for (const [k, fn] of Object.entries(textures)) uniforms[k] = fn
+    regl({ framebuffer: outputFBO, vert, frag,
+      attributes: { a_pickId: pickIds }, uniforms, count: N, primitive: 'points' })()
+    outputTex._dataLength = N
+    return outputTex
+  }
+
+  refresh(plot) {
+    let changed = false
+    for (const col of Object.values(this._inputs)) {
+      if (col.refresh(plot)) changed = true
+    }
+    return changed
+  }
+}
+
+// ─── resolveExprToColumn ─────────────────────────────────────────────────────
+// Turns any expression (string col name, { compName: params }, ColumnData) into ColumnData.
+export function resolveExprToColumn(expr, data, regl, plot) {
+  if (expr instanceof ColumnData) return expr
+
+  if (typeof expr === 'string') {
+    const col = data?.getData(expr)
+    if (!col) throw new Error(`Column '${expr}' not found in data`)
+    return col
+  }
+
+  if (typeof expr === 'object' && expr !== null) {
+    const keys = Object.keys(expr)
+    if (keys.length === 1) {
+      const compName = keys[0]
+      const params = expr[compName]
+
+      if (textureComputations.has(compName)) {
+        const comp = textureComputations.get(compName)
+        const resolvedInputs = resolveParams(params, data, regl, plot)
+        return comp.createColumn(regl, resolvedInputs, plot)
+      }
+
+      if (glslComputations.has(compName)) {
+        const comp = glslComputations.get(compName)
+        const resolvedInputs = resolveParams(params, data, regl, plot)
+        return comp.createColumn(resolvedInputs)
+      }
+    }
+  }
+
+  throw new Error(`Cannot resolve expression to column: ${JSON.stringify(expr)}`)
+}
+
+// Resolve a params dict recursively: column refs -> ColumnData, scalars pass through.
+function resolveParams(params, data, regl, plot) {
+  if (params === null || params === undefined) return params
+  if (typeof params === 'number' || typeof params === 'boolean') return params
+  if (params instanceof ColumnData) return params
+  if (params instanceof Float32Array) return params
+
+  if (typeof params === 'string') {
+    const col = data?.getData(params)
+    return col ?? params  // fall back to string value if not a known column
+  }
+
+  if (typeof params === 'object') {
+    const keys = Object.keys(params)
+    if (keys.length === 1 &&
+        (textureComputations.has(keys[0]) || glslComputations.has(keys[0]))) {
+      return resolveExprToColumn(params, data, regl, plot)
+    }
+    const resolved = {}
+    for (const [k, v] of Object.entries(params)) {
+      resolved[k] = resolveParams(v, data, regl, plot)
+    }
+    return resolved
+  }
+
+  return params
+}
+
+// ─── Base classes ─────────────────────────────────────────────────────────────
 export class Computation {
   schema(data) { throw new Error('Not implemented') }
   getQuantityKind(params, data) { return null }
 }
 
-// Base class for GPU data transforms that produce multiple named output columns.
-// Unlike TextureComputation (single texture), ComputedData produces { colName: texture, ..., _meta?: {...} }.
 export class ComputedData {
-  // Returns the list of output column names (known statically, no regl needed).
   columns() { throw new Error('Not implemented') }
-
-  // Resolves a data parameter without regl. Accepts Float32Array, string column ref, or pass-through.
-  resolveDataParam(data, value) {
-    if (value instanceof Float32Array) return value
-    if (typeof value === 'string') {
-      if (!data) throw new Error(`Cannot resolve column '${value}': no data available`)
-      return data.getData(value)
-    }
-    return value
-  }
-
-  // Returns { colName: reglTexture, ..., _meta?: { domains, quantityKinds, ... } }
   compute(regl, params, data, getAxisDomain) { throw new Error('Not implemented') }
-
   schema(data) { throw new Error('Not implemented') }
+}
+
+export class TextureComputation extends Computation {
+  // Override: inputs is { name: ColumnData | scalar }, returns raw regl texture.
+  compute(regl, inputs, getAxisDomain) { throw new Error('Not implemented') }
+
+  createColumn(regl, inputs, plot) {
+    const accessedAxes = new Set()
+    const cachedDomains = {}
+
+    const getAxisDomain = (axisId) => {
+      accessedAxes.add(axisId)
+      return plot ? plot.getAxisDomain(axisId) : null
+    }
+
+    const rawTex = this.compute(regl, inputs, getAxisDomain)
+    const ref = { texture: rawTex }
+
+    let refreshFn = null
+    if (accessedAxes.size > 0) {
+      for (const axisId of accessedAxes) {
+        cachedDomains[axisId] = plot ? plot.getAxisDomain(axisId) : null
+      }
+
+      const comp = this
+      refreshFn = (currentPlot, texRef) => {
+        // Refresh inputs first; track if any updated
+        let inputsRefreshed = false
+        for (const val of Object.values(inputs)) {
+          if (val instanceof ColumnData && val.refresh(currentPlot)) inputsRefreshed = true
+        }
+
+        let ownAxisChanged = false
+        for (const axisId of accessedAxes) {
+          if (!domainsEqual(currentPlot.getAxisDomain(axisId), cachedDomains[axisId])) {
+            ownAxisChanged = true
+            break
+          }
+        }
+
+        if (!inputsRefreshed && !ownAxisChanged) return false
+
+        const newAxes = new Set()
+        const newGetter = (axisId) => { newAxes.add(axisId); return currentPlot.getAxisDomain(axisId) }
+        texRef.texture = comp.compute(regl, inputs, newGetter)
+
+        accessedAxes.clear()
+        for (const axisId of newAxes) {
+          accessedAxes.add(axisId)
+          cachedDomains[axisId] = currentPlot.getAxisDomain(axisId)
+        }
+        return true
+      }
+    }
+
+    return new TextureColumn(ref, {
+      length: rawTex._dataLength ?? rawTex.width,
+      refreshFn
+    })
+  }
+}
+
+export class GlslComputation extends Computation {
+  glsl(resolvedExprs) { throw new Error('Not implemented') }
+
+  createColumn(inputs, meta = {}) {
+    return new GlslColumn(inputs, resolvedExprs => this.glsl(resolvedExprs), meta)
+  }
+}
+
+// ─── Registration ─────────────────────────────────────────────────────────────
+export function registerTextureComputation(name, computation) {
+  textureComputations.set(name, computation)
+}
+
+export function registerGlslComputation(name, computation) {
+  glslComputations.set(name, computation)
 }
 
 export function registerComputedData(name, instance) {
@@ -43,59 +347,28 @@ export function getRegisteredComputedData() {
   return computedDataRegistry
 }
 
-export function dataShape(regl, n) {
-  const numTexels = Math.ceil(n / 4)
-  const w = Math.min(numTexels, regl.limits.maxTextureSize)
-  const h = Math.ceil(numTexels / w)
-  return [w, h]
-}
-
-export class TextureComputation extends Computation {
-  compute(regl, params, data, getAxisDomain) { throw new Error('Not implemented') }
-
-  // Resolves a data parameter to a regl texture, folding into 2D if length exceeds maxTextureSize.
-  // Accepts a Float32Array, an existing regl texture, or a string column name looked up from data.
-  resolveDataParam(regl, data, value) {
-    if (isTexture(value)) return value
-    let array = value
-    if (typeof value === 'string') {
-      if (!data) throw new Error(`Cannot resolve column '${value}': no data available`)
-      array = data.getData(value)
-      if (!(array instanceof Float32Array)) throw new Error(`Column '${value}' not found in data`)
-    }
-    const [w, h] = dataShape(regl, array.length)
-    const texData = new Float32Array(w * h * 4)
-    texData.set(array)
-    const tex = regl.texture({ data: texData, shape: [w, h], type: 'float', format: 'rgba' })
-    tex._dataLength = array.length
-    tex._packed = true
-    return tex
+// ─── resolveAttributeExpr ────────────────────────────────────────────────────
+// Entry point from LayerType.createDrawCommand. Returns:
+//   { kind: 'buffer', value: Float32Array }                 — fixed geometry
+//   { kind: 'computed', glslExpr, textures, col }           — data column
+export function resolveAttributeExpr(regl, expr, attrShaderName, plot) {
+  if (expr instanceof Float32Array) {
+    return { kind: 'buffer', value: expr }
   }
+
+  const data = plot ? plot.currentData : null
+  const col = (expr instanceof ColumnData)
+    ? expr
+    : resolveExprToColumn(expr, data, regl, plot)
+
+  const safePath = attrShaderName.replace(/[^a-zA-Z0-9_]/g, '_')
+  const { glslExpr, textures } = col.resolve(safePath, regl)
+  return { kind: 'computed', glslExpr, textures, col }
 }
 
-export class GlslComputation extends Computation {
-  glsl(resolvedParams) { throw new Error('Not implemented') }
-}
-
-// Use in computation schema() methods for params that can be a Float32Array or sub-expression
-export const EXPRESSION_REF = { '$ref': '#/$defs/expression' }
-
-// Like EXPRESSION_REF but allows "none" as an explicit sentinel value (e.g. optional axes)
-export const EXPRESSION_REF_OPT = { '$ref': '#/$defs/expression_opt' }
-
-export function registerTextureComputation(name, computation) {
-  textureComputations.set(name, computation)
-}
-
-export function registerGlslComputation(name, computation) {
-  glslComputations.set(name, computation)
-}
-
-// Resolve the quantity kind of an expression (string column name or computed expression).
-// For a string column name: returns data.getQuantityKind(expr) falling back to expr itself.
-// For a computed expression { compName: params }: delegates to computation.getQuantityKind().
-// Returns null when the quantity kind cannot be determined.
+// ─── resolveQuantityKind ─────────────────────────────────────────────────────
 export function resolveQuantityKind(expr, data) {
+  if (expr instanceof ColumnData) return expr.quantityKind
   if (typeof expr === 'string') {
     return (data ? data.getQuantityKind(expr) : null) ?? expr
   }
@@ -110,16 +383,15 @@ export function resolveQuantityKind(expr, data) {
   return null
 }
 
-// Schema for the transforms config block: [{ name: transformName, transform: { ClassName: params } }]
-// data should already be wrapped as the DataGroup the transform will receive at runtime
-// (e.g. new DataGroup({ input: rawData })) so that column enums show the correct paths.
+// ─── Schema builders ──────────────────────────────────────────────────────────
+export const EXPRESSION_REF     = { '$ref': '#/$defs/expression' }
+export const EXPRESSION_REF_OPT = { '$ref': '#/$defs/expression_opt' }
+
 export function buildTransformSchema(data) {
   const defs = {}
-
   for (const [name, comp] of computedDataRegistry) {
     defs[`params_computeddata_${name}`] = comp.schema(data)
   }
-
   defs.transform_expression = {
     anyOf: [...computedDataRegistry].map(([name]) => ({
       type: 'object',
@@ -129,7 +401,6 @@ export function buildTransformSchema(data) {
       additionalProperties: false
     }))
   }
-
   return { '$defs': defs }
 }
 
@@ -140,7 +411,6 @@ export function computationSchema(data) {
   for (const [name, comp] of textureComputations) {
     defs[`params_${name}`] = comp.schema(data)
   }
-
   for (const [name, comp] of glslComputations) {
     defs[`params_${name}`] = comp.schema(data)
   }
@@ -157,262 +427,13 @@ export function computationSchema(data) {
       }))
     ]
   }
-  
+
   defs.expression_opt = {
     anyOf: [
-      { type: 'string', const: 'none', enum: ['none'], title: 'none', readOnly: true }
-    ].concat(defs.expression.anyOf)
+      { type: 'string', const: 'none', enum: ['none'], title: 'none', readOnly: true },
+      ...defs.expression.anyOf
+    ]
   }
 
   return { '$defs': defs, '$ref': '#/$defs/expression' }
-}
-
-// Duck-type check for regl textures.
-export function isTexture(value) {
-  return (
-    value !== null &&
-    typeof value === 'object' &&
-    typeof value.width === 'number' &&
-    typeof value.subimage === 'function'
-  )
-}
-
-function domainsEqual(a, b) {
-  if (a === b) return true
-  if (a == null || b == null) return a === b
-  return a[0] === b[0] && a[1] === b[1]
-}
-
-// Resolve expr to a raw JS value (Float32Array / texture / number).
-// Used for texture computation params — GLSL expressions are not permitted here.
-function resolveToRawValue(regl, expr, path, data, getAxisDomain) {
-  if (expr instanceof Float32Array) return expr
-  if (isTexture(expr)) return expr
-  if (typeof expr === 'number') return expr
-  if (typeof expr === 'string') return expr
-
-  if (typeof expr === 'object' && expr !== null) {
-    const keys = Object.keys(expr)
-
-    // Single-key object: check if it names a registered computation.
-    if (keys.length === 1) {
-      const compName = keys[0]
-      if (textureComputations.has(compName)) {
-        const comp = textureComputations.get(compName)
-        const params = expr[compName]
-        const resolvedParams = resolveToRawValue(regl, params, path, data, getAxisDomain)
-        return comp.compute(regl, resolvedParams, data, getAxisDomain)
-      }
-      if (glslComputations.has(compName)) {
-        throw new Error(
-          `GLSL computation '${compName}' cannot be used as a texture computation parameter`
-        )
-      }
-    }
-
-    // Plain params dict: resolve each value recursively.
-    const resolved = {}
-    for (const [k, v] of Object.entries(expr)) {
-      resolved[k] = resolveToRawValue(regl, v, `${path}_${k}`, data, getAxisDomain)
-    }
-    return resolved
-  }
-
-  throw new Error(`Cannot resolve to raw value: ${JSON.stringify(expr)}`)
-}
-
-// Resolve expr to a GLSL expression string.
-// Side effects: populates context.bufferAttrs, textureUniforms, scalarUniforms, globalDecls, axisUpdaters.
-function resolveToGlslExpr(regl, expr, path, context, plot) {
-  if (expr instanceof Float32Array) {
-    const attrName = `a_cgen_${path}`
-    context.bufferAttrs[attrName] = expr
-    context.globalDecls.push(`in float ${attrName};`)
-    return attrName
-  }
-
-  // Live reference from a ComputedDataNode — checked BEFORE isTexture.
-  // Uses a dynamic uniform function so the current texture is read each frame.
-  if (expr && typeof expr === 'object' && expr._isLive) {
-    const uniformName = `u_cgen_${path}`
-    const widthName = `u_cgen_${path}_width`
-    const heightName = `u_cgen_${path}_height`
-    context.textureUniforms[uniformName] = () => expr.texture
-    context.scalarUniforms[widthName] = expr.texture.width
-    context.scalarUniforms[heightName] = expr.texture.height
-    context.globalDecls.push(`uniform sampler2D ${uniformName};`)
-    context.globalDecls.push(`uniform float ${widthName};`)
-    context.globalDecls.push(`uniform float ${heightName};`)
-    // Non-packed sampling: each bin i stores its value in the R channel at texel i.
-    return `texture(${uniformName}, vec2((mod(a_pickId, ${widthName}) + 0.5) / ${widthName}, (floor(a_pickId / ${widthName}) + 0.5) / ${heightName})).r`
-  }
-
-  if (isTexture(expr)) {
-    const uniformName = `u_cgen_${path}`
-    const widthName = `u_cgen_${path}_width`
-    const heightName = `u_cgen_${path}_height`
-    context.textureUniforms[uniformName] = expr
-    context.scalarUniforms[widthName] = expr.width
-    context.scalarUniforms[heightName] = expr.height
-    context.globalDecls.push(`uniform sampler2D ${uniformName};`)
-    context.globalDecls.push(`uniform float ${widthName};`)
-    context.globalDecls.push(`uniform float ${heightName};`)
-    if (expr._packed) {
-      const fnName = `_samplePacked_${path}`
-      context.globalDecls.push(`float ${fnName}(float pickId) {
-  float _tid = floor(pickId / 4.0);
-  float _tx = mod(_tid, ${widthName}); float _ty = floor(_tid / ${widthName});
-  vec4 _t = texture(${uniformName}, vec2((_tx + 0.5) / ${widthName}, (_ty + 0.5) / ${heightName}));
-  float _ch = pickId - 4.0 * _tid;
-  return mix(mix(_t.r, _t.g, clamp(_ch, 0.0, 1.0)), mix(_t.b, _t.a, clamp(_ch - 2.0, 0.0, 1.0)), step(1.5, _ch));
-}`)
-      return `${fnName}(a_pickId)`
-    }
-    return `texture(${uniformName}, vec2((mod(a_pickId, ${widthName}) + 0.5) / ${widthName}, (floor(a_pickId / ${widthName}) + 0.5) / ${heightName})).r`
-  }
-
-  if (typeof expr === 'number') {
-    const uniformName = `u_cgen_${path}`
-    context.scalarUniforms[uniformName] = expr
-    context.globalDecls.push(`uniform float ${uniformName};`)
-    return uniformName
-  }
-
-  if (typeof expr === 'object' && expr !== null) {
-    const keys = Object.keys(expr)
-
-    if (keys.length === 1) {
-      const compName = keys[0]
-      const params = expr[compName]
-
-      if (textureComputations.has(compName)) {
-        const comp = textureComputations.get(compName)
-        const uniformName = `u_cgen_${path}`
-        const widthName = `u_cgen_${path}_width`
-        const heightName = `u_cgen_${path}_height`
-
-        // Live reference updated when axis domains change.
-        const liveRef = {
-          texture: null,
-          accessedAxes: new Set(),
-          cachedDomains: {}
-        }
-
-        const makeTrackingGetter = (ref, currentPlot) => (axisId) => {
-          ref.accessedAxes.add(axisId)
-          return currentPlot ? currentPlot.getAxisDomain(axisId) : null
-        }
-
-        // Initial computation with axis tracking.
-        const initData = plot ? Data.wrap(plot.currentData) : null
-        const initGetter = makeTrackingGetter(liveRef, plot)
-        const resolvedParams = resolveToRawValue(regl, params, path, initData, initGetter)
-        liveRef.texture = comp.compute(regl, resolvedParams, initData, initGetter)
-
-        // Cache the domains accessed during initial computation.
-        for (const axisId of liveRef.accessedAxes) {
-          liveRef.cachedDomains[axisId] = plot ? plot.getAxisDomain(axisId) : null
-        }
-
-        // Use a function so regl reads the current texture each frame.
-        context.textureUniforms[uniformName] = () => liveRef.texture
-        // Width and height are constant across recomputes (same data length).
-        context.scalarUniforms[widthName] = liveRef.texture.width
-        context.scalarUniforms[heightName] = liveRef.texture.height
-        context.globalDecls.push(`uniform sampler2D ${uniformName};`)
-        context.globalDecls.push(`uniform float ${widthName};`)
-        context.globalDecls.push(`uniform float ${heightName};`)
-        if (liveRef.texture._packed) {
-          const fnName = `_samplePacked_${path}`
-          context.globalDecls.push(`float ${fnName}(float pickId) {
-  float _tid = floor(pickId / 4.0);
-  float _tx = mod(_tid, ${widthName}); float _ty = floor(_tid / ${widthName});
-  vec4 _t = texture(${uniformName}, vec2((_tx + 0.5) / ${widthName}, (_ty + 0.5) / ${heightName}));
-  float _ch = pickId - 4.0 * _tid;
-  return mix(mix(_t.r, _t.g, clamp(_ch, 0.0, 1.0)), mix(_t.b, _t.a, clamp(_ch - 2.0, 0.0, 1.0)), step(1.5, _ch));
-}`)
-        }
-
-        context.axisUpdaters.push({
-          refreshIfNeeded(currentPlot) {
-            if (liveRef.accessedAxes.size === 0) return
-
-            let needsRecompute = false
-            for (const axisId of liveRef.accessedAxes) {
-              if (!domainsEqual(currentPlot.getAxisDomain(axisId), liveRef.cachedDomains[axisId])) {
-                needsRecompute = true
-                break
-              }
-            }
-            if (!needsRecompute) return
-
-            // Recompute with fresh axis tracking so new dependencies are captured.
-            const newRef = { accessedAxes: new Set(), cachedDomains: {} }
-            const newData = currentPlot ? Data.wrap(currentPlot.currentData) : null
-            const newGetter = makeTrackingGetter(newRef, currentPlot)
-            const newParams = resolveToRawValue(regl, params, path, newData, newGetter)
-            newRef.texture = comp.compute(regl, newParams, newData, newGetter)
-            for (const axisId of newRef.accessedAxes) {
-              newRef.cachedDomains[axisId] = currentPlot.getAxisDomain(axisId)
-            }
-
-            // Update live ref in-place so the dynamic uniform picks up the new texture.
-            liveRef.texture = newRef.texture
-            liveRef.accessedAxes = newRef.accessedAxes
-            liveRef.cachedDomains = newRef.cachedDomains
-          }
-        })
-
-        return liveRef.texture._packed
-          ? `_samplePacked_${path}(a_pickId)`
-          : `texture(${uniformName}, vec2((mod(a_pickId, ${widthName}) + 0.5) / ${widthName}, (floor(a_pickId / ${widthName}) + 0.5) / ${heightName})).r`
-      }
-
-      if (glslComputations.has(compName)) {
-        const comp = glslComputations.get(compName)
-        const resolvedGlslParams = {}
-        for (const [k, v] of Object.entries(params)) {
-          resolvedGlslParams[k] = resolveToGlslExpr(regl, v, `${path}_${k}`, context, plot)
-        }
-        return comp.glsl(resolvedGlslParams)
-      }
-    }
-  }
-
-  throw new Error(`Cannot resolve to GLSL expression: ${JSON.stringify(expr)}`)
-}
-
-// Top-level resolver: decides whether expr is a plain buffer or a computed attribute.
-export function resolveAttributeExpr(regl, expr, attrShaderName, plot) {
-  if (expr instanceof Float32Array) {
-    return { kind: 'buffer', value: expr }
-  }
-
-  if (typeof expr === 'string') {
-    const data = plot ? Data.wrap(plot.currentData) : null
-    const val = data?.getData(expr)
-    if (!val) throw new Error(`Column '${expr}' not found in data`)
-    // Plain array → buffer attribute.
-    if (val instanceof Float32Array) return { kind: 'buffer', value: val }
-    // Live ref or texture → resolve as GLSL computed attribute.
-    const context = {
-      bufferAttrs: {},
-      textureUniforms: {},
-      scalarUniforms: {},
-      globalDecls: [],
-      axisUpdaters: []
-    }
-    const glslExpr = resolveToGlslExpr(regl, val, attrShaderName, context, plot)
-    return { kind: 'computed', glslExpr, context }
-  }
-
-  const context = {
-    bufferAttrs: {},
-    textureUniforms: {},
-    scalarUniforms: {},
-    globalDecls: [],
-    axisUpdaters: []
-  }
-  const glslExpr = resolveToGlslExpr(regl, expr, attrShaderName, context, plot)
-  return { kind: 'computed', glslExpr, context }
 }
