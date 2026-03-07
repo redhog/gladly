@@ -88,11 +88,11 @@ const plot = new Plot(document.getElementById('tab3-plot1'))
 
 let currentPlotConfig = plotConfig
 let lastEditorValue = ''
-let lastTransforms = JSON.stringify([])
+let lastSchema = ''
 let editor
 
 function createEditor(config) {
-  lastTransforms = JSON.stringify(config.transforms ?? [])
+  lastSchema = JSON.stringify(Plot.schema({ input: data }, config))
   if (editor) editor.destroy()
   editor = new JSONEditor(document.getElementById('tab3-editor-container'), {
     schema: Plot.schema({ input: data }, config),
@@ -120,7 +120,8 @@ function createEditor(config) {
     lastEditorValue = JSON.stringify(value)
     const errors = editor.validate()
     if (errors.length === 0) {
-      updatePlot(value)
+      const schemaChanged = updatePlot(value)
+      if (schemaChanged) setTimeout(() => createEditor(currentPlotConfig), 0)
     } else {
       const errorMessages = errors.map(err => `${err.path}: ${err.message}`).join('<br>')
       document.getElementById('tab3-validation-errors').innerHTML = `
@@ -138,14 +139,14 @@ function updatePlot(cfg) {
     document.getElementById('tab3-validation-errors').innerHTML = ''
     const fullConfig = plot.getConfig()
     currentPlotConfig = fullConfig
-    const newTransforms = JSON.stringify(fullConfig.transforms ?? [])
-    if (newTransforms !== lastTransforms) {
-      createEditor(fullConfig)
+    const newSchema = JSON.stringify(Plot.schema({ input: data }, fullConfig))
+    if (newSchema !== lastSchema) {
+      return true
     } else if (editor) {
       editor.setValue(fullConfig)
       lastEditorValue = JSON.stringify(editor.getValue())
     }
-    return true
+    return false
   } catch (error) {
     console.error(error)
     document.getElementById('tab3-validation-errors').innerHTML = `

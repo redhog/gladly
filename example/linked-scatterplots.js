@@ -39,11 +39,11 @@ dataPromise.then(data => {
 
 let activePlot = 'plot1'
 let lastEditorValue = ''
-let lastTransforms = JSON.stringify([])
+let lastSchema = ''
 let editor
 
 function createEditor(config) {
-  lastTransforms = JSON.stringify(config.transforms ?? [])
+  lastSchema = JSON.stringify(Plot.schema({ input: data }, config))
   if (editor) editor.destroy()
   editor = new JSONEditor(document.getElementById('tab1-editor-container'), {
     schema: Plot.schema({ input: data }, config),
@@ -71,7 +71,11 @@ function createEditor(config) {
     lastEditorValue = JSON.stringify(value)
     const errors = editor.validate()
     if (errors.length === 0) {
-      updatePlot(activePlot, value)
+      const schemaChanged = updatePlot(activePlot, value)
+      if (schemaChanged) {
+        const currentConfig = activePlot === 'plot1' ? plot1Config : plot2Config
+        setTimeout(() => createEditor(currentConfig), 0)
+      }
     } else {
       const errorMessages = errors.map(err => `${err.path}: ${err.message}`).join('<br>')
       document.getElementById('tab1-validation-errors').innerHTML = `
@@ -197,15 +201,15 @@ function updatePlot(plotId, plotConfig) {
       plot2Config = fullConfig
     }
     if (plotId === activePlot) {
-      const newTransforms = JSON.stringify(fullConfig.transforms ?? [])
-      if (newTransforms !== lastTransforms) {
-        createEditor(fullConfig)
+      const newSchema = JSON.stringify(Plot.schema({ input: data }, fullConfig))
+      if (newSchema !== lastSchema) {
+        return true
       } else if (editor) {
         editor.setValue(fullConfig)
         lastEditorValue = JSON.stringify(editor.getValue())
       }
     }
-    return true
+    return false
   } catch (error) {
     console.error(error)
     document.getElementById('tab1-validation-errors').innerHTML = `
@@ -250,8 +254,8 @@ function switchToPlot(plotId) {
   document.getElementById('tab1-plot2').classList.toggle('active', plotId === 'plot2')
 
   const newConfig = plotId === 'plot1' ? plot1Config : plot2Config
-  const newTransforms = JSON.stringify(newConfig.transforms ?? [])
-  if (newTransforms !== lastTransforms) {
+  const newSchema = JSON.stringify(Plot.schema({ input: data }, newConfig))
+  if (newSchema !== lastSchema) {
     createEditor(newConfig)
   } else {
     editor.setValue(newConfig)
