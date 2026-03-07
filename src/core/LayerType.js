@@ -135,11 +135,25 @@ export class LayerType {
       vertSrc = injectIntoMainStart(vertSrc, mainInjections.join('\n  '))
     }
 
+    // Validate buffer attributes
+    for (const [key, buf] of Object.entries(bufferAttrs)) {
+      if (buf instanceof Float32Array && buf.length === 0) {
+        console.warn(`[gladly] Layer '${this.name}': buffer attribute '${key}' is an empty Float32Array — this layer may draw nothing`)
+      }
+    }
+
     // Pick IDs
     const isInstanced = layer.instanceCount !== null
     const pickCount = isInstanced ? layer.instanceCount :
       (layer.vertexCount ??
         Object.values(bufferAttrs).find(v => v instanceof Float32Array)?.length ?? 0)
+    if (pickCount === 0) {
+      console.warn(
+        `[gladly] Layer '${this.name}': ` +
+        `${isInstanced ? 'instanceCount' : 'vertex count'} resolved to 0 — ` +
+        `this layer will draw nothing. Check that data columns are non-empty.`
+      )
+    }
     const pickIds = new Float32Array(pickCount)
     for (let i = 0; i < pickCount; i++) pickIds[i] = i
 

@@ -22,6 +22,13 @@ export class Layer {
       }
     }
 
+    if (vertexCount !== null && vertexCount === 0) {
+      console.warn(`[gladly] Layer '${type?.name ?? 'unknown'}': vertexCount is 0 — this layer will draw nothing`)
+    }
+    if (instanceCount !== null && instanceCount === 0) {
+      console.warn(`[gladly] Layer '${type?.name ?? 'unknown'}': instanceCount is 0 — this layer will draw nothing`)
+    }
+
     this.type = type
     this.attributes = attributes
     this.uniforms = uniforms

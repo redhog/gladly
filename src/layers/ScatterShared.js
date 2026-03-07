@@ -6,7 +6,7 @@ import { computationSchema, EXPRESSION_REF, EXPRESSION_REF_OPT, resolveQuantityK
 export class ScatterLayerTypeBase extends LayerType {
   _getAxisConfig(parameters, data) {
     const d = Data.wrap(data)
-    const { xData, yData, vData: vDataRaw, vData2: vData2Raw, fData: fDataRaw, xAxis, yAxis } = parameters
+    const { xData, yData, vData: vDataRaw, vData2: vData2Raw, fData: fDataRaw, xAxis = "xaxis_bottom", yAxis = "yaxis_left" } = parameters
     const vDataIn  = (vDataRaw  == null || vDataRaw  === "none") ? null : vDataRaw
     const vData2In = (vData2Raw == null || vData2Raw === "none") ? null : vData2Raw
     const fData    = (fDataRaw  == null || fDataRaw  === "none") ? null : fDataRaw

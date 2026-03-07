@@ -67,6 +67,9 @@ export class ArrayColumn extends ColumnData {
   get array()        { return this._array }
 
   _upload(regl) {
+    if (this._array.length === 0) {
+      throw new Error(`[gladly] ArrayColumn: cannot upload empty array as texture — the data source has 0 elements`)
+    }
     if (!this._ref) this._ref = { texture: uploadToTexture(regl, this._array) }
     return this._ref
   }
@@ -99,14 +102,25 @@ export class TextureColumn extends ColumnData {
   get quantityKind() { return this._quantityKind }
 
   resolve(path, regl) {
+    if (!this._ref.texture) {
+      throw new Error(`[gladly] TextureColumn '${path}': texture is null — the column was not properly initialized or its computation failed`)
+    }
     const uName = `u_col_${path}`
     return {
       glslExpr: `sampleColumn(${uName}, a_pickId)`,
-      textures: { [uName]: () => this._ref.texture }
+      textures: { [uName]: () => {
+        if (!this._ref.texture) throw new Error(`[gladly] TextureColumn '${path}': texture became null after initialization`)
+        return this._ref.texture
+      }}
     }
   }
 
-  toTexture(regl) { return this._ref.texture }
+  toTexture(regl) {
+    if (!this._ref.texture) {
+      throw new Error(`[gladly] TextureColumn.toTexture(): texture is null — the column was not properly initialized`)
+    }
+    return this._ref.texture
+  }
 
   refresh(plot) {
     if (this._refreshFn) return this._refreshFn(plot, this._ref) ?? false

@@ -275,6 +275,7 @@ export class Plot {
 
       this.svg.selectAll('*').remove()
 
+      this._warnedMissingDomains = false
       this._initialize()
       this._syncFloats()
     } catch (error) {
@@ -456,11 +457,23 @@ export class Plot {
         // Defer to next animation frame so the ResizeObserver callback exits
         // before any DOM/layout changes happen, avoiding the "loop completed
         // with undelivered notifications" browser error.
-        requestAnimationFrame(() => this.forceUpdate())
+        requestAnimationFrame(() => {
+          try {
+            this.forceUpdate()
+          } catch (e) {
+            console.error('[gladly] Error during resize-triggered update():', e)
+          }
+        })
       })
       this.resizeObserver.observe(this.container)
     } else {
-      this._resizeHandler = () => this.forceUpdate()
+      this._resizeHandler = () => {
+        try {
+          this.forceUpdate()
+        } catch (e) {
+          console.error('[gladly] Error during resize-triggered update():', e)
+        }
+      }
       window.addEventListener('resize', this._resizeHandler)
     }
   }
@@ -617,7 +630,11 @@ export class Plot {
       if (!computedData) throw new Error(`Unknown computed data type: '${className}'`)
 
       const node = new ComputedDataNode(computedData, params)
-      node._initialize(this.regl, this.currentData, this)
+      try {
+        node._initialize(this.regl, this.currentData, this)
+      } catch (e) {
+        throw new Error(`Transform '${name}' (${className}) failed to initialize: ${e.message}`, { cause: e })
+      }
       this.currentData._children[name] = node
       this._dataTransformNodes.push(node)
     }
@@ -633,6 +650,7 @@ export class Plot {
 
       const [layerTypeName, parameters] = entries[0]
       const layerType = getLayerType(layerTypeName)
+      if (!layerType) throw new Error(`Unknown layer type '${layerTypeName}'`)
 
       // Resolve axis config once per layer spec for registration (independent of draw call count).
       const ac = layerType.resolveAxisConfig(parameters, data)
@@ -654,9 +672,19 @@ export class Plot {
       }
 
       // Create one draw command per GPU config returned by the layer type.
-      for (const layer of layerType.createLayer(parameters, data)) {
+      let gpuLayers
+      try {
+        gpuLayers = layerType.createLayer(parameters, data)
+      } catch (e) {
+        throw new Error(`Layer '${layerTypeName}' (index ${configLayerIndex}) failed to create: ${e.message}`, { cause: e })
+      }
+      for (const layer of gpuLayers) {
         layer.configLayerIndex = configLayerIndex
-        layer.draw = layer.type.createDrawCommand(this.regl, layer, this)
+        try {
+          layer.draw = layer.type.createDrawCommand(this.regl, layer, this)
+        } catch (e) {
+          throw new Error(`Layer '${layerTypeName}' (index ${configLayerIndex}) failed to build draw command: ${e.message}`, { cause: e })
+        }
         this.layers.push(layer)
       }
     }
@@ -686,7 +714,11 @@ export class Plot {
         this._rafId = null
         if (this._dirty) {
           this._dirty = false
-          this.render()
+          try {
+            this.render()
+          } catch (e) {
+            console.error('[gladly] Error during render():', e)
+          }
         }
       })
     }
@@ -695,6 +727,29 @@ export class Plot {
   render() {
     this._dirty = false
     this.regl.clear({ color: [1,1,1,1], depth:1 })
+
+    // Validate axis domains once per render (warn only when domain is still
+    // the D3 default, i.e. was never set — indicates a missing ensureAxis call)
+    if (!this._warnedMissingDomains && this.axisRegistry) {
+      for (const axisId of AXES) {
+        const scale = this.axisRegistry.getScale(axisId)
+        if (!scale) continue
+        const [lo, hi] = scale.domain()
+        if (!isFinite(lo) || !isFinite(hi)) {
+          console.warn(
+            `[gladly] Axis '${axisId}': domain [${lo}, ${hi}] is non-finite at render time. ` +
+            `All data on this axis will be invisible.`
+          )
+          this._warnedMissingDomains = true
+        } else if (lo === hi) {
+          console.warn(
+            `[gladly] Axis '${axisId}': domain is degenerate [${lo}] at render time. ` +
+            `Data on this axis will collapse to a single line.`
+          )
+          this._warnedMissingDomains = true
+        }
+      }
+    }
     const viewport = {
       x: this.margin.left,
       y: this.margin.bottom,
@@ -705,7 +760,11 @@ export class Plot {
 
     // Refresh transform nodes before drawing (recomputes if tracked axis domains changed)
     for (const node of this._dataTransformNodes) {
-      node.refreshIfNeeded(this)
+      try {
+        node.refreshIfNeeded(this)
+      } catch (e) {
+        throw new Error(`Transform refresh failed: ${e.message}`, { cause: e })
+      }
     }
 
     for (const layer of this.layers) {
@@ -726,6 +785,18 @@ export class Plot {
 
       if (layer.instanceCount !== null) {
         props.instances = layer.instanceCount
+      }
+
+      // Warn once if this draw call will produce no geometry
+      if (!layer._warnedZeroCount) {
+        const drawCount = props.instances ?? props.count
+        if (drawCount === 0) {
+          console.warn(
+            `[gladly] Layer '${layer.type?.name ?? 'unknown'}' (config index ${layer.configLayerIndex}): ` +
+            `draw count is 0 — nothing will be rendered`
+          )
+          layer._warnedZeroCount = true
+        }
       }
 
       for (const qk of Object.values(layer.colorAxes)) {
