@@ -213,10 +213,12 @@ export class LayerType {
         `  return map_color_s(colorscale${suffix}, color_range${suffix}, value, color_scale_type${suffix}, alpha_blend${suffix});`,
         `}`,
         `vec4 map_color_2d_x_${fnSuffix(suffix)}(float value) {`,
-        `  return map_color_s_2d(colorscale${suffix}, color_range${suffix}, value, color_scale_type${suffix}, colorscale${suffix}, color_range${suffix}, 0.0/0.0, color_scale_type${suffix});`,
+        `  return map_color_s_2d(colorscale${suffix}, color_range${suffix}, value, color_scale_type${suffix}, alpha_blend${suffix},`,
+        `                        colorscale${suffix}, color_range${suffix}, 0.0/0.0, color_scale_type${suffix}, 0.0);`,
         `}`,
         `vec4 map_color_2d_y_${fnSuffix(suffix)}(float value) {`,
-        `  return map_color_s_2d(colorscale${suffix}, color_range${suffix}, 0.0/0.0, color_scale_type${suffix}, colorscale${suffix}, color_range${suffix}, value, color_scale_type${suffix});`,
+        `  return map_color_s_2d(colorscale${suffix}, color_range${suffix}, 0.0/0.0, color_scale_type${suffix}, 0.0,`,
+        `                        colorscale${suffix}, color_range${suffix}, value, color_scale_type${suffix}, alpha_blend${suffix});`,
         `}`
       )
       fragSrc = removeUniformDecl(fragSrc, `colorscale${suffix}`)
@@ -230,7 +232,8 @@ export class LayerType {
     for (const [suffix2d, [s1, s2]] of Object.entries(layer.colorAxes2d)) {
       color2dHelperLines.push(
         `vec4 map_color_2d_${fnSuffix(suffix2d)}(vec2 values) {`,
-        `  return map_color_s_2d(colorscale${s1}, color_range${s1}, values.x, color_scale_type${s1}, colorscale${s2}, color_range${s2}, values.y, color_scale_type${s2});`,
+        `  return map_color_s_2d(colorscale${s1}, color_range${s1}, values.x, color_scale_type${s1}, alpha_blend${s1},`,
+        `                        colorscale${s2}, color_range${s2}, values.y, color_scale_type${s2}, alpha_blend${s2});`,
         `}`
       )
     }

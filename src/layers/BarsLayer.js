@@ -111,8 +111,7 @@ class BarsLayerType extends LayerType {
     if (!xRef) throw new Error(`BarsLayer: column '${xData}' not found`)
     if (!yRef) throw new Error(`BarsLayer: column '${yData}' not found`)
 
-    // Number of bins from the x texture width (live ref has .texture.width)
-    const bins = xRef.texture ? xRef.texture.width : (xRef instanceof Float32Array ? xRef.length : 1)
+    const bins = xRef.length ?? 1
 
     const xDomain = d.getDomain(xData) ?? [0, 1]
     const yDomain = d.getDomain(yData) ?? [0, 1]

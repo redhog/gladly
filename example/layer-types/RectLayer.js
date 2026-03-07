@@ -2,10 +2,27 @@ import { LayerType } from "../../src/core/LayerType.js"
 import { AXES } from "../../src/axes/AxisRegistry.js"
 import { registerLayerType } from "../../src/core/LayerTypeRegistry.js"
 import { Data } from "../../src/core/Data.js"
+import { ArrayColumn } from "../../src/compute/ComputationRegistry.js"
 
 // Per-vertex quad corner coordinates for two CCW triangles: BL-BR-TR, BL-TR-TL
 const QUAD_CX = new Float32Array([0, 1, 1, 0, 1, 0])
 const QUAD_CY = new Float32Array([0, 0, 1, 0, 1, 1])
+
+function columnDomain(col, d, colName) {
+  if (col.domain) return col.domain
+  const fromData = d.getDomain(colName)
+  if (fromData) return fromData
+  if (col instanceof ArrayColumn) {
+    const arr = col.array
+    let min = arr[0], max = arr[0]
+    for (let i = 1; i < arr.length; i++) {
+      if (arr[i] < min) min = arr[i]
+      if (arr[i] > max) max = arr[i]
+    }
+    return [min, max]
+  }
+  return null
+}
 
 export const rectLayerType = new LayerType({
   name: "rects",
@@ -23,17 +40,20 @@ export const rectLayerType = new LayerType({
     }
   },
 
+  // xPrev and xNext are computed in the vertex shader by sampling u_col_x at
+  // a_pickId-1 and a_pickId+1 (with mirrored boundary conditions), so they
+  // don't appear as attributes.  u_col_x is declared automatically by
+  // createDrawCommand because 'x' is a ColumnData attribute.
   vert: `#version 300 es
     precision mediump float;
     in float cx;
     in float cy;
     in float x;
-    in float xPrev;
-    in float xNext;
     in float top;
     in float bot;
     in float color_data;
     uniform float uE;
+    uniform float u_n;
     uniform vec2 xDomain;
     uniform vec2 yDomain;
     uniform float xScaleType;
@@ -41,6 +61,13 @@ export const rectLayerType = new LayerType({
     out float value;
 
     void main() {
+      float xPrev = a_pickId > 0.5
+        ? sampleColumn(u_col_x, a_pickId - 1.0)
+        : (u_n > 1.0 ? 2.0 * x - sampleColumn(u_col_x, 1.0) : x);
+      float xNext = a_pickId < u_n - 1.5
+        ? sampleColumn(u_col_x, a_pickId + 1.0)
+        : (u_n > 1.0 ? 2.0 * x - sampleColumn(u_col_x, u_n - 2.0) : x);
+
       float halfLeft  = (x - xPrev) / 2.0;
       float halfRight = (xNext - x) / 2.0;
 
@@ -91,56 +118,39 @@ export const rectLayerType = new LayerType({
     const yQK = d.getQuantityKind(yTopData) ?? yTopData
     const vQK = d.getQuantityKind(vData) ?? vData
 
-    const x   = d.getData(xData)
-    const top = d.getData(yTopData)
-    const bot = d.getData(yBottomData)
-    const v   = d.getData(vData)
+    const xCol   = d.getData(xData)
+    const topCol = d.getData(yTopData)
+    const botCol = d.getData(yBottomData)
+    const vCol   = d.getData(vData)
 
-    if (!x)   throw new Error(`Data column '${xData}' not found`)
-    if (!top) throw new Error(`Data column '${yTopData}' not found`)
-    if (!bot) throw new Error(`Data column '${yBottomData}' not found`)
-    if (!v)   throw new Error(`Data column '${vData}' not found`)
+    if (!xCol)   throw new Error(`Data column '${xData}' not found`)
+    if (!topCol) throw new Error(`Data column '${yTopData}' not found`)
+    if (!botCol) throw new Error(`Data column '${yBottomData}' not found`)
+    if (!vCol)   throw new Error(`Data column '${vData}' not found`)
 
-    const n = x.length
+    const n = xCol.length
 
-    // Build neighbor arrays using TypedArray.set() — no explicit loops.
-    const xPrev = new Float32Array(n)
-    xPrev.set(x.subarray(0, n - 1), 1)
-    xPrev[0] = n > 1 ? 2 * x[0] - x[1] : x[0]
+    const xDomain   = columnDomain(xCol,   d, xData)
+    const topDomain = columnDomain(topCol,  d, yTopData)
+    const botDomain = columnDomain(botCol,  d, yBottomData)
+    const vDomain   = columnDomain(vCol,    d, vData)
 
-    const xNext = new Float32Array(n)
-    xNext.set(x.subarray(1), 0)
-    xNext[n - 1] = n > 1 ? 2 * x[n - 1] - x[n - 2] : x[n - 1]
-
-    // Compute domains for auto-range (no explicit for loops).
-    const xMin   = x.reduce((a, v) => Math.min(a, v), Infinity)
-    const xMax   = x.reduce((a, v) => Math.max(a, v), -Infinity)
-    const topMin = top.reduce((a, v) => Math.min(a, v), Infinity)
-    const topMax = top.reduce((a, v) => Math.max(a, v), -Infinity)
-    const botMin = bot.reduce((a, v) => Math.min(a, v), Infinity)
-    const botMax = bot.reduce((a, v) => Math.max(a, v), -Infinity)
-
-    const vMin = v.reduce((a, v) => Math.min(a, v), Infinity)
-    const vMax = v.reduce((a, v) => Math.max(a, v), -Infinity)
+    const domains = {}
+    if (xDomain) domains[xQK] = xDomain
+    if (topDomain && botDomain) domains[yQK] = [Math.min(topDomain[0], botDomain[0]), Math.max(topDomain[1], botDomain[1])]
+    if (vDomain) domains[vQK] = vDomain
 
     return [{
       attributes: {
-        cx: QUAD_CX,    // per-vertex (divisor 0)
-        cy: QUAD_CY,    // per-vertex (divisor 0)
-        x,              // per-instance (divisor 1)
-        xPrev,          // per-instance (divisor 1)
-        xNext,          // per-instance (divisor 1)
-        top,            // per-instance (divisor 1)
-        bot,            // per-instance (divisor 1)
-        color_data: v,  // per-instance color data (divisor 1)
+        cx: QUAD_CX,       // per-vertex Float32Array (divisor 0)
+        cy: QUAD_CY,       // per-vertex Float32Array (divisor 0)
+        x:          xCol,  // ColumnData → GLSL sampler, sampled at a_pickId
+        top:        topCol,
+        bot:        botCol,
+        color_data: vCol,
       },
-      attributeDivisors: { x: 1, xPrev: 1, xNext: 1, top: 1, bot: 1, color_data: 1 },
-      uniforms: { uE: e },
-      domains: {
-        [xQK]: [xMin, xMax],
-        [yQK]: [Math.min(topMin, botMin), Math.max(topMax, botMax)],
-        [vQK]: [vMin, vMax],
-      },
+      uniforms: { uE: e, u_n: n },
+      domains,
       primitive: "triangles",
       vertexCount: 6,
       instanceCount: n,
