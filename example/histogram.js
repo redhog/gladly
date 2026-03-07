@@ -54,6 +54,14 @@ const plotConfig = {
                 "xAxis": "xaxis_bottom",
                 "yAxis": "yaxis_left"
             }
+        },
+        {
+            "lines": {
+                "xData": "hist.binCenters",
+                "yData": { "kde": { "input": "hist.counts" } },
+                "xAxis": "xaxis_bottom",
+                "yAxis": "yaxis_left"
+            }
         }
     ],
     "axes": {

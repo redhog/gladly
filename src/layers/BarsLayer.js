@@ -98,7 +98,7 @@ class BarsLayerType extends LayerType {
     }
   }
 
-  _createLayer(parameters, data) {
+  _createLayer(regl, parameters, data, plot) {
     const d = Data.wrap(data)
     const {
       xData,

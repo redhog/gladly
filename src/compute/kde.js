@@ -1,4 +1,4 @@
-import { registerTextureComputation, TextureComputation, EXPRESSION_REF } from "./ComputationRegistry.js"
+import { registerTextureComputation, TextureComputation, EXPRESSION_REF, resolveQuantityKind } from "./ComputationRegistry.js"
 
 /**
  * Smooth a histogram to produce a KDE texture
@@ -83,6 +83,10 @@ class KdeComputation extends TextureComputation {
   compute(regl, inputs, getAxisDomain) {
     const inputTex = inputs.input.toTexture(regl)
     return smoothKDE(regl, inputTex, { bins: inputs.bins, bandwidth: inputs.bandwidth })
+  }
+
+  getQuantityKind(params, data) {
+    return resolveQuantityKind(params.input, data)
   }
 
   schema(data) {

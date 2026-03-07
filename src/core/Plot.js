@@ -674,7 +674,7 @@ export class Plot {
       // Create one draw command per GPU config returned by the layer type.
       let gpuLayers
       try {
-        gpuLayers = layerType.createLayer(parameters, data)
+        gpuLayers = layerType.createLayer(this.regl, parameters, data, this)
       } catch (e) {
         throw new Error(`Layer '${layerTypeName}' (index ${configLayerIndex}) failed to create: ${e.message}`, { cause: e })
       }

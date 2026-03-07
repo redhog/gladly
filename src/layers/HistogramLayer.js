@@ -110,7 +110,7 @@ class HistogramLayerType extends LayerType {
     }
   }
 
-  _createLayer(parameters, data) {
+  _createLayer(regl, parameters, data, plot) {
     const d = Data.wrap(data)
     const {
       vData,

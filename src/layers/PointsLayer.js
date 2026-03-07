@@ -58,7 +58,7 @@ class PointsLayerType extends ScatterLayerTypeBase {
     }
   }
 
-  _createLayer(parameters, data) {
+  _createLayer(regl, parameters, data, plot) {
     const d = Data.wrap(data)
     const { vData: vDataRaw, vData2: vData2Raw, fData: fDataRaw } = parameters
     const vDataIn  = (vDataRaw  == null || vDataRaw  === "none") ? null : vDataRaw

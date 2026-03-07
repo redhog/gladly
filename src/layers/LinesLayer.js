@@ -9,7 +9,7 @@
 import { ScatterLayerTypeBase } from "./ScatterShared.js"
 import { Data } from "../core/Data.js"
 import { registerLayerType } from "../core/LayerTypeRegistry.js"
-import { EXPRESSION_REF_OPT } from "../compute/ComputationRegistry.js"
+import { EXPRESSION_REF_OPT, resolveQuantityKind, resolveExprToColumn } from "../compute/ComputationRegistry.js"
 
 function makeLinesVert(hasFilter, hasSegIds, hasV, hasV2) {
   return `#version 300 es
@@ -104,7 +104,7 @@ class LinesLayerType extends ScatterLayerTypeBase {
     }
   }
 
-  _createLayer(parameters, data) {
+  _createLayer(regl, parameters, data, plot) {
     const d = Data.wrap(data)
     const { lineSegmentIdData: lineSegmentIdDataRaw, lineColorMode = "gradient", lineWidth = 1.0 } = parameters
     const lineSegmentIdData = (lineSegmentIdDataRaw == null || lineSegmentIdDataRaw === "none") ? null : lineSegmentIdDataRaw
@@ -113,23 +113,20 @@ class LinesLayerType extends ScatterLayerTypeBase {
     const vData2 = (vData2Orig == null || vData2Orig === "none") ? null : vData2Orig
     const fData  = (fDataOrig  == null || fDataOrig  === "none") ? null : fDataOrig
 
-    const xQK = d.getQuantityKind(xData) ?? xData
-    const yQK = d.getQuantityKind(yData) ?? yData
-    const vQK  = vData  ? (d.getQuantityKind(vData)  ?? vData)  : null
-    const vQK2 = vData2 ? (d.getQuantityKind(vData2) ?? vData2) : null
+    const xQK = resolveQuantityKind(xData, d) ?? xData
+    const yQK = resolveQuantityKind(yData, d) ?? yData
+    const vQK  = vData  ? (resolveQuantityKind(vData,  d) ?? vData)  : null
+    const vQK2 = vData2 ? (resolveQuantityKind(vData2, d) ?? vData2) : null
 
-    const colX   = d.getData(xData)
-    const colY   = d.getData(yData)
-    const colV   = vData  && typeof vData  === 'string' ? d.getData(vData)  : null
-    const colV2  = vData2 && typeof vData2 === 'string' ? d.getData(vData2) : null
-    const colF   = fData  ? d.getData(fData)  : null
-    const colSeg = lineSegmentIdData ? d.getData(lineSegmentIdData) : null
+    const colX   = resolveExprToColumn(xData, d, regl, plot)
+    const colY   = resolveExprToColumn(yData, d, regl, plot)
+    const colV   = vData  ? resolveExprToColumn(vData,  d, regl, plot) : null
+    const colV2  = vData2 ? resolveExprToColumn(vData2, d, regl, plot) : null
+    const colF   = fData  ? resolveExprToColumn(fData,  d, regl, plot) : null
+    const colSeg = lineSegmentIdData ? resolveExprToColumn(lineSegmentIdData, d, regl, plot) : null
 
     if (!colX) throw new Error(`Data column '${xData}' not found`)
     if (!colY) throw new Error(`Data column '${yData}' not found`)
-    if (vData  && typeof vData  === 'string' && !colV)  throw new Error(`Data column '${vData}' not found`)
-    if (vData2 && typeof vData2 === 'string' && !colV2) throw new Error(`Data column '${vData2}' not found`)
-    if (fData && !colF) throw new Error(`Data column '${fData}' not found`)
 
     const N = colX.length
     const domains = this._buildDomains(d, xData, yData, vData, vData2, xQK, yQK, vQK, vQK2)

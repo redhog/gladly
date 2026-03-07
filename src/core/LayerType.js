@@ -316,11 +316,11 @@ export class LayerType {
     return resolved
   }
 
-  createLayer(parameters, data) {
+  createLayer(regl, parameters, data, plot) {
     if (!this._createLayer) {
       throw new Error(`LayerType '${this.name}' does not implement createLayer()`)
     }
-    const gpuConfigs = this._createLayer.call(this, parameters, data)
+    const gpuConfigs = this._createLayer.call(this, regl, parameters, data, plot)
     const axisConfig = this.resolveAxisConfig(parameters, data)
 
     return gpuConfigs.map(gpuConfig => new Layer({

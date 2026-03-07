@@ -60,22 +60,22 @@ export class ScatterLayerTypeBase extends LayerType {
   _buildDomains(d, xData, yData, vData, vData2, xQK, yQK, vQK, vQK2) {
     const domains = {}
 
-    if (xQK) {
+    if (xQK && typeof xData === 'string') {
       const xDomain = d.getDomain(xData)
       if (xDomain) domains[xQK] = xDomain
     }
 
-    if (yQK) {
+    if (yQK && typeof yData === 'string') {
       const yDomain = d.getDomain(yData)
       if (yDomain) domains[yQK] = yDomain
     }
 
-    if (vData && vQK) {
+    if (vData && vQK && typeof vData === 'string') {
       const vDomain = d.getDomain(vData)
       if (vDomain) domains[vQK] = vDomain
     }
 
-    if (vData2 && vQK2) {
+    if (vData2 && vQK2 && typeof vData2 === 'string') {
       const vDomain2 = d.getDomain(vData2)
       if (vDomain2) domains[vQK2] = vDomain2
     }
