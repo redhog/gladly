@@ -1,10 +1,7 @@
 // Lines mode uses instanced rendering:
-//   - Template: 2 vertices with a_endPoint in {0.0, 1.0}  (divisor=0 → interpolates)
-//   - Per-segment: a_x0/x1, a_y0/y1, a_v0/v1, a_seg0/seg1 (divisor=1 → constant per instance)
-//
-// Because a_v0 and a_v1 are instanced, they are the same at both template vertices for a given
-// segment, so varyings set from them are constant across the line (no GPU interpolation).
-// Only v_t (from a_endPoint) interpolates, giving the position along the segment.
+//   - Template: 2 vertices with a_endPoint in {0.0, 1.0}  (divisor=0 → per-vertex)
+//   - Per-segment data (x0/x1, y0/y1, v0/v1, seg0/seg1, f0/f1) sampled from GPU textures
+//     using a_pickId (= gl_InstanceID) + 0.0 or + 1.0 as the index.
 //
 // Segment boundary handling: when a_seg0 != a_seg1, collapse both template vertices to
 // (a_x0, a_y0) producing a zero-length degenerate line that the rasterizer discards.
@@ -13,16 +10,18 @@ import { ScatterLayerTypeBase } from "./ScatterShared.js"
 import { Data } from "../core/Data.js"
 import { registerLayerType } from "../core/LayerTypeRegistry.js"
 
-function makeLinesVert(hasFilter) {
+function makeLinesVert(hasFilter, hasSegIds, hasV, hasV2) {
   return `#version 300 es
   precision mediump float;
   in float a_endPoint;
-  in float a_x0, a_y0;
-  in float a_x1, a_y1;
-  in float a_v0, a_v1;
-  in float a_v20, a_v21;
-  in float a_seg0, a_seg1;
-  ${hasFilter ? 'in float a_f0, a_f1;' : ''}
+  in float a_x0;
+  in float a_y0;
+  in float a_x1;
+  in float a_y1;
+  ${hasV  ? 'in float a_v0;\n  in float a_v1;'   : ''}
+  ${hasV2 ? 'in float a_v20;\n  in float a_v21;' : ''}
+  ${hasSegIds ? 'in float a_seg0;\n  in float a_seg1;' : ''}
+  ${hasFilter ? 'in float a_f0;\n  in float a_f1;' : ''}
   uniform vec2 xDomain;
   uniform vec2 yDomain;
   uniform float xScaleType;
@@ -33,16 +32,16 @@ function makeLinesVert(hasFilter) {
   out float v_color2_end;
   out float v_t;
   void main() {
-    float same_seg = abs(a_seg0 - a_seg1) < 0.5 ? 1.0 : 0.0;
+    float same_seg = ${hasSegIds ? 'abs(a_seg0 - a_seg1) < 0.5 ? 1.0 : 0.0' : '1.0'};
     ${hasFilter ? 'if (!filter_(a_f0) || !filter_(a_f1)) same_seg = 0.0;' : ''}
     float t = same_seg * a_endPoint;
     float x = mix(a_x0, a_x1, t);
     float y = mix(a_y0, a_y1, t);
     gl_Position = plot_pos(vec2(x, y));
-    v_color_start  = a_v0;
-    v_color_end    = a_v1;
-    v_color2_start = a_v20;
-    v_color2_end   = a_v21;
+    v_color_start  = ${hasV  ? 'a_v0'  : '0.0'};
+    v_color_end    = ${hasV  ? 'a_v1'  : '0.0'};
+    v_color2_start = ${hasV2 ? 'a_v20' : '0.0'};
+    v_color2_end   = ${hasV2 ? 'a_v21' : '0.0'};
     v_t = a_endPoint;
   }
 `
@@ -77,19 +76,18 @@ function makeLinesFrag(hasFirst, hasSecond) {
 
 class LinesLayerType extends ScatterLayerTypeBase {
   constructor() {
-    super({ name: "lines", vert: makeLinesVert(false), frag: makeLinesFrag(false) })
+    super({ name: "lines", vert: makeLinesVert(false, false, false, false), frag: makeLinesFrag(false, false) })
   }
 
   schema(data) {
     const d = Data.wrap(data)
-    const dataProperties = d.columns()
     return {
       type: "object",
       properties: {
         ...this._commonSchemaProperties(d),
         lineSegmentIdData: {
           type: "string",
-          enum: dataProperties,
+          enum: d.columns(),
           description: "Column for segment IDs; only consecutive points sharing the same ID are connected"
         },
         lineColorMode: {
@@ -112,50 +110,50 @@ class LinesLayerType extends ScatterLayerTypeBase {
   _createLayer(parameters, data) {
     const d = Data.wrap(data)
     const { lineSegmentIdData, lineColorMode = "gradient", lineWidth = 1.0 } = parameters
-    const { xData, yData, vData, vData2, fData, xQK, yQK, vQK, vQK2, fQK, srcX, srcY, srcV, srcV2, srcF } =
-      this._resolveColorData(parameters, d)
+    const { xData, yData, vData: vDataOrig, vData2: vData2Orig, fData: fDataOrig } = parameters
+    const vData  = (vDataOrig  == null || vDataOrig  === "none") ? null : vDataOrig
+    const vData2 = (vData2Orig == null || vData2Orig === "none") ? null : vData2Orig
+    const fData  = (fDataOrig  == null || fDataOrig  === "none") ? null : fDataOrig
 
+    const xQK = d.getQuantityKind(xData) ?? xData
+    const yQK = d.getQuantityKind(yData) ?? yData
+    const vQK  = vData  ? (d.getQuantityKind(vData)  ?? vData)  : null
+    const vQK2 = vData2 ? (d.getQuantityKind(vData2) ?? vData2) : null
+
+    const colX   = d.getData(xData)
+    const colY   = d.getData(yData)
+    const colV   = vData  && typeof vData  === 'string' ? d.getData(vData)  : null
+    const colV2  = vData2 && typeof vData2 === 'string' ? d.getData(vData2) : null
+    const colF   = fData  ? d.getData(fData)  : null
+    const colSeg = lineSegmentIdData ? d.getData(lineSegmentIdData) : null
+
+    if (!colX) throw new Error(`Data column '${xData}' not found`)
+    if (!colY) throw new Error(`Data column '${yData}' not found`)
+    if (vData  && typeof vData  === 'string' && !colV)  throw new Error(`Data column '${vData}' not found`)
+    if (vData2 && typeof vData2 === 'string' && !colV2) throw new Error(`Data column '${vData2}' not found`)
+    if (fData && !colF) throw new Error(`Data column '${fData}' not found`)
+
+    const N = colX.length
     const domains = this._buildDomains(d, xData, yData, vData, vData2, xQK, yQK, vQK, vQK2)
 
-    const N = srcX.length
-    const segIds = lineSegmentIdData ? d.getData(lineSegmentIdData) : null
-    const zeroSegs = new Float32Array(N - 1)
-    const seg0 = segIds ? segIds.subarray(0, N - 1) : zeroSegs
-    const seg1 = segIds ? segIds.subarray(1, N) : zeroSegs
-
-    // vData/vData2 may be computed attribute expressions (objects) rather than string
-    // column names. In that case pass them through directly as per-segment attributes;
-    // both endpoints of a segment receive the same computed value.
-    const vAttr0  = vData  ? (srcV  ? srcV.subarray(0, N - 1)  : vData)  : new Float32Array(N - 1)
-    const vAttr1  = vData  ? (srcV  ? srcV.subarray(1, N)      : vData)  : new Float32Array(N - 1)
-    const vAttr20 = vData2 ? (srcV2 ? srcV2.subarray(0, N - 1) : vData2) : new Float32Array(N - 1)
-    const vAttr21 = vData2 ? (srcV2 ? srcV2.subarray(1, N)     : vData2) : new Float32Array(N - 1)
+    // For vData: if a string column, offset-sample start/end; if a computed expression,
+    // pass through as-is (both endpoints get the same value, matching old behaviour).
+    const vAttr0  = vData  ? (colV  ? colV.withOffset('0.0')  : vData)  : null
+    const vAttr1  = vData  ? (colV  ? colV.withOffset('1.0')  : vData)  : null
+    const vAttr20 = vData2 ? (colV2 ? colV2.withOffset('0.0') : vData2) : null
+    const vAttr21 = vData2 ? (colV2 ? colV2.withOffset('1.0') : vData2) : null
 
     return [{
       attributes: {
         a_endPoint: new Float32Array([0.0, 1.0]),
-        a_x0: srcX.subarray(0, N - 1),
-        a_x1: srcX.subarray(1, N),
-        a_y0: srcY.subarray(0, N - 1),
-        a_y1: srcY.subarray(1, N),
-        a_v0:  vAttr0,
-        a_v1:  vAttr1,
-        a_v20: vAttr20,
-        a_v21: vAttr21,
-        a_seg0: seg0,
-        a_seg1: seg1,
-        ...(fData ? {
-          a_f0: srcF.subarray(0, N - 1),
-          a_f1: srcF.subarray(1, N),
-        } : {}),
-      },
-      attributeDivisors: {
-        a_x0: 1, a_x1: 1,
-        a_y0: 1, a_y1: 1,
-        a_v0: 1, a_v1: 1,
-        a_v20: 1, a_v21: 1,
-        a_seg0: 1, a_seg1: 1,
-        ...(fData ? { a_f0: 1, a_f1: 1 } : {}),
+        a_x0: colX.withOffset('0.0'),
+        a_x1: colX.withOffset('1.0'),
+        a_y0: colY.withOffset('0.0'),
+        a_y1: colY.withOffset('1.0'),
+        ...(vAttr0  !== null ? { a_v0:  vAttr0,  a_v1:  vAttr1  } : {}),
+        ...(vAttr20 !== null ? { a_v20: vAttr20, a_v21: vAttr21 } : {}),
+        ...(colSeg ? { a_seg0: colSeg.withOffset('0.0'), a_seg1: colSeg.withOffset('1.0') } : {}),
+        ...(fData  ? { a_f0:  colF.withOffset('0.0'),  a_f1:  colF.withOffset('1.0')  } : {}),
       },
       uniforms: {
         u_lineColorMode: lineColorMode === "midpoint" ? 1.0 : 0.0,
@@ -168,13 +166,16 @@ class LinesLayerType extends ScatterLayerTypeBase {
     }]
   }
 
-  createDrawCommand(regl, layer) {
-    const hasFilter = Object.keys(layer.filterAxes).length > 0
-    const hasFirst = '' in layer.colorAxes
-    const hasSecond = '2' in layer.colorAxes
-    this.vert = makeLinesVert(hasFilter)
+  createDrawCommand(regl, layer, plot) {
+    const hasFilter  = Object.keys(layer.filterAxes).length > 0
+    const hasFirst   = '' in layer.colorAxes
+    const hasSecond  = '2' in layer.colorAxes
+    const hasSegIds  = 'a_seg0' in layer.attributes
+    const hasV       = 'a_v0'   in layer.attributes
+    const hasV2      = 'a_v20'  in layer.attributes
+    this.vert = makeLinesVert(hasFilter, hasSegIds, hasV, hasV2)
     this.frag = makeLinesFrag(hasFirst, hasSecond)
-    return super.createDrawCommand(regl, layer)
+    return super.createDrawCommand(regl, layer, plot)
   }
 }
 

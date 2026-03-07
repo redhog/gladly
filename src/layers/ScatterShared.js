@@ -34,7 +34,6 @@ export class ScatterLayerTypeBase extends LayerType {
   // All data params use EXPRESSION_REF or EXPRESSION_REF_OPT — the caller must hoist
   // computationSchema(data)['$defs'] to the top-level schema so that
   // '#/$defs/expression' (and all nested refs within it) resolve correctly.
-  // LinesLayer overrides fData to a plain string enum since it needs CPU-side subarray slicing.
   _commonSchemaProperties(data) {
     const d = Data.wrap(data)
     return {
@@ -56,37 +55,6 @@ export class ScatterLayerTypeBase extends LayerType {
         description: "Which y-axis to use for this layer"
       },
     }
-  }
-
-  // Resolves column-name params to Float32Arrays. Used by LinesLayer which needs to
-  // slice adjacent-point pairs via subarray(). xData/yData/fData must be column name strings.
-  _resolveColorData(parameters, d) {
-    const { xData, yData, vData: vDataOrig, vData2: vData2Orig, fData: fDataOrig } = parameters
-    const vDataIn  = (vDataOrig  == null || vDataOrig  === "none") ? null : vDataOrig
-    const vData2In = (vData2Orig == null || vData2Orig === "none") ? null : vData2Orig
-    const fData    = (fDataOrig  == null || fDataOrig  === "none") ? null : fDataOrig
-    const vData  = vDataIn
-    const vData2 = vData2In
-
-    const xQK = d.getQuantityKind(xData) ?? xData
-    const yQK = d.getQuantityKind(yData) ?? yData
-    const vQK = vData ? resolveQuantityKind(vData, d) : null
-    const vQK2 = vData2 ? resolveQuantityKind(vData2, d) : null
-    const fQK = fData ? (d.getQuantityKind(fData) ?? fData) : null
-
-    const srcX = d.getData(xData)
-    const srcY = d.getData(yData)
-    const srcV = vData && typeof vData === 'string' ? d.getData(vData) : null
-    const srcV2 = vData2 && typeof vData2 === 'string' ? d.getData(vData2) : null
-    const srcF = fData ? d.getData(fData) : null
-
-    if (!srcX) throw new Error(`Data column '${xData}' not found`)
-    if (!srcY) throw new Error(`Data column '${yData}' not found`)
-    if (vData && typeof vData === 'string' && !srcV) throw new Error(`Data column '${vData}' not found`)
-    if (vData2 && typeof vData2 === 'string' && !srcV2) throw new Error(`Data column '${vData2}' not found`)
-    if (fData && !srcF) throw new Error(`Data column '${fData}' not found`)
-
-    return { xData, yData, vData, vData2, fData, xQK, yQK, vQK, vQK2, fQK, srcX, srcY, srcV, srcV2, srcF }
   }
 
   _buildDomains(d, xData, yData, vData, vData2, xQK, yQK, vQK, vQK2) {

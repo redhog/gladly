@@ -45,6 +45,10 @@ export class ColumnData {
   // Called before each render to refresh axis-dependent textures.
   // Returns true if the texture was updated.
   refresh(plot) { return false }
+
+  // Returns a new ColumnData that samples at a_pickId + (offsetExpr) instead of a_pickId.
+  // offsetExpr is a GLSL expression string, e.g. 'a_endPoint' or '1.0'.
+  withOffset(offsetExpr) { return new OffsetColumn(this, offsetExpr) }
 }
 
 // ─── ArrayColumn ──────────────────────────────────────────────────────────────
@@ -182,6 +186,32 @@ void main() { fragColor = vec4(v_value, 0.0, 0.0, 1.0); }`
     }
     return changed
   }
+}
+
+// ─── OffsetColumn ─────────────────────────────────────────────────────────────
+// Wraps a ColumnData and shifts the GLSL sampling index by a GLSL expression.
+// Produced by col.withOffset(offsetExpr).
+export class OffsetColumn extends ColumnData {
+  constructor(base, offsetExpr) {
+    super()
+    this._base = base
+    this._offsetExpr = offsetExpr
+  }
+
+  get length()       { return this._base.length }
+  get domain()       { return this._base.domain }
+  get quantityKind() { return this._base.quantityKind }
+
+  resolve(path, regl) {
+    const { glslExpr, textures } = this._base.resolve(path, regl)
+    return {
+      glslExpr: glslExpr.replace('a_pickId', `(a_pickId + (${this._offsetExpr}))`),
+      textures
+    }
+  }
+
+  toTexture(regl) { return this._base.toTexture(regl) }
+  refresh(plot)   { return this._base.refresh(plot) }
 }
 
 // ─── resolveExprToColumn ─────────────────────────────────────────────────────

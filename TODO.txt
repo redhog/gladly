@@ -1,5 +1,2 @@
-* Change format of plot_config.transforms to list
 * Remove computed attributes from layer types - only dataset columns now
-* Remove typed array output from dataset, only output textures. Make wrapper for inputs that have the old api.
-* Ask about "Output textures use non-packed format (one value per texel in R channel) so they're compatible with _isLive live ref sampling"
 
