@@ -397,13 +397,17 @@ import { Computation } from 'gladly-plot'
 Base class for computations that produce a regl texture. Extend this to register a new texture computation.
 
 ```javascript
-import { TextureComputation, EXPRESSION_REF, registerTextureComputation } from 'gladly-plot'
+import { TextureComputation, ArrayColumn, EXPRESSION_REF, registerTextureComputation } from 'gladly-plot'
 
 class MyComp extends TextureComputation {
-  compute(regl, params, getAxisDomain) {
-    // params: resolved parameter object (arrays, textures, numbers)
-    // getAxisDomain(axisId): returns [min|null, max|null]; registers axis as dependency
-    // Returns a regl texture (R channel read as float attribute per vertex)
+  compute(regl, inputs, getAxisDomain) {
+    // inputs: resolved parameter object.
+    // - String params that matched data columns are ColumnData instances.
+    // - Use inputs.col.toTexture(regl) to get a GPU texture from any ColumnData.
+    // - Check `inputs.col instanceof ArrayColumn` for CPU-accessible data; use .array.
+    // - Numbers, booleans, and Float32Array values pass through unchanged.
+    // getAxisDomain(axisId): returns [min|null, max|null]; registers axis as dependency.
+    // Returns a regl texture (R channel, 1 value/texel, 2D layout).
   }
   schema(data) {
     return {
@@ -417,11 +421,11 @@ class MyComp extends TextureComputation {
 registerTextureComputation('myComp', new MyComp())
 ```
 
-In `createLayer`, reference the computation as an attribute value:
+In `createLayer`, reference the computation as an attribute value (column names or expressions):
 
 ```javascript
 attributes: {
-  count: { myComp: { input: normalized, bins: 50 } }
+  count: { myComp: { input: 'myColumn', bins: 50 } }
 }
 ```
 
@@ -488,7 +492,7 @@ Registers a `GlslComputation` instance under `name`.
 import { EXPRESSION_REF } from 'gladly-plot'
 ```
 
-A JSON Schema `$ref` (`{ '$ref': '#/$defs/expression' }`) for use inside `schema()` methods. Marks a parameter as accepting either a `Float32Array` (data column) or a nested computation expression. See [Computed Attributes — EXPRESSION_REF](ComputedAttributes.md#expression_ref).
+A JSON Schema `$ref` (`{ '$ref': '#/$defs/expression' }`) for use inside `schema()` methods. Marks a parameter as accepting a column name string, a `Float32Array`, or a nested computation expression. The framework resolves column names and expressions to `ColumnData` instances before passing them to `compute()`. See [Computed Attributes — EXPRESSION_REF](ComputedAttributes.md#expression_ref).
 
 ---
 
@@ -507,22 +511,61 @@ Returns a JSON Schema Draft 2020-12 document covering the full space of valid co
 
 ---
 
-## `isTexture(value)`
+## `ColumnData`, `ArrayColumn`, `TextureColumn`, `GlslColumn`
 
-Duck-type check for regl textures. Returns `true` if `value` is a non-null object with a numeric `width` property and a `subimage` method.
+The unified column data hierarchy. All columnar values in the computation pipeline are represented as one of these classes.
 
 ```javascript
-import { isTexture } from 'gladly-plot'
-
-class MyComp extends TextureComputation {
-  compute(regl, params) {
-    const input = isTexture(params.input)
-      ? params.input
-      : uploadToTexture(regl, params.input)
-    // ...
-  }
-}
+import { ColumnData, ArrayColumn, TextureColumn, GlslColumn } from 'gladly-plot'
 ```
+
+**Common interface** (all subtypes):
+
+| Member | Description |
+|--------|-------------|
+| `col.length` | Number of data elements, or `null` if unknown |
+| `col.domain` | `[min, max]` or `null` |
+| `col.quantityKind` | string or `null` |
+| `col.resolve(path, regl)` | Returns `{ glslExpr, textures }` for shader injection |
+| `col.toTexture(regl)` | Returns a raw regl texture (R channel, 2D layout) |
+| `col.refresh(plot)` | Refreshes if axis-reactive; returns `true` if updated |
+
+**`ArrayColumn` extras:**
+- `col.array` — the raw `Float32Array` (CPU-accessible)
+
+Use `instanceof ArrayColumn` guards in `TextureComputation.compute()` when CPU data is required.
+
+---
+
+## `uploadToTexture(regl, array)`
+
+```javascript
+import { uploadToTexture } from 'gladly-plot'
+const tex = uploadToTexture(regl, float32Array)
+```
+
+Uploads a `Float32Array` as an R-channel, one-value-per-texel, 2D GPU texture. Sets `tex._dataLength = array.length`. Use this inside `TextureComputation.compute()` to convert a CPU result into a returnable texture.
+
+---
+
+## `resolveExprToColumn(expr, data, regl, plot)`
+
+```javascript
+import { resolveExprToColumn } from 'gladly-plot'
+const col = resolveExprToColumn(expr, data, regl, plot)  // → ColumnData
+```
+
+Resolves any expression to a `ColumnData` instance: passes through existing `ColumnData`, looks up string column names, or runs registered computations.
+
+---
+
+## `SAMPLE_COLUMN_GLSL`
+
+```javascript
+import { SAMPLE_COLUMN_GLSL } from 'gladly-plot'
+```
+
+A GLSL helper string defining `sampleColumn(sampler2D tex, float idx) → float`. Automatically injected by the framework into any vertex shader that uses column data. Import it directly only when writing custom GPU compute passes that need to sample column textures.
 
 ---
 
@@ -669,11 +712,19 @@ Returns `string[]` — the list of column names.
 
 ### `data.getData(col)`
 
-Returns the `Float32Array` for column `col`, or `undefined` if the column does not exist.
+Returns a `ColumnData` instance (`ArrayColumn` or `TextureColumn`) for column `col`, or `null` if the column does not exist. To get the underlying `Float32Array`, use `col.array` (only on `ArrayColumn` instances).
+
+```javascript
+const col = d.getData('x')
+if (col instanceof ArrayColumn) {
+  const arr = col.array    // Float32Array
+}
+const tex = col.toTexture(regl)  // GPU texture (any ColumnData subtype)
+```
 
 ### `data.getQuantityKind(col)`
 
-Returns the quantity kind string for column `col`, or `undefined` if none was specified. Layer type authors typically fall back to the column name when undefined:
+Returns the quantity kind string for column `col`, or `null`/`undefined` if none was specified. Layer type authors typically fall back to the column name when undefined:
 
 ```javascript
 const qk = d.getQuantityKind(params.vData) ?? params.vData

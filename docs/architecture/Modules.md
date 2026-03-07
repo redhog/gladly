@@ -32,9 +32,11 @@ Detailed breakdown of each source module, organised by subdirectory. For the hig
 - `buildFilterGlsl`
 - `AxisRegistry`, `ColorAxisRegistry`, `FilterAxisRegistry`
 - `registerEpsgDef`, `parseCrsCode`, `crsToQkX`, `crsToQkY`, `qkToEpsgCode`, `reproject`
+- `ColumnData`, `ArrayColumn`, `TextureColumn`, `GlslColumn` — column data class hierarchy
 - `Computation`, `TextureComputation`, `GlslComputation` — base classes for custom computations
-- `registerTextureComputation`, `registerGlslComputation`, `isTexture`
-- `EXPRESSION_REF`, `computationSchema`
+- `registerTextureComputation`, `registerGlslComputation`
+- `uploadToTexture`, `resolveExprToColumn`, `SAMPLE_COLUMN_GLSL`
+- `EXPRESSION_REF`, `EXPRESSION_REF_OPT`, `computationSchema`, `buildTransformSchema`
 
 ---
 
@@ -117,6 +119,10 @@ See architectural decision #7 in [ARCHITECTURE.md](../ARCHITECTURE.md) for the f
 **`createDrawCommand(regl, layer)`**
 - Compiles shaders into a regl draw command
 - Adds standard uniforms: `xDomain`, `yDomain`, `count`
+- For each attribute value: resolves via `resolveAttributeExpr`
+  - `Float32Array` → vertex buffer
+  - String / computation expression / `ColumnData` → `ColumnData` instance; stored in `layer._dataColumns`; produces a `sampleColumn(tex, a_pickId)` GLSL expression injected into the vertex shader
+- Injects `precision highp sampler2D; ${samplerDecls}; ${SAMPLE_COLUMN_GLSL}` when any column data is present
 - For each `[suffix, qk]` in `layer.colorAxes`: adds GLSL uniforms `colorscale${suffix}`, `color_range${suffix}`, `color_scale_type${suffix}` (reading from internal props keyed by quantity kind)
 - For each `[suffix, qk]` in `layer.filterAxes`: adds GLSL uniforms `filter_range${suffix}`, `filter_scale_type${suffix}`
 - Injects `normalize_axis()`, `map_color()`, and `filter_in_range()` GLSL helpers as needed
@@ -141,15 +147,11 @@ See architectural decision #7 in [ARCHITECTURE.md](../ARCHITECTURE.md) for the f
 
 **Pattern:** Data Transfer Object
 
-**Constructor validation:**
-- All `attributes` values must be `Float32Array` — throws `TypeError` otherwise
-- `colorAxes` must be `Record<string,string>` — maps GLSL name suffix to quantity kind
-- `filterAxes` must be `Record<string,string>` — maps GLSL name suffix to quantity kind
-
-**Why Float32Array?**
-- Direct GPU memory mapping — no conversion overhead
-- Matches GLSL `mediump float` / `highp float` precision
-- Compact: 4 bytes per value
+**Key properties:**
+- `attributes` — values are `Float32Array` (vertex buffers), `ColumnData` instances, or column name strings; resolved to GPU form in `createDrawCommand`
+- `_dataColumns` — `ColumnData[]` populated by `createDrawCommand`; used by `Plot.render()` to call `col.refresh(plot)` each frame
+- `colorAxes` — `Record<string,string>`: GLSL name suffix → quantity kind
+- `filterAxes` — `Record<string,string>`: GLSL name suffix → quantity kind
 
 ---
 
@@ -162,6 +164,8 @@ See architectural decision #7 in [ARCHITECTURE.md](../ARCHITECTURE.md) for the f
 **Supported formats:** simple flat `Float32Array` map; per-column rich objects with `{ data, quantity_kind, domain }`; columnar format with parallel `data`, `quantity_kinds`, `domains` sub-objects.
 
 **Key methods:** `columns()`, `getData(col)`, `getQuantityKind(col)`, `getDomain(col)`.
+
+`getData(col)` returns a `ColumnData` instance (`ArrayColumn` for plain data, `TextureColumn` for computed/transformed data), or `null` if the column does not exist. Use `col.array` (on `ArrayColumn`) for CPU access, or `col.toTexture(regl)` for GPU access.
 
 ---
 
@@ -466,24 +470,34 @@ The `compute/` directory implements the **computed attribute system**: a class-b
 
 **Pattern:** Registry + Strategy
 
-**Base classes:**
+**`ColumnData` class hierarchy** — the unified type for all columnar data:
+- `ColumnData` — abstract base with `resolve(path, regl)`, `toTexture(regl)`, `refresh(plot)`, `length`, `domain`, `quantityKind`
+- `ArrayColumn extends ColumnData` — wraps `Float32Array`; lazily uploads to GPU texture; exposes `.array` for CPU access
+- `TextureColumn extends ColumnData` — wraps a mutable `{ texture }` ref; supports axis-reactive refresh via `refreshFn`
+- `GlslColumn extends ColumnData` — wraps `{ name: ColumnData }` inputs and a GLSL template function; composes expressions without a GPU pass; `toTexture()` materialises via a GPU point-scatter pass
+
+**Base computation classes:**
 - `Computation` — abstract base; subclasses must implement `schema(data) => JSONSchema`
-- `TextureComputation extends Computation` — subclasses must implement `compute(regl, params, getAxisDomain) => Texture`
+- `TextureComputation extends Computation` — subclasses must implement `compute(regl, inputs, getAxisDomain) => Texture` where `inputs` values that were column refs are `ColumnData` instances
 - `GlslComputation extends Computation` — subclasses must implement `glsl(resolvedGlslParams) => string`
+
+**Utility functions:**
+- `uploadToTexture(regl, array)` — uploads `Float32Array` to an R-channel, 1-value/texel, 2D regl texture; sets `tex._dataLength`
+- `resolveExprToColumn(expr, data, regl, plot)` — resolves string/expression/ColumnData to a `ColumnData` instance
+- `SAMPLE_COLUMN_GLSL` — GLSL `sampleColumn(sampler2D, float)` helper string; injected automatically into shaders using column data
 
 **Registry functions:**
 - `registerTextureComputation(name, computation)` — stores a `TextureComputation` instance under `name`
 - `registerGlslComputation(name, computation)` — stores a `GlslComputation` instance under `name`
 
 **Schema support:**
-- `EXPRESSION_REF` — `{ '$ref': '#/$defs/expression' }` constant; use in `schema()` for params that accept a `Float32Array` or a nested computation expression
+- `EXPRESSION_REF` — `{ '$ref': '#/$defs/expression' }` constant; use in `schema()` for params that accept a column name, `Float32Array`, or nested computation expression
 - `computationSchema(data)` — builds a JSON Schema Draft 2020-12 document with `$defs` for every registered computation's params plus a recursive `expression` entry (`anyOf` of column names and all computation forms)
 
 **Attribute resolution:**
-- `resolveAttributeExpr(regl, expr, attrShaderName, plot)` — entry point called by `LayerType.createDrawCommand`; returns `{ kind: 'buffer', value }` for plain `Float32Array`, or `{ kind: 'computed', glslExpr, context }` for computation expressions. The `context` carries `bufferAttrs`, `textureUniforms`, `scalarUniforms`, `globalDecls`, and `axisUpdaters` for shader injection.
-- `isTexture(value)` — duck-type check for regl textures; useful inside `compute()` when a param may be either a `Float32Array` or an already-computed texture.
+- `resolveAttributeExpr(regl, expr, attrShaderName, plot)` — entry point called by `LayerType.createDrawCommand`; returns `{ kind: 'buffer', value }` for plain `Float32Array`, or `{ kind: 'computed', glslExpr, textures, col }` for column expressions. `col` is a `ColumnData` instance stored in `layer._dataColumns` for per-frame refresh.
 
-**Axis-reactive recomputation:** when a texture computation calls `getAxisDomain(axisId)`, the registry registers that axis as a dependency and stores an updater in `context.axisUpdaters`. On each render, `Plot` calls `refreshIfNeeded()` on all updaters; if any tracked axis domain has changed the texture is recomputed transparently.
+**Axis-reactive recomputation:** when a `TextureComputation.compute()` calls `getAxisDomain(axisId)`, the registry registers that axis as a dependency. A `refreshFn` closure is attached to the resulting `TextureColumn`. On each render, `Plot` calls `col.refresh(plot)` on all `ColumnData` in `layer._dataColumns`; the texture is recomputed in-place if any tracked axis domain has changed.
 
 ---
 

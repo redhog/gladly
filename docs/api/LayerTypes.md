@@ -406,7 +406,7 @@ Static declarations and `getAxisConfig` can be mixed freely. Dynamic values (non
 
 The built-in `points` and `lines` layers call `Data.wrap(data)` in both `createLayer` and `getAxisConfig` so that they accept plain flat objects, per-column rich objects, and the columnar format (see [`Data`](Reference.md#data) for format details). Custom layer types can do the same.
 
-**Pattern:** replace `data[col]` with `d.getData(col)`, and derive quantity kinds from the data rather than hardcoding them:
+**Pattern:** replace `data[col]` with column name strings or `d.getData(col)`, and derive quantity kinds from the data rather than hardcoding them. `d.getData(col)` returns a `ColumnData` instance — use `.array` for CPU access (only on `ArrayColumn`) or pass the column name string as an attribute value to let the framework resolve it at draw time:
 
 ```javascript
 import { LayerType, registerLayerType, Data, AXES } from './src/index.js'
@@ -436,17 +436,20 @@ const myLayerType = new LayerType({
     // Resolve the quantity kind: use data-provided kind if present, else column name
     const vQK = d.getQuantityKind(vData) ?? vData
 
-    const x = d.getData(xData)
-    const y = d.getData(yData)
-    const v = d.getData(vData)
+    // getData() returns ColumnData (ArrayColumn for plain data, TextureColumn for transforms).
+    // For plain Float32Array access use col.array (ArrayColumn only).
+    const xCol = d.getData(xData)
+    const vDomain = xCol.domain  // domain is on ColumnData, not from d.getDomain separately
 
     // Pass any pre-computed domain from the data, keyed by quantity kind
+    const colDomain = d.getData(vData)?.domain
     const domains = {}
-    const vDomain = d.getDomain(vData)
-    if (vDomain) domains[vQK] = vDomain
+    if (colDomain) domains[vQK] = colDomain
 
+    // Attribute values can be column name strings, ColumnData, or Float32Array.
+    // The framework resolves strings and ColumnData to GPU textures at draw time.
     return [{
-      attributes: { x, y, color_data: v },
+      attributes: { x: xData, y: yData, color_data: vData },
       uniforms: {},
       domains,
     }]
@@ -861,16 +864,19 @@ Each element in the array:
 ```javascript
 {
   // GPU attribute values — keyed by GLSL attribute name.
-  // Each value is either:
+  // Each value is one of:
   //   - Float32Array: uploaded directly as a vertex buffer attribute.
-  //   - Computed expression { computationName: params }: resolved to a GPU texture or
-  //     GLSL expression. See docs/api/ComputedAttributes.md for details.
+  //   - string: a column name resolved from the plot's current data to ColumnData.
+  //   - ColumnData: (ArrayColumn / TextureColumn / GlslColumn) — resolved to GPU texture or GLSL expr.
+  //   - Computed expression { computationName: params }: resolved to ColumnData.
+  // Non-Float32Array values become GPU texture samples injected into the vertex shader as:
+  //   float attrName = sampleColumn(u_col_attrName, a_pickId);
+  // See docs/api/ComputedAttributes.md for details.
   attributes: {
-    x: Float32Array,
-    y: Float32Array,
-    color_data: Float32Array,                     // name matches GLSL attribute declaration
-    filter_data: Float32Array,                    // name matches GLSL attribute declaration
-    count: { histogram: { input: norm, bins } },  // computed attribute expression
+    x: 'xData',                                   // column name string
+    y: Float32Array,                               // plain vertex buffer
+    color_data: 'temperature',                     // column name → GPU texture sample
+    count: { histogram: { input: 'norm', bins } }, // computed attribute expression
     // ...
   },
 

@@ -66,20 +66,24 @@ Plot._initialize()
   │           ├─> Inject filter_in_range() GLSL if filter axes present
   │           ├─> For each attribute value:
   │           │   └─> resolveAttributeExpr(regl, expr, name, plot)
-  │           │       ├─> Float32Array → { kind: 'buffer', value }
-  │           │       └─> { computationName: params } → { kind: 'computed', glslExpr, context }
-  │           │           ├─> TextureComputation: allocates texture, registers sampler
-  │           │           │   uniform + GLSL sample expr; adds axisUpdater for reactive
-  │           │           │   recompute when tracked axis domains change
-  │           │           └─> GlslComputation: recursively resolves params to GLSL exprs,
-  │           │               returns composite GLSL float expression
-  │           ├─> Prepend collected globalDecls to vertex shader source
+  │           │       ├─> Float32Array → { kind: 'buffer', value }  (vertex buffer)
+  │           │       └─> string / ColumnData / expression → { kind: 'computed', glslExpr, textures, col }
+  │           │           ├─> string → resolveExprToColumn → ColumnData (ArrayColumn or TextureColumn)
+  │           │           ├─> { computationName: params } → TextureComputation.createColumn()
+  │           │           │     → TextureColumn with optional refreshFn for axis-reactive recompute
+  │           │           │   or GlslComputation.createColumn() → GlslColumn (pure GLSL expression)
+  │           │           ├─> col.resolve(path, regl) → { glslExpr, textures }
+  │           │           └─> col stored in layer._dataColumns for per-frame col.refresh(plot)
+  │           ├─> Inject SAMPLE_COLUMN_GLSL + sampler declarations into vertex shader
+  │           │   when any column data attributes are present
+  │           ├─> Inject column expressions into vertex shader main() body
+  │           │   as: float attrName = sampleColumn(u_col_attrName, a_pickId);
   │           ├─> Compile vertex + fragment shaders
-  │           ├─> Build attributes map  { name: regl.prop('attributes.name') }
+  │           ├─> Build attributes map  { name: Float32Array buffer }
   │           ├─> Build uniforms map    { xDomain, yDomain, count,
   │           │                           colorscale_<slot>, color_range_<slot>,
   │           │                           filter_range_<slot>,
-  │           │                           u_cgen_<name> (texture/scalar uniforms from computations) }
+  │           │                           u_col_<name>: () => ref.texture (dynamic, for column data) }
   │           └─> Return regl draw function
   │
   ├─> Plot._setDomains(config.axes)
@@ -107,11 +111,11 @@ plot.render()
   │
   ├─> regl.clear({ color: [1, 1, 1, 1] })   — white background
   │
-  ├─> Refresh axis-reactive texture computations:
-  │   └─> For each axisUpdater registered during createDrawCommand:
-  │       └─> updater.refreshIfNeeded(plot)
+  ├─> Refresh axis-reactive column data:
+  │   └─> For each ColumnData in layer._dataColumns (populated during createDrawCommand):
+  │       └─> col.refresh(plot)
   │           └─> If any tracked axis domain changed: recompute texture in-place
-  │               (dynamic uniform picks up new texture on next draw call)
+  │               (dynamic uniform fn () => ref.texture picks up new texture automatically)
   │
   ├─> For each (layer, drawCommand):
   │   │

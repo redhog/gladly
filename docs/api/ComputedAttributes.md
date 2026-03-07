@@ -13,6 +13,63 @@ Normally every value in `attributes` is a `Float32Array` uploaded as a vertex bu
 
 Either form is transparent to the shader author: the attribute appears in the shader as an ordinary `float` attribute (backed by the sampled texture or the GLSL expression).
 
+You may also use a **plain column name string** as an attribute value — the framework resolves it through the plot's current data automatically.
+
+---
+
+## `ColumnData` — The Unified Column Type
+
+All columnar data in the computation pipeline is represented as a `ColumnData` instance. There are three concrete subtypes:
+
+### `ArrayColumn`
+
+Wraps a `Float32Array`. Lazily uploads to a GPU texture on first use.
+
+```javascript
+import { ArrayColumn } from 'gladly-plot'
+
+const col = new ArrayColumn(myFloat32Array, { domain: [0, 1], quantityKind: 'velocity_ms' })
+col.array          // the raw Float32Array (CPU-accessible)
+col.length         // number of elements
+col.domain         // [min, max] or null
+col.quantityKind   // string or null
+col.toTexture(regl) // returns a regl texture (R channel, 1 value/texel, 2D layout)
+col.resolve(path, regl) // returns { glslExpr, textures }
+```
+
+Use `instanceof ArrayColumn` checks inside `TextureComputation.compute()` when your computation requires CPU access (e.g. for statistics, sorting, or FFT).
+
+### `TextureColumn`
+
+Wraps a mutable `{ texture }` reference. The reference is shared — when the texture is replaced on refresh, all uniforms picking it up see the new value automatically.
+
+```javascript
+col.toTexture(regl)    // returns the current regl texture
+col.refresh(plot)      // re-runs refreshFn if present; returns true if texture changed
+```
+
+### `GlslColumn`
+
+Wraps named `ColumnData` inputs plus a GLSL template function. Composes GLSL expressions without any GPU render pass. Call `toTexture(regl)` to materialise into a real texture via a GPU point-scatter pass.
+
+```javascript
+col.resolve(path, regl) // returns { glslExpr, textures } — all inputs' textures merged
+col.toTexture(regl)     // GPU render pass: evaluates the expression per data point
+```
+
+### Common Interface
+
+All three subtypes share:
+
+| Property / Method | Description |
+|-------------------|-------------|
+| `col.length` | Number of data elements, or `null` if unknown |
+| `col.domain` | `[min, max]` or `null` |
+| `col.quantityKind` | string or `null` |
+| `col.resolve(path, regl)` | Returns `{ glslExpr: string, textures: { uniformName: () => tex } }` |
+| `col.toTexture(regl)` | Returns a raw regl texture |
+| `col.refresh(plot)` | Refreshes if axis-reactive; returns `true` if updated |
+
 ---
 
 ## Using a Computed Attribute
@@ -21,13 +78,10 @@ Inside `createLayer`, supply a **computation expression** as an attribute value 
 
 ```javascript
 createLayer(parameters, data) {
-  const normalized = /* Float32Array of values in [0, 1] */
-  const bins = 50
-
   return [{
     attributes: {
-      x_center: /* Float32Array */,              // plain array — unchanged
-      count: { histogram: { input: normalized, bins } },  // computed attribute
+      x_center: parameters.xData,  // string column name — resolved at render time
+      count: { histogram: { input: parameters.yData, bins: 50 } },  // computed attribute
     },
     // ...
   }]
@@ -37,12 +91,12 @@ createLayer(parameters, data) {
 A computation expression is a **single-key object** `{ computationName: params }` where:
 
 - `computationName` is a registered texture or GLSL computation.
-- `params` is the parameter value, which is resolved recursively before being passed to the computation. Params can be:
-  - A `Float32Array` — used as-is.
-  - A number — passed as a scalar (uploaded as a GPU uniform inside texture computations).
-  - A regl texture — used as-is.
-  - Another `{ computationName: params }` expression — computed first, and its output (a texture) is passed as input to the outer computation.
-  - A plain object — each value is resolved recursively; used to pass named parameters to the computation.
+- `params` is the parameter value, resolved recursively before being passed to the computation. Params can be:
+  - A column name **string** — resolved to `ColumnData` via the plot's current data.
+  - A `Float32Array` — passed through as-is (not converted to `ColumnData`).
+  - A number or boolean — passed through as a scalar.
+  - Another `{ computationName: params }` expression — computed first; its output `ColumnData` is passed as the input to the outer computation.
+  - A plain object — each value is resolved recursively; used for named parameter objects.
 
 ---
 
@@ -51,29 +105,35 @@ A computation expression is a **single-key object** `{ computationName: params }
 Texture computations receive a `getAxisDomain` callback. Calling it for an axis ID:
 
 1. Returns the current domain `[min|null, max|null]` for that axis (either bound can be `null` for open intervals).
-2. Registers the axis as a **dependency** — the framework will recompute the texture automatically whenever that axis's domain changes (e.g. when the user adjusts a filterbar).
+2. Registers the axis as a **dependency** — the framework recomputes the texture automatically whenever that axis's domain changes (e.g. when the user adjusts a filterbar).
 
 This makes it straightforward to build filter-aware computations:
 
 ```javascript
-import { TextureComputation, registerTextureComputation } from 'gladly-plot'
+import { TextureComputation, ArrayColumn, uploadToTexture, registerTextureComputation } from 'gladly-plot'
 import makeHistogram from './hist.js'
 
 class FilteredHistogramComputation extends TextureComputation {
-  compute(regl, params, getAxisDomain) {
-    const { input, filterValues, filterAxisId, bins } = params
-    const domain = getAxisDomain(filterAxisId)  // registers the axis as a dependency
+  compute(regl, inputs, getAxisDomain) {
+    // inputs.input and inputs.filterValues are ColumnData instances
+    if (!(inputs.input instanceof ArrayColumn)) throw new Error('requires ArrayColumn')
+    if (!(inputs.filterValues instanceof ArrayColumn)) throw new Error('requires ArrayColumn')
+
+    const inputArr = inputs.input.array
+    const filterArr = inputs.filterValues.array
+    const domain = getAxisDomain(inputs.filterAxisId)  // registers the axis as a dependency
     const filterMin = domain?.[0] ?? null
     const filterMax = domain?.[1] ?? null
 
     const filtered = []
-    for (let i = 0; i < input.length; i++) {
-      const fv = filterValues[i]
+    for (let i = 0; i < inputArr.length; i++) {
+      const fv = filterArr[i]
       if (filterMin !== null && fv < filterMin) continue
       if (filterMax !== null && fv > filterMax) continue
-      filtered.push(input[i])
+      filtered.push(inputArr[i])
     }
-    return makeHistogram(regl, new Float32Array(filtered), { bins })
+    const filteredTex = uploadToTexture(regl, new Float32Array(filtered))
+    return makeHistogram(regl, filteredTex, { bins: inputs.bins })
   }
   schema(data) { /* ... */ }
 }
@@ -96,15 +156,20 @@ registerTextureComputation(name, computation)
 
 Subclass `TextureComputation` and implement two methods:
 
-### `compute(regl, params, getAxisDomain)`
+### `compute(regl, inputs, getAxisDomain)`
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `regl` | regl context | Use to allocate textures (`regl.texture()`), framebuffers, and draw calls. |
-| `params` | any | The resolved parameter value from the expression. For a plain-object expression this is a plain object with all nested values already resolved to raw JS values (arrays, textures, numbers). |
+| `inputs` | object | Resolved parameter object. String params that matched data columns are `ColumnData` instances; plain numbers, booleans, and `Float32Array` values pass through unchanged. |
 | `getAxisDomain` | `(axisId: string) => [min\|null, max\|null] \| null` | Returns the current domain of an axis and registers it as a dependency. Returns `null` if the axis has no domain yet. |
 
-**Return value:** A regl texture. The framework samples it per-vertex using `a_pickId` as the texel index, reading the `R` channel as the attribute value.
+**Accessing column data inside `compute()`:**
+- Call `inputs.col.toTexture(regl)` to get a GPU texture (works for any `ColumnData` subtype).
+- Check `inputs.col instanceof ArrayColumn` to test for CPU-accessible data; then use `inputs.col.array` for the raw `Float32Array`.
+- Use `instanceof ArrayColumn` guards and throw for computations that strictly need CPU data (e.g. FFT, adaptive convolution).
+
+**Return value:** A regl texture. The framework samples it per-vertex using `a_pickId` as the texel index, reading the `R` channel as the attribute value. Set `tex._dataLength = n` when the logical length differs from `tex.width * tex.height`.
 
 ### `schema(data)`
 
@@ -112,36 +177,34 @@ Subclass `TextureComputation` and implement two methods:
 |-----------|------|-------------|
 | `data` | `Data \| null` | The plot's data object, or `null` when called without a data context. |
 
-**Return value:** A JSON Schema (Draft 2020-12) object describing the `params` structure accepted by `compute`. Use `EXPRESSION_REF` for parameters that can be a `Float32Array` or a sub-expression.
+**Return value:** A JSON Schema (Draft 2020-12) object describing the `params` structure accepted by `compute`. Use `EXPRESSION_REF` for parameters that accept a column reference or a sub-expression.
 
 **Example — custom weighted average texture:**
 
 ```javascript
-import { TextureComputation, EXPRESSION_REF, registerTextureComputation } from 'gladly-plot'
+import { TextureComputation, ArrayColumn, uploadToTexture, EXPRESSION_REF, registerTextureComputation } from 'gladly-plot'
 
 class WeightedAverageComputation extends TextureComputation {
-  compute(regl, params) {
-    const { values, weights, bins } = params  // both Float32Arrays
+  compute(regl, inputs, getAxisDomain) {
+    if (!(inputs.values instanceof ArrayColumn)) throw new Error('values must be ArrayColumn')
+    if (!(inputs.weights instanceof ArrayColumn)) throw new Error('weights must be ArrayColumn')
+    const { values, weights, bins } = inputs  // values and weights are ArrayColumn
+    const vArr = values.array
+    const wArr = weights.array
     const outData = new Float32Array(bins * 4)  // RGBA, R channel used
 
     for (let b = 0; b < bins; b++) {
       let sumW = 0, sumWV = 0
-      for (let i = 0; i < values.length; i++) {
-        const bIndex = Math.floor(values[i] * bins)
+      for (let i = 0; i < vArr.length; i++) {
+        const bIndex = Math.floor(vArr[i] * bins)
         if (Math.min(bIndex, bins - 1) !== b) continue
-        sumW  += weights[i]
-        sumWV += weights[i] * values[i]
+        sumW  += wArr[i]
+        sumWV += wArr[i] * vArr[i]
       }
       outData[b * 4] = sumW > 0 ? sumWV / sumW : 0  // R channel
     }
 
-    return regl.texture({
-      data: outData,
-      width: bins,
-      height: 1,
-      type: 'float',
-      format: 'rgba'
-    })
+    return regl.texture({ data: outData, width: bins, height: 1, type: 'float', format: 'rgba' })
   }
 
   schema(data) {
@@ -164,7 +227,7 @@ Usage in `createLayer`:
 
 ```javascript
 attributes: {
-  count: { weightedAverage: { values: normalized, weights: importanceArr, bins } }
+  count: { weightedAverage: { values: 'normalized', weights: 'importance', bins: 50 } }
 }
 ```
 
@@ -187,7 +250,7 @@ Subclass `GlslComputation` and implement two methods:
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `resolvedGlslParams` | object | Each value is a **GLSL expression string** (not a JS value). Each param is recursively resolved: `Float32Array` → attribute name, number → uniform name, texture → texture-sample expression, nested computation → its GLSL expression. |
+| `resolvedGlslParams` | object | Each value is a **GLSL expression string**. Each column-reference param is recursively resolved: `ArrayColumn` → texture-sample expression, `GlslColumn` → composed expression, `TextureColumn` → texture-sample expression. |
 
 **Return value:** A GLSL expression string that evaluates to a `float`.
 
@@ -225,14 +288,12 @@ Usage in `createLayer`:
 attributes: {
   ndvi: {
     normalizedDiff: {
-      a: data.nir,   // Float32Array — resolved to an attribute GLSL name
-      b: data.red,   // Float32Array — resolved to another attribute GLSL name
+      a: 'nir',   // column name — resolved to ColumnData, then to GLSL expr
+      b: 'red',
     }
   }
 }
 ```
-
-> **Restriction:** GLSL computations cannot be nested inside texture computation parameters. A texture computation's params are resolved to raw JS values (arrays, textures, numbers); GLSL expressions only exist inside the GPU shader and cannot be passed as CPU values.
 
 ---
 
@@ -242,14 +303,14 @@ attributes: {
 import { EXPRESSION_REF } from 'gladly-plot'
 ```
 
-A JSON Schema `$ref` object (`{ '$ref': '#/$defs/expression' }`) for use inside `schema()` methods. Use it for any parameter that can accept a `Float32Array` or a nested computation expression:
+A JSON Schema `$ref` object (`{ '$ref': '#/$defs/expression' }`) for use inside `schema()` methods. Use it for any parameter that can accept a column name, a `Float32Array`, or a nested computation expression:
 
 ```javascript
 schema(data) {
   return {
     type: 'object',
     properties: {
-      input: EXPRESSION_REF,   // accepts Float32Array or { computationName: params }
+      input: EXPRESSION_REF,   // accepts column name, Float32Array, or { computationName: params }
       bins:  { type: 'number' }
     },
     required: ['input']
@@ -258,6 +319,57 @@ schema(data) {
 ```
 
 The `$ref` resolves to the `expression` entry in `$defs` produced by `computationSchema()`, which is an `anyOf` covering all registered computations and column names.
+
+---
+
+## `uploadToTexture(regl, array)`
+
+```javascript
+import { uploadToTexture } from 'gladly-plot'
+
+const tex = uploadToTexture(regl, myFloat32Array)
+// tex._dataLength is set to array.length
+// tex uses R channel, 2D layout (w = min(n, maxTextureSize), h = ceil(n/w))
+```
+
+Uploads a `Float32Array` as a GPU texture with one value per texel in the R channel. The 2D layout automatically handles arrays longer than `maxTextureSize`. Use this inside `TextureComputation.compute()` when you have constructed a CPU-side result array that needs to be returned as a texture.
+
+---
+
+## `resolveExprToColumn(expr, data, regl, plot)`
+
+```javascript
+import { resolveExprToColumn } from 'gladly-plot'
+
+const col = resolveExprToColumn(expr, data, regl, plot)
+// col is always a ColumnData instance
+```
+
+Resolves any expression form to a `ColumnData`:
+
+| `expr` | Result |
+|--------|--------|
+| `ColumnData` | returned unchanged |
+| `string` | looks up `data.getData(expr)` |
+| `{ computationName: params }` | runs the named computation; returns `TextureColumn` or `GlslColumn` |
+
+---
+
+## `SAMPLE_COLUMN_GLSL`
+
+```javascript
+import { SAMPLE_COLUMN_GLSL } from 'gladly-plot'
+```
+
+A GLSL helper string defining `sampleColumn(sampler2D tex, float idx)`. It is automatically injected into vertex shaders that use column data. You only need it when writing your own custom shaders or compute passes that need to sample column textures directly:
+
+```glsl
+float sampleColumn(sampler2D tex, float idx) {
+  ivec2 sz = textureSize(tex, 0);
+  int i = int(idx);
+  return texelFetch(tex, ivec2(i % sz.x, i / sz.x), 0).r;
+}
+```
 
 ---
 
@@ -278,14 +390,13 @@ const schema = computationSchema(data)
 {
   "$defs": {
     "params_histogram":          { "type": "object", "properties": { "input": { "$ref": "#/$defs/expression" }, "bins": { "type": "number" } }, "required": ["input"] },
-    "params_filteredHistogram":  { ... },
+    "params_filteredHistogram":  { "..." },
     "...",
     "expression": {
       "anyOf": [
         { "type": "string", "enum": ["col1", "col2", "..."] },
         { "type": "object", "properties": { "histogram":         { "$ref": "#/$defs/params_histogram"         } }, "required": ["histogram"],         "additionalProperties": false },
-        { "type": "object", "properties": { "filteredHistogram": { "$ref": "#/$defs/params_filteredHistogram" } }, "required": ["filteredHistogram"], "additionalProperties": false },
-        "..."
+        { "..." }
       ]
     }
   },
@@ -293,43 +404,9 @@ const schema = computationSchema(data)
 }
 ```
 
-- Column names are populated from `data.columns()` when `data` is provided; the `enum` is empty otherwise.
+- Column names are populated from `data.columns()` when `data` is provided.
 - Each computation contributes its `schema(data)` return value as `$defs.params_<name>`.
-- The `$defs.expression` entry is an `anyOf` covering column references and every registered computation.
 - `EXPRESSION_REF` inside any `schema()` method references this same `$defs.expression` entry, enabling recursive nesting.
-
-Use this to drive form rendering or validation for user-configurable computation expressions:
-
-```javascript
-import { computationSchema } from 'gladly-plot'
-
-const schema = computationSchema(myData)
-// Pass schema to a JSON Schema form library or validator
-```
-
----
-
-## `isTexture(value)`
-
-```javascript
-import { isTexture } from 'gladly-plot'
-isTexture(value)  // => boolean
-```
-
-Duck-type check for regl textures. Returns `true` if `value` is a non-null object with a numeric `width` property and a `subimage` method.
-
-Useful inside `compute()` when a parameter may be either a raw `Float32Array` or an already-computed texture from a nested expression:
-
-```javascript
-class MyComputation extends TextureComputation {
-  compute(regl, params) {
-    const input = isTexture(params.input)
-      ? params.input                      // use the texture directly
-      : uploadToTexture(regl, params.input) // upload the Float32Array
-    // ...
-  }
-}
-```
 
 ---
 
@@ -337,33 +414,37 @@ class MyComputation extends TextureComputation {
 
 All built-in computations are registered automatically on import of `gladly-plot`.
 
+### Texture format
+
+All built-in computations that produce output textures use **R-channel, one-value-per-texel, 2D layout** (matching `uploadToTexture`). GLSL shaders sample them with `sampleColumn()`.
+
 ### `histogram`
 
-Bins a normalized data array into a histogram texture.
+Bins a data column or expression into a histogram texture.
 
 ```javascript
-{ histogram: { input: Float32Array, bins?: number } }
+{ histogram: { input: 'columnName', bins?: number } }
 ```
 
 | Param | Type | Description |
 |-------|------|-------------|
-| `input` | `Float32Array` | Values normalized to `[0, 1]`. |
-| `bins` | `number` (optional) | Number of histogram bins. Auto-selected via Scott's rule if omitted. |
+| `input` | expression | Column to histogram. If `ArrayColumn`, auto-selects bin count via Scott's rule and normalises to `[0, 1]` internally. If a GPU texture column, assumed already normalised to `[0, 1]`. |
+| `bins` | `number` (optional) | Number of histogram bins. Auto-selected if omitted and input is `ArrayColumn`. |
 
-Output texture: width = `bins`, R channel = count per bin.
+Output texture: width = `bins`, height = 1, R channel = count per bin.
 
 ---
 
 ### `filteredHistogram`
 
-Like `histogram` but filters the input by a filter axis range before counting. Automatically recomputes when the filter axis domain changes.
+Like `histogram` but filters the input by a filter axis range before counting. Automatically recomputes when the filter axis domain changes. **Requires `ArrayColumn` inputs** (CPU data).
 
 ```javascript
 {
   filteredHistogram: {
-    input:        Float32Array,  // values normalized to [0, 1]
-    filterValues: Float32Array,  // raw filter-column values (same length as input)
-    filterAxisId: string,        // quantity kind / axis ID to watch
+    input:        'normalizedColumn',  // ArrayColumn required
+    filterValues: 'rawFilterColumn',   // ArrayColumn required
+    filterAxisId: 'velocity_ms',       // axis quantity kind to watch
     bins?:        number,
   }
 }
@@ -371,25 +452,25 @@ Like `histogram` but filters the input by a filter axis range before counting. A
 
 | Param | Type | Description |
 |-------|------|-------------|
-| `input` | `Float32Array` | Values normalized to `[0, 1]`. |
-| `filterValues` | `Float32Array` | Raw values for the filter column (same length as `input`). |
+| `input` | `ArrayColumn` expression | Values normalised to `[0, 1]` (for histogram bins). |
+| `filterValues` | `ArrayColumn` expression | Raw values for the filter column (same length as `input`). |
 | `filterAxisId` | string | Axis quantity kind whose domain drives the filter. The computation re-runs whenever this axis's domain changes. |
-| `bins` | number (optional) | Bin count; auto-selected if omitted. |
+| `bins` | number (optional) | Bin count. |
 
 ---
 
 ### `kde`
 
-Smooths a histogram (or any 1-D texture) with a Gaussian kernel to produce a kernel density estimate.
+Smooths a histogram texture with a Gaussian kernel to produce a kernel density estimate.
 
 ```javascript
-{ kde: { input: Float32Array | Texture, bins?: number, bandwidth?: number } }
+{ kde: { input: 'histogramExpr', bins?: number, bandwidth?: number } }
 ```
 
 | Param | Type | Description |
 |-------|------|-------------|
-| `input` | `Float32Array` or texture | Raw histogram data, or an existing histogram texture. |
-| `bins` | number (optional) | Output bin count. Defaults to `input.length` for arrays, or `input.width` for textures. |
+| `input` | expression | A histogram texture (width = bins, height = 1, R = counts). Typically the output of `histogram` or `filteredHistogram`. |
+| `bins` | number (optional) | Output bin count. Defaults to `input.width`. |
 | `bandwidth` | number (optional) | Gaussian sigma in bins. Default: `5`. |
 
 ---
@@ -399,13 +480,13 @@ Smooths a histogram (or any 1-D texture) with a Gaussian kernel to produce a ker
 Applies an arbitrary 1-D convolution kernel (GPU-side, max radius 16).
 
 ```javascript
-{ filter1D: { input: Float32Array | Texture, kernel: Float32Array } }
+{ filter1D: { input: 'signalExpr', kernel: 'kernelExpr' } }
 ```
 
 | Param | Type | Description |
 |-------|------|-------------|
-| `input` | `Float32Array` or texture | Signal to filter. |
-| `kernel` | `Float32Array` | Convolution kernel weights. Length must be odd; max length 33 (radius 16). |
+| `input` | expression | Signal to filter; resolved to a GPU texture via `toTexture()`. |
+| `kernel` | expression | Convolution kernel weights. Resolved to `ArrayColumn.array` if available, otherwise used as-is. Max length 33 (radius 16). |
 
 ---
 
@@ -414,14 +495,14 @@ Applies an arbitrary 1-D convolution kernel (GPU-side, max radius 16).
 Gaussian low-pass filter.
 
 ```javascript
-{ lowPass: { input: Float32Array | Texture, sigma?: number, kernelSize?: number } }
+{ lowPass: { input: 'signalExpr', sigma?: number, kernelSize?: number } }
 ```
 
 | Param | Type | Description |
 |-------|------|-------------|
-| `input` | `Float32Array` or texture | Signal to filter. |
+| `input` | expression | Signal to filter; resolved to a GPU texture. |
 | `sigma` | number (optional) | Gaussian standard deviation in samples. Default: `3`. |
-| `kernelSize` | number (optional) | Kernel width (must be odd). Default: `ceil(sigma * 6)` rounded up to the next odd number. |
+| `kernelSize` | number (optional) | Kernel width (must be odd). Default: `ceil(sigma * 6)` rounded to next odd. |
 
 ---
 
@@ -430,10 +511,10 @@ Gaussian low-pass filter.
 High-pass filter: `input − lowPass(input)`.
 
 ```javascript
-{ highPass: { input: Float32Array | Texture, sigma?: number, kernelSize?: number } }
+{ highPass: { input: 'signalExpr', sigma?: number, kernelSize?: number } }
 ```
 
-Same parameters as `lowPass`.
+Same parameters as `lowPass`. Input resolved to a GPU texture.
 
 ---
 
@@ -442,145 +523,115 @@ Same parameters as `lowPass`.
 Band-pass filter: `lowPass(sigmaHigh) − lowPass(sigmaLow)`.
 
 ```javascript
-{ bandPass: { input: Float32Array | Texture, sigmaLow: number, sigmaHigh: number } }
+{ bandPass: { input: 'signalExpr', sigmaLow: number, sigmaHigh: number } }
 ```
 
 | Param | Type | Description |
 |-------|------|-------------|
-| `input` | `Float32Array` or texture | Signal to filter. |
-| `sigmaLow` | number | Sigma of the narrow low-pass (defines the high-frequency cutoff). |
-| `sigmaHigh` | number | Sigma of the wide low-pass (defines the low-frequency cutoff). |
+| `input` | expression | Signal to filter; resolved to a GPU texture. |
+| `sigmaLow` | number | Sigma of the narrow low-pass (high-frequency cutoff). |
+| `sigmaHigh` | number | Sigma of the wide low-pass (low-frequency cutoff). |
 
 ---
 
 ### `fft1d`
 
-GPU FFT of a real-valued signal. Output is a **complex texture**: R channel = real part, G channel = imaginary part. Size is padded to the next power of two.
+GPU FFT of a real-valued signal. **Requires `ArrayColumn` input** (CPU data). Output is a **complex texture**: R channel = real part, G channel = imaginary part. Size is padded to the next power of two.
 
 ```javascript
-{ fft1d: { input: Float32Array, inverse?: boolean } }
+{ fft1d: { input: 'realColumnName', inverse?: boolean } }
 ```
 
 | Param | Type | Description |
 |-------|------|-------------|
-| `input` | `Float32Array` | Real-valued signal. Imaginary part assumed zero. |
+| `input` | `ArrayColumn` expression | Real-valued signal. Imaginary part assumed zero. |
 | `inverse` | boolean (optional) | `true` for inverse FFT. Default: `false`. |
-
-To use the magnitude as a vertex attribute, chain it with a GLSL computation:
-
-```javascript
-import { GlslComputation, EXPRESSION_REF, registerGlslComputation } from 'gladly-plot'
-
-class MagnitudeComputation extends GlslComputation {
-  glsl({ re, im }) {
-    return `sqrt((${re})*(${re}) + (${im})*(${im}))`
-  }
-  schema(data) {
-    return {
-      type: 'object',
-      properties: { re: EXPRESSION_REF, im: EXPRESSION_REF },
-      required: ['re', 'im']
-    }
-  }
-}
-registerGlslComputation('magnitude', new MagnitudeComputation())
-
-// In createLayer:
-attributes: {
-  amplitude: {
-    magnitude: {
-      re: { fft1d: { input: signal } },           // R channel → 'attribute float a_cgen_...'
-      im: /* need separate texture for G channel */ // not directly supported — see note below
-    }
-  }
-}
-```
-
-> **Note:** The `fft1d` texture expression samples only the R channel. To access the imaginary (G) channel you currently need to write a custom texture computation that reads both channels and returns a derived scalar.
 
 ---
 
 ### `fftConvolution`
 
-Convolves two signals using FFT-based multiplication. Efficient for large kernels.
+Convolves two signals using FFT-based multiplication. **Requires `ArrayColumn` inputs.**
 
 ```javascript
-{ fftConvolution: { signal: Float32Array, kernel: Float32Array } }
+{ fftConvolution: { signal: 'columnName', kernel: 'columnName' } }
 ```
 
 | Param | Type | Description |
 |-------|------|-------------|
-| `signal` | `Float32Array` | Input signal. |
-| `kernel` | `Float32Array` | Convolution kernel. |
+| `signal` | `ArrayColumn` expression | Input signal. |
+| `kernel` | `ArrayColumn` expression | Convolution kernel. |
 
 ---
 
 ### `convolution`
 
-Adaptive 1-D convolution that selects the most efficient algorithm based on kernel size:
+Adaptive 1-D convolution. **Requires `ArrayColumn` inputs.** Selects the most efficient algorithm based on kernel size:
 
 - **Kernel ≤ 1024 samples** — single GPU pass.
 - **Kernel 1025–8192** — chunked GPU passes with additive blending.
 - **Kernel > 8192** — FFT-based convolution.
 
 ```javascript
-{ convolution: { signal: Float32Array, kernel: Float32Array } }
+{ convolution: { signal: 'columnName', kernel: 'columnName' } }
 ```
 
 | Param | Type | Description |
 |-------|------|-------------|
-| `signal` | `Float32Array` | Input signal. |
-| `kernel` | `Float32Array` | Convolution kernel. |
+| `signal` | `ArrayColumn` expression | Input signal. |
+| `kernel` | `ArrayColumn` expression | Convolution kernel. |
 
 ---
 
 ## Worked Example: Histogram Layer
 
-The built-in `histogram` layer type demonstrates the full pattern. Relevant excerpt from its `createLayer`:
+The built-in `bars` layer type demonstrates the full pattern. Relevant excerpt from its `createLayer`:
 
 ```javascript
-// Normalize source data to [0, 1] for histogram bins
-const normalized = new Float32Array(srcV.length)
-for (let i = 0; i < srcV.length; i++) {
-  normalized[i] = (srcV[i] - min) / range
+_createLayer(parameters, data) {
+  const d = Data.wrap(data)
+  const { xData, yData, color = [0.2, 0.5, 0.8, 1.0] } = parameters
+
+  // getData() now returns ColumnData (ArrayColumn or TextureColumn)
+  const xCol = d.getData(xData)
+  const yCol = d.getData(yData)
+
+  const bins = xCol.length ?? 1
+  const xDomain = xCol.domain ?? [0, 1]
+  const yDomain = yCol.domain ?? [0, 1]
+  const binHalfWidth = (xDomain[1] - xDomain[0]) / (2 * bins)
+
+  const a_corner = new Float32Array([0, 1, 2, 3])
+
+  return [{
+    attributes: {
+      a_corner,       // Float32Array — uploaded as vertex buffer
+      x_center: xData,  // string column name — resolved to ColumnData at draw time
+      count: yData,      // string column name — resolved to ColumnData at draw time
+    },
+    uniforms: { u_binHalfWidth: binHalfWidth, u_color: color },
+    vertexCount: 4,
+    instanceCount: bins,
+    primitive: 'triangle strip',
+    domains: { [xQK]: xDomain, [yQK]: yDomain },
+  }]
 }
-
-// Build count attribute:
-// - No filter: plain histogram texture
-// - With filter: filteredHistogram, recomputes when filter axis domain changes
-const countAttr = filterQK
-  ? { filteredHistogram: { input: normalized, filterValues: srcF, filterAxisId: filterQK, bins } }
-  : { histogram: { input: normalized, bins } }
-
-return [{
-  attributes: {
-    a_corner,          // per-vertex Float32Array (quad corners 0–3)
-    x_center,          // per-instance Float32Array (bin centre positions)
-    count: countAttr,  // computed attribute — histogram or filtered histogram
-  },
-  attributeDivisors: { x_center: 1 },
-  vertexCount:  4,
-  instanceCount: bins,
-  primitive: "triangle strip",
-  // ...
-}]
 ```
 
-The `count` attribute is sampled in the vertex shader as an ordinary `float`:
+The `x_center` and `count` attributes are column names. The framework resolves them to `ColumnData` instances at draw time, uploads them to GPU textures, and samples them in the vertex shader:
 
 ```glsl
-attribute float a_corner;
-attribute float x_center;
-attribute float count;     // sampled from the histogram texture at a_pickId
+in float a_corner;
+in float x_center;   // replaced by: float x_center = sampleColumn(u_col_x_center, a_pickId);
+in float count;      // replaced by: float count    = sampleColumn(u_col_count,    a_pickId);
 
 uniform float u_binHalfWidth;
-uniform vec2  xDomain, yDomain;
 
 void main() {
   float side = mod(a_corner, 2.0);
   float top  = floor(a_corner / 2.0);
   float bx   = x_center + (side * 2.0 - 1.0) * u_binHalfWidth;
-  float by   = top * count;  // count == 0 for bottom corners, histogram value for top
-  // ...
+  float by   = top * count;
+  gl_Position = plot_pos(vec2(bx, by));
 }
 ```
