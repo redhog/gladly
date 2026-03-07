@@ -106,7 +106,7 @@ export const multiLineLayerType = new LayerType({
     }
   },
 
-  createLayer: function(parameters, data) {
+  createLayer: function(regl, parameters, data) {
     const d = Data.wrap(data)
     const {
       xData,

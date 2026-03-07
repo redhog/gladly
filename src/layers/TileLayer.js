@@ -596,7 +596,7 @@ class TileLayerType extends LayerType {
     }
   }
 
-  createLayer(parameters, _data) {
+  createLayer(regl, parameters, _data) {
     const {
       xAxis = 'xaxis_bottom',
       yAxis = 'yaxis_left',

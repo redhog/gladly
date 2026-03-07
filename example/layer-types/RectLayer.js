@@ -110,7 +110,7 @@ export const rectLayerType = new LayerType({
     }
   },
 
-  createLayer: function(params, data) {
+  createLayer: function(regl, params, data) {
     const d = Data.wrap(data)
     const { xData, yTopData, yBottomData, vData, e = Infinity } = params
 
