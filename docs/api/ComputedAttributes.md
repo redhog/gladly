@@ -57,6 +57,26 @@ col.resolve(path, regl) // returns { glslExpr, textures } — all inputs' textur
 col.toTexture(regl)     // GPU render pass: evaluates the expression per data point
 ```
 
+### `OffsetColumn`
+
+Wraps another `ColumnData` and shifts the GLSL sampling index by a GLSL expression. Produced by calling `col.withOffset(offsetExpr)` on any `ColumnData`. The offset is evaluated per-vertex, so it can reference vertex-shader variables like `a_endPoint`.
+
+```javascript
+import { OffsetColumn } from 'gladly-plot'
+
+// Produced via the helper method (preferred):
+const start = colX.withOffset('0.0')   // samples colX at a_pickId + 0
+const end   = colX.withOffset('1.0')   // samples colX at a_pickId + 1
+const interp = colX.withOffset('a_endPoint')  // per-vertex offset from a template attribute
+
+// Or constructed directly:
+const col = new OffsetColumn(baseCol, '1.0')
+```
+
+`OffsetColumn` delegates `length`, `domain`, `quantityKind`, `toTexture`, and `refresh` to its base column. Only `resolve()` is overridden to rewrite the GLSL sampling expression.
+
+Typical use case: instanced rendering where two consecutive data points define a line segment. Instead of building interleaved CPU arrays, use `colX.withOffset('0.0')` for the segment start and `colX.withOffset('1.0')` for the segment end, feeding both from the same underlying `ColumnData`.
+
 ### Common Interface
 
 All three subtypes share:

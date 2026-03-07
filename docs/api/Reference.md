@@ -45,7 +45,7 @@ Updates the plot with new configuration and/or data.
 | `config` | object | `{ layers, axes }` — see [Configuring Plots](PlotConfiguration.md) |
 | `config.layers` | array | Layer specifications: `[{ typeName: params }, ...]` |
 | `config.axes` | object | Range overrides for spatial, color, and filter axes |
-| `data` | object | Named `Float32Array` values |
+| `data` | object | Any plain object that `normalizeData()` can convert to a `DataGroup` tree (see [Data Format](../API.md#data-format)) |
 
 **Behaviour:**
 - Config-only: stores config, waits for data before rendering
@@ -511,13 +511,22 @@ Returns a JSON Schema Draft 2020-12 document covering the full space of valid co
 
 ---
 
-## `ColumnData`, `ArrayColumn`, `TextureColumn`, `GlslColumn`
+## `ColumnData`, `ArrayColumn`, `TextureColumn`, `GlslColumn`, `OffsetColumn`
 
-The unified column data hierarchy. All columnar values in the computation pipeline are represented as one of these classes.
+The unified column data hierarchy. All columnar values in the computation pipeline — whether they come from `Data.getData()`, a `TextureComputation`, a `GlslComputation`, or a `col.withOffset()` call — are represented as one of these classes.
 
 ```javascript
-import { ColumnData, ArrayColumn, TextureColumn, GlslColumn } from 'gladly-plot'
+import { ColumnData, ArrayColumn, TextureColumn, GlslColumn, OffsetColumn } from 'gladly-plot'
 ```
+
+**Subtypes:**
+
+| Class | Source | GPU access | CPU access |
+|-------|--------|------------|------------|
+| `ArrayColumn` | `Data.getData()` — wraps a `Float32Array` | `col.toTexture(regl)` (lazy upload) | `col.array` |
+| `TextureColumn` | `TextureComputation.createColumn()` — wraps a mutable `{ texture }` ref | `col.toTexture(regl)` | — |
+| `GlslColumn` | `GlslComputation.createColumn()` — composes a GLSL expression from named inputs | `col.toTexture(regl)` (GPU scatter pass) | — |
+| `OffsetColumn` | `col.withOffset(glslExpr)` — shifts the sampling index in the vertex shader | delegates to base | delegates to base |
 
 **Common interface** (all subtypes):
 
@@ -526,12 +535,24 @@ import { ColumnData, ArrayColumn, TextureColumn, GlslColumn } from 'gladly-plot'
 | `col.length` | Number of data elements, or `null` if unknown |
 | `col.domain` | `[min, max]` or `null` |
 | `col.quantityKind` | string or `null` |
-| `col.resolve(path, regl)` | Returns `{ glslExpr, textures }` for shader injection |
+| `col.resolve(path, regl)` | Returns `{ glslExpr: string, textures: { uniformName: () => tex } }` for shader injection |
 | `col.toTexture(regl)` | Returns a raw regl texture (R channel, 2D layout) |
 | `col.refresh(plot)` | Refreshes if axis-reactive; returns `true` if updated |
+| `col.withOffset(glslExpr)` | Returns an `OffsetColumn` that samples at `a_pickId + (glslExpr)` |
 
 **`ArrayColumn` extras:**
 - `col.array` — the raw `Float32Array` (CPU-accessible)
+
+**`OffsetColumn`** is used in instanced rendering to read consecutive data points from the same underlying column without building interleaved CPU arrays:
+
+```javascript
+// Both attributes read from the same colX, offset by 0 or 1 per instance
+attributes: {
+  x0: colX.withOffset('0.0'),   // segment start
+  x1: colX.withOffset('1.0'),   // segment end
+  xi: colX.withOffset('a_endPoint'),  // per-vertex interpolation via template attribute
+}
+```
 
 Use `instanceof ArrayColumn` guards in `TextureComputation.compute()` when CPU data is required.
 
@@ -638,9 +659,9 @@ Returns an array of all registered quantity kind name strings.
 
 ## `Data`
 
-A utility class that normalises plain JavaScript objects of various shapes into a consistent columnar interface.
+A class that normalises a flat plain JavaScript dataset into a consistent columnar interface. `getData()` always returns a `ColumnData` instance.
 
-> **This class is completely optional.** The plotting framework itself never inspects or requires any particular shape for the `data` object passed to `plot.update()` — it is passed through unchanged to each layer type's `createLayer` and `getAxisConfig` functions. Only the built-in layer types call `Data.wrap`, and custom layer type authors may adopt it voluntarily for the same benefit.
+The framework calls `normalizeData()` on the `data` argument to `plot.update()`, which uses `Data.wrap()` internally. The result is always a `DataGroup` tree whose leaves are `Data` instances. Layer types receive this normalised `DataGroup` as their `data` argument and call `Data.wrap(data)` on it (a no-op when already normalised).
 
 ### Supported plain-object formats
 
@@ -712,14 +733,14 @@ Returns `string[]` — the list of column names.
 
 ### `data.getData(col)`
 
-Returns a `ColumnData` instance (`ArrayColumn` or `TextureColumn`) for column `col`, or `null` if the column does not exist. To get the underlying `Float32Array`, use `col.array` (only on `ArrayColumn` instances).
+Returns a `ColumnData` instance (`ArrayColumn` for plain `Float32Array` data) for column `col`, or `null` if the column does not exist. To get the underlying `Float32Array`, use `col.array` (only on `ArrayColumn` instances); to upload as a GPU texture use `col.toTexture(regl)` (any `ColumnData` subtype).
 
 ```javascript
-const col = d.getData('x')
+const col = d.getData('x')   // → ArrayColumn (or null)
 if (col instanceof ArrayColumn) {
-  const arr = col.array    // Float32Array
+  const arr = col.array      // Float32Array (CPU access)
 }
-const tex = col.toTexture(regl)  // GPU texture (any ColumnData subtype)
+const tex = col.toTexture(regl)  // regl texture (any ColumnData subtype)
 ```
 
 ### `data.getQuantityKind(col)`
@@ -740,9 +761,9 @@ Returns `[min, max]` for column `col`, or `undefined` if no domain was specified
 
 ## `DataGroup`
 
-A utility class that wraps a **nested** plain JavaScript object — where the top-level values are themselves data collections rather than typed arrays — into a consistent hierarchical interface. Column names are expressed in **dot notation**: `"child.column"` or `"subgroup.child.column"` at any depth.
+A class that wraps a **nested** object — where the top-level values are themselves data collections rather than typed arrays — into a consistent hierarchical interface. Column names are expressed in **dot notation**: `"child.column"` or `"subgroup.child.column"` at any depth. `getData()` always returns a `ColumnData` instance.
 
-> `DataGroup` is created automatically by `Data.wrap()` when the input does not match any of the flat `Data` formats. You do not normally construct it directly.
+`DataGroup` is the top-level container produced by `normalizeData()`. The framework stores the normalised `DataGroup` as `plot.currentData` and passes it as the `data` argument to every layer type's `createLayer` and `getAxisConfig`. It is created automatically by `Data.wrap()` when the input is a nested object; you do not normally construct it directly.
 
 ### Examples
 
@@ -809,7 +830,7 @@ Returns all dotted column names recursively across all children. The order follo
 
 ### `dataGroup.getData(col)`
 
-Returns the `Float32Array` for the dotted column name `col`, or `undefined` if the path does not exist.
+Returns the `ColumnData` instance for the dotted column name `col`, or `undefined` if the path does not exist. Delegates to the appropriate child `Data` or `DataGroup` node.
 
 ### `dataGroup.getQuantityKind(col)`
 
