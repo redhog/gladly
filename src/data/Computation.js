@@ -35,8 +35,9 @@ export class TextureComputation extends Computation {
     const rawTex = this.compute(regl, inputs, getAxisDomain)
     const ref = { texture: rawTex }
 
+    const hasColumnInputs = Object.values(inputs).some(v => v instanceof ColumnData)
     let refreshFn = null
-    if (accessedAxes.size > 0) {
+    if (accessedAxes.size > 0 || hasColumnInputs) {
       for (const axisId of accessedAxes) {
         cachedDomains[axisId] = plot ? plot.getAxisDomain(axisId) : null
       }
