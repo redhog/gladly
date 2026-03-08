@@ -224,6 +224,10 @@ export class Plot {
     this._axisCache = new Map()
     this._axesProxy = null
 
+    // Compiled regl draw commands keyed by vert+frag shader source.
+    // Persists across update() calls so shader recompilation is avoided.
+    this._shaderCache = new Map()
+
     // Auto-managed Float widgets keyed by a config-derived tag string.
     // Covers 1D colorbars, 2D colorbars, and filterbars in a single unified Map.
     this._floats = new Map()
@@ -268,10 +272,6 @@ export class Plot {
       this.height = height
       this.plotWidth = plotWidth
       this.plotHeight = plotHeight
-
-      if (this.regl) {
-        this.regl.destroy()
-      }
 
       this.svg.selectAll('*').remove()
 
@@ -364,54 +364,67 @@ export class Plot {
   _initialize() {
     const { layers = [], axes = {}, colorbars = [], transforms = [] } = this.currentConfig
 
-    const gl = this.canvas.getContext('webgl2')
-    if (!gl) throw new Error('WebGL 2.0 is required but not supported by this browser')
+    if (!this.regl) {
+      const gl = this.canvas.getContext('webgl2')
+      if (!gl) throw new Error('WebGL 2.0 is required but not supported by this browser')
 
-    // In WebGL 2.0, float texture support is core and is no longer exposed as
-    // OES_texture_float / OES_texture_float_linear extensions — getExtension()
-    // returns null for them. Regl v2.1.0 doesn't bypass its extension check for
-    // WebGL 2.0 contexts, so shim these two capability-only extensions (they have
-    // no methods, so returning {} is safe).
-    // The comparison is case-insensitive: regl normalises names to lowercase
-    // before calling getExtension (e.g. 'oes_texture_float').
-    const origGetExtension = gl.getExtension.bind(gl)
-    gl.getExtension = (name) => {
-      const lname = name.toLowerCase()
-      // OES_texture_float / OES_texture_float_linear: core in WebGL 2.0, no methods needed.
-      const wgl2CoreExts = ['oes_texture_float', 'oes_texture_float_linear']
-      if (wgl2CoreExts.includes(lname)) return origGetExtension(name) ?? {}
-      // ANGLE_instanced_arrays: core in WebGL 2.0 — proxy to native instancing methods.
-      if (lname === 'angle_instanced_arrays') {
-        return origGetExtension(name) ?? {
-          vertexAttribDivisorANGLE: gl.vertexAttribDivisor.bind(gl),
-          drawArraysInstancedANGLE: gl.drawArraysInstanced.bind(gl),
-          drawElementsInstancedANGLE: gl.drawElementsInstanced.bind(gl),
-          VERTEX_ATTRIB_ARRAY_DIVISOR_ANGLE: 0x88FE
+      // In WebGL 2.0, float texture support is core and is no longer exposed as
+      // OES_texture_float / OES_texture_float_linear extensions — getExtension()
+      // returns null for them. Regl v2.1.0 doesn't bypass its extension check for
+      // WebGL 2.0 contexts, so shim these two capability-only extensions (they have
+      // no methods, so returning {} is safe).
+      // The comparison is case-insensitive: regl normalises names to lowercase
+      // before calling getExtension (e.g. 'oes_texture_float').
+      const origGetExtension = gl.getExtension.bind(gl)
+      gl.getExtension = (name) => {
+        const lname = name.toLowerCase()
+        // OES_texture_float / OES_texture_float_linear: core in WebGL 2.0, no methods needed.
+        const wgl2CoreExts = ['oes_texture_float', 'oes_texture_float_linear']
+        if (wgl2CoreExts.includes(lname)) return origGetExtension(name) ?? {}
+        // ANGLE_instanced_arrays: core in WebGL 2.0 — proxy to native instancing methods.
+        if (lname === 'angle_instanced_arrays') {
+          return origGetExtension(name) ?? {
+            vertexAttribDivisorANGLE: gl.vertexAttribDivisor.bind(gl),
+            drawArraysInstancedANGLE: gl.drawArraysInstanced.bind(gl),
+            drawElementsInstancedANGLE: gl.drawElementsInstanced.bind(gl),
+            VERTEX_ATTRIB_ARRAY_DIVISOR_ANGLE: 0x88FE
+          }
         }
+        return origGetExtension(name)
       }
-      return origGetExtension(name)
+
+      // In WebGL 2.0, texImage2D with unsized internalformat GL_RGBA (0x1908) and
+      // type GL_FLOAT (0x1406) is invalid — WebGL 2.0 requires the sized format
+      // GL_RGBA32F (0x8814). Regl v2.1.0 does not upgrade the internal format
+      // automatically, so shim texImage2D to do it here.
+      const GL_RGBA = 0x1908, GL_FLOAT = 0x1406, GL_RGBA32F = 0x8814
+      const origTexImage2D = gl.texImage2D.bind(gl)
+      gl.texImage2D = function (...args) {
+        // signature: texImage2D(target, level, internalformat, width, height, border, format, type, data)
+        if (args.length >= 8 && args[2] === GL_RGBA && args[7] === GL_FLOAT) {
+          args = [...args]
+          args[2] = GL_RGBA32F
+        }
+        return origTexImage2D(...args)
+      }
+
+      this.regl = reglInit({
+        gl,
+        extensions: ['OES_texture_float', 'EXT_color_buffer_float', 'ANGLE_instanced_arrays'],
+        optionalExtensions: ['OES_texture_float_linear'],
+      })
+    } else {
+      // Notify regl of any canvas dimension change so its internal state stays
+      // consistent (e.g. default framebuffer size used by regl.clear).
+      this.regl.poll()
     }
 
-    // In WebGL 2.0, texImage2D with unsized internalformat GL_RGBA (0x1908) and
-    // type GL_FLOAT (0x1406) is invalid — WebGL 2.0 requires the sized format
-    // GL_RGBA32F (0x8814). Regl v2.1.0 does not upgrade the internal format
-    // automatically, so shim texImage2D to do it here.
-    const GL_RGBA = 0x1908, GL_FLOAT = 0x1406, GL_RGBA32F = 0x8814
-    const origTexImage2D = gl.texImage2D.bind(gl)
-    gl.texImage2D = function (...args) {
-      // signature: texImage2D(target, level, internalformat, width, height, border, format, type, data)
-      if (args.length >= 8 && args[2] === GL_RGBA && args[7] === GL_FLOAT) {
-        args = [...args]
-        args[2] = GL_RGBA32F
+    // Destroy GPU buffers owned by the previous layer set before rebuilding.
+    for (const layer of this.layers) {
+      for (const buf of Object.values(layer._bufferProps ?? {})) {
+        if (buf && typeof buf.destroy === 'function') buf.destroy()
       }
-      return origTexImage2D(...args)
     }
-
-    this.regl = reglInit({
-      gl,
-      extensions: ['OES_texture_float', 'EXT_color_buffer_float', 'ANGLE_instanced_arrays'],
-      optionalExtensions: ['OES_texture_float_linear'],
-    })
 
     this.layers = []
     this._dataTransformNodes = []
@@ -608,8 +621,11 @@ export class Plot {
       this._rafId = null
     }
 
+    this._shaderCache.clear()
+
     if (this.regl) {
       this.regl.destroy()
+      this.regl = null
     }
 
     this._renderCallbacks.clear()
@@ -697,12 +713,81 @@ export class Plot {
       for (const layer of gpuLayers) {
         layer.configLayerIndex = configLayerIndex
         try {
-          layer.draw = layer.type.createDrawCommand(this.regl, layer, this)
+          layer.draw = this._compileLayerDraw(layer)
         } catch (e) {
           throw new Error(`Layer '${layerTypeName}' (index ${configLayerIndex}) failed to build draw command: ${e.message}`, { cause: e })
         }
         this.layers.push(layer)
       }
+    }
+  }
+
+  _compileLayerDraw(layer) {
+    const drawConfig = layer.type.createDrawCommand(this.regl, layer, this)
+
+    // Layer types that fully override createDrawCommand (e.g. TileLayer) return
+    // a ready-to-call function instead of a plain drawConfig object. Pass through.
+    if (typeof drawConfig === 'function') return drawConfig
+
+    const shaderKey = drawConfig.vert + '\0' + drawConfig.frag
+
+    if (!this._shaderCache.has(shaderKey)) {
+      // Build a version of the draw config where all layer-specific data
+      // (attribute buffers and texture closures) is replaced with regl.prop()
+      // references. This compiled command can then be reused for any layer
+      // that produces the same shader source, regardless of its data.
+      const propAttrs = {}
+      for (const [key, val] of Object.entries(drawConfig.attributes)) {
+        const rawBuf = val?.buffer instanceof Float32Array ? val.buffer
+          : val instanceof Float32Array ? val : null
+        if (rawBuf !== null) {
+          const propKey = `attr_${key}`
+          const divisor = val?.divisor
+          propAttrs[key] = divisor !== undefined
+            ? { buffer: this.regl.prop(propKey), divisor }
+            : this.regl.prop(propKey)
+        } else {
+          propAttrs[key] = val
+        }
+      }
+
+      const propUniforms = {}
+      for (const [key, val] of Object.entries(drawConfig.uniforms)) {
+        propUniforms[key] = typeof val === 'function' ? this.regl.prop(key) : val
+      }
+
+      const propConfig = { ...drawConfig, attributes: propAttrs, uniforms: propUniforms }
+      this._shaderCache.set(shaderKey, this.regl(propConfig))
+    }
+
+    const cmd = this._shaderCache.get(shaderKey)
+
+    // Extract per-layer data: GPU buffers for Float32Array attributes,
+    // and texture closures for sampler uniforms.
+    const bufferProps = {}
+    for (const [key, val] of Object.entries(drawConfig.attributes)) {
+      const rawBuf = val?.buffer instanceof Float32Array ? val.buffer
+        : val instanceof Float32Array ? val : null
+      if (rawBuf !== null) {
+        bufferProps[`attr_${key}`] = this.regl.buffer(rawBuf)
+      }
+    }
+
+    const textureClosures = {}
+    for (const [key, val] of Object.entries(drawConfig.uniforms)) {
+      if (typeof val === 'function') textureClosures[key] = val
+    }
+
+    layer._bufferProps = bufferProps
+    layer._textureClosures = textureClosures
+
+    return (runtimeProps) => {
+      // Resolve texture closures at draw time so live texture swaps are picked up.
+      const textureProps = {}
+      for (const [key, fn] of Object.entries(textureClosures)) {
+        textureProps[key] = fn()
+      }
+      cmd({ ...bufferProps, ...textureProps, ...runtimeProps })
     }
   }
 

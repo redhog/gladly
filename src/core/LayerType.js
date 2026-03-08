@@ -171,7 +171,7 @@ export class LayerType {
           return [key, divisor !== undefined ? { buffer, divisor } : { buffer }]
         })
       ),
-      a_pickId: isInstanced ? { buffer: regl.buffer(pickIds), divisor: 1 } : regl.buffer(pickIds)
+      a_pickId: isInstanced ? { buffer: pickIds, divisor: 1 } : { buffer: pickIds }
     }
 
     // Build uniforms
@@ -284,7 +284,7 @@ export class LayerType {
       drawConfig.instances = regl.prop("instances")
     }
 
-    return regl(drawConfig)
+    return drawConfig
   }
 
   schema(data) {
