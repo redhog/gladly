@@ -43,7 +43,7 @@ dataPromise.then(data => {
 
 const plotConfig = {
     "transforms": [
-        { "name": "hist", "transform": { "HistogramData": { "input": "input.y1", "bins": 0 } } }
+        { "name": "hist", "transform": { "HistogramData": { "input": "input.y1", "bins": 0, "filter": "input.f1" } } }
     ],
     "layers": [
         {
@@ -70,6 +70,9 @@ const plotConfig = {
         },
         "count": {
             "label": "Count"
+        },
+        "incidence_angle_rad": {
+            "filterbar": "horizontal"
         }
     },
     "colorbars": []

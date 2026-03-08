@@ -629,12 +629,28 @@ export class Plot {
       const computedData = getComputedData(className)
       if (!computedData) throw new Error(`Unknown computed data type: '${className}'`)
 
+      // Register any filter axes declared by this transform before initializing,
+      // so that getAxisDomain() returns the filter range during compute().
+      const filterAxes = computedData.filterAxes(params, this.currentData)
+      for (const quantityKind of Object.values(filterAxes)) {
+        this.filterAxisRegistry.ensureFilterAxis(quantityKind)
+      }
+
       const node = new ComputedDataNode(computedData, params)
       try {
         node._initialize(this.regl, this.currentData, this)
       } catch (e) {
         throw new Error(`Transform '${name}' (${className}) failed to initialize: ${e.message}`, { cause: e })
       }
+
+      // Set data extents for filter axes so the Filterbar UI knows the full data range.
+      const filterDataExtents = node._meta?.filterDataExtents ?? {}
+      for (const [qk, extent] of Object.entries(filterDataExtents)) {
+        if (this.filterAxisRegistry.hasAxis(qk)) {
+          this.filterAxisRegistry.setDataExtent(qk, extent[0], extent[1])
+        }
+      }
+
       this.currentData._children[name] = node
       this._dataTransformNodes.push(node)
     }

@@ -18,6 +18,7 @@ export class ComputedDataNode {
     this._cachedDomains = {}
     this._regl = null
     this._dataGroup = null
+    this._version = 0
   }
 
   columns() {
@@ -27,10 +28,20 @@ export class ComputedDataNode {
   getData(col) {
     const ref = this._liveRefs[col]
     if (!ref) return null
+    const node = this
+    let lastVersion = this._version
     return new TextureColumn(ref, {
       domain: this._meta?.domains?.[col] ?? null,
       quantityKind: this._meta?.quantityKinds?.[col] ?? null,
-      length: ref.texture ? (ref.texture._dataLength ?? ref.texture.width) : null
+      length: ref.texture ? (ref.texture._dataLength ?? ref.texture.width) : null,
+      refreshFn: (plot) => {
+        node.refreshIfNeeded(plot)
+        if (node._version !== lastVersion) {
+          lastVersion = node._version
+          return true
+        }
+        return false
+      }
     })
   }
 
@@ -100,6 +111,7 @@ export class ComputedDataNode {
       newCachedDomains[axisId] = plot ? plot.getAxisDomain(axisId) : null
     }
     this._cachedDomains = newCachedDomains
+    this._version++
   }
 }
 

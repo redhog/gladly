@@ -16,6 +16,7 @@ export class ComputedData {
   columns() { throw new Error('Not implemented') }
   compute(regl, params, data, getAxisDomain) { throw new Error('Not implemented') }
   schema(data) { throw new Error('Not implemented') }
+  filterAxes(params, data) { return {} }
 }
 
 export class TextureComputation extends Computation {

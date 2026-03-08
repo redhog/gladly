@@ -1,4 +1,4 @@
-import { registerTextureComputation, registerComputedData, EXPRESSION_REF } from "./ComputationRegistry.js"
+import { registerTextureComputation, registerComputedData, EXPRESSION_REF, EXPRESSION_REF_OPT } from "./ComputationRegistry.js"
 import { TextureComputation, ComputedData } from "../data/Computation.js"
 import { ArrayColumn, uploadToTexture, SAMPLE_COLUMN_GLSL } from "../data/ColumnData.js"
 
@@ -148,6 +148,12 @@ registerTextureComputation('histogram', new HistogramComputation())
 class HistogramData extends ComputedData {
   columns() { return ['binCenters', 'counts'] }
 
+  filterAxes(params, data) {
+    if (!params.filter) return {}
+    const qk = data ? (data.getQuantityKind(params.filter) ?? params.filter) : params.filter
+    return { filter: qk }
+  }
+
   compute(regl, params, data, getAxisDomain) {
     const srcCol = data.getData(params.input)
     if (!(srcCol instanceof ArrayColumn)) {
@@ -165,9 +171,45 @@ class HistogramData extends ComputedData {
     const bins = params.bins || Math.max(10, Math.min(200, Math.ceil(Math.sqrt(srcV.length))))
     const binWidth = range / bins
 
+    // Normalize full input to [0,1] for bin assignment.
     const normalized = new Float32Array(srcV.length)
     for (let i = 0; i < srcV.length; i++) normalized[i] = (srcV[i] - min) / range
 
+    // Build optional filter mask and track filter axis for axis-reactivity.
+    let filterMask = null
+    const filterDataExtents = {}
+    if (params.filter) {
+      const filterCol = data.getData(params.filter)
+      if (!(filterCol instanceof ArrayColumn)) {
+        throw new Error(`HistogramData: filter '${params.filter}' must be a plain data column`)
+      }
+      const filterArr = filterCol.array
+      const filterQK = data.getQuantityKind(params.filter) ?? params.filter
+
+      let fMin = filterArr[0], fMax = filterArr[0]
+      for (let i = 1; i < filterArr.length; i++) {
+        if (filterArr[i] < fMin) fMin = filterArr[i]
+        if (filterArr[i] > fMax) fMax = filterArr[i]
+      }
+      filterDataExtents[filterQK] = [fMin, fMax]
+
+      // Calling getAxisDomain registers the filter axis as an accessed axis so the
+      // ComputedDataNode recomputes whenever the filter range changes.
+      const domain = getAxisDomain(filterQK)
+      const fRangeMin = domain?.[0] ?? null
+      const fRangeMax = domain?.[1] ?? null
+
+      if (fRangeMin !== null || fRangeMax !== null) {
+        filterMask = new Uint8Array(srcV.length)
+        for (let i = 0; i < filterArr.length; i++) {
+          if (fRangeMin !== null && filterArr[i] < fRangeMin) continue
+          if (fRangeMax !== null && filterArr[i] > fRangeMax) continue
+          filterMask[i] = 1
+        }
+      }
+    }
+
+    // Bin centers always span the full input range so bars don't shift when filtering.
     const nTexels = Math.ceil(bins / 4)
     const centersW = Math.min(nTexels, regl.limits.maxTextureSize)
     const centersH = Math.ceil(nTexels / centersW)
@@ -176,15 +218,24 @@ class HistogramData extends ComputedData {
     const binCentersTex = regl.texture({ data: centersData, shape: [centersW, centersH], type: 'float', format: 'rgba' })
     binCentersTex._dataLength = bins
 
-    const normalizedTex = uploadToTexture(regl, normalized)
+    // Build histogram from filtered (or full) normalized values.
+    let countInput = normalized
+    if (filterMask) {
+      const filtered = []
+      for (let i = 0; i < srcV.length; i++) {
+        if (filterMask[i]) filtered.push(normalized[i])
+      }
+      countInput = new Float32Array(filtered)
+    }
+    const normalizedTex = uploadToTexture(regl, countInput)
     const countsTex = makeHistogram(regl, normalizedTex, { bins })
     countsTex._dataLength = bins
 
     const histCpu = new Float32Array(bins)
-    for (let i = 0; i < srcV.length; i++) {
-      histCpu[Math.min(Math.floor(normalized[i] * bins), bins - 1)] += 1
+    for (let i = 0; i < countInput.length; i++) {
+      histCpu[Math.min(Math.floor(countInput[i] * bins), bins - 1)] += 1
     }
-    const maxCount = Math.max(...histCpu)
+    const maxCount = Math.max(...histCpu, 0)
 
     const xQK = (typeof params.input === 'string' && data)
       ? (data.getQuantityKind(params.input) ?? params.input)
@@ -203,6 +254,7 @@ class HistogramData extends ComputedData {
           counts: 'count',
         },
         binHalfWidth: binWidth / 2,
+        filterDataExtents,
       }
     }
   }
@@ -214,9 +266,10 @@ class HistogramData extends ComputedData {
       title: 'HistogramData',
       properties: {
         input: { type: 'string', enum: cols, description: 'Input data column' },
-        bins: { type: 'integer', description: 'Number of bins (0 for auto)', default: 0 }
+        bins: { type: 'integer', description: 'Number of bins (0 for auto)', default: 0 },
+        filter: { ...EXPRESSION_REF_OPT, description: 'Filter column — registers a filter axis (null for none)' }
       },
-      required: ['input']
+      required: ['input', 'filter']
     }
   }
 }
