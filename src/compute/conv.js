@@ -14,6 +14,7 @@ function nextPow2(n) {
   return 1 << Math.ceil(Math.log2(n));
 }
 
+// Internal: builds a 1-value-per-texel R-channel texture (not exposed via sampleColumn)
 function make1DTexture(regl, data, width) {
   return regl.texture({
     data,
@@ -27,6 +28,7 @@ function make1DTexture(regl, data, width) {
   });
 }
 
+// Internal: creates an R-channel FBO of given width
 function makeFBO(regl, width) {
   return regl.framebuffer({
     color: regl.texture({
@@ -38,6 +40,46 @@ function makeFBO(regl, width) {
     depth: false,
     stencil: false,
   });
+}
+
+// Repack a 1-value-per-texel R-channel texture into a 4-packed RGBA texture.
+// The source texture has elements at (i % srcW, i / srcW).r
+// The output has elements packed 4 per texel, _dataLength set.
+function repackToQuadTexture(regl, sourceTex, N) {
+  const nTexels = Math.ceil(N / 4)
+  const w = Math.min(nTexels, regl.limits.maxTextureSize)
+  const h = Math.ceil(nTexels / w)
+  const outputTex = regl.texture({ width: w, height: h, type: 'float', format: 'rgba' })
+  const outputFBO = regl.framebuffer({ color: outputTex, depth: false, stencil: false })
+
+  regl({
+    framebuffer: outputFBO,
+    vert: `#version 300 es
+    in vec2 position;
+    void main() { gl_Position = vec4(position, 0.0, 1.0); }`,
+    frag: `#version 300 es
+    precision highp float;
+    uniform sampler2D sourceTex;
+    uniform int totalLength;
+    out vec4 fragColor;
+    void main() {
+      ivec2 srcSz = textureSize(sourceTex, 0);
+      int texelI = int(gl_FragCoord.y) * ${w} + int(gl_FragCoord.x);
+      int base = texelI * 4;
+      float v0 = base + 0 < totalLength ? texelFetch(sourceTex, ivec2((base+0) % srcSz.x, (base+0) / srcSz.x), 0).r : 0.0;
+      float v1 = base + 1 < totalLength ? texelFetch(sourceTex, ivec2((base+1) % srcSz.x, (base+1) / srcSz.x), 0).r : 0.0;
+      float v2 = base + 2 < totalLength ? texelFetch(sourceTex, ivec2((base+2) % srcSz.x, (base+2) / srcSz.x), 0).r : 0.0;
+      float v3 = base + 3 < totalLength ? texelFetch(sourceTex, ivec2((base+3) % srcSz.x, (base+3) / srcSz.x), 0).r : 0.0;
+      fragColor = vec4(v0, v1, v2, v3);
+    }`,
+    attributes: { position: [[-1,-1],[1,-1],[-1,1],[1,1]] },
+    uniforms: { sourceTex, totalLength: N },
+    count: 4,
+    primitive: 'triangle strip'
+  })()
+
+  outputTex._dataLength = N
+  return outputTex
 }
 
 /*
@@ -185,6 +227,8 @@ export default function adaptiveConvolution(regl, signalArray, kernelArray) {
 
   const signalTex = make1DTexture(regl, signalArray, N);
 
+  let result;
+
   // Case 1: single pass
   if (K <= MAX_KERNEL_LOOP) {
     const kernelTex = make1DTexture(regl, kernelArray, K);
@@ -198,12 +242,12 @@ export default function adaptiveConvolution(regl, signalArray, kernelArray) {
       fbo
     });
 
-    return fbo.color[0];
+    result = fbo.color[0];
   }
 
   // Case 2: chunked
-  if (K <= 8192) {
-    return chunked({
+  else if (K <= 8192) {
+    result = chunked({
       signalTex,
       kernel: kernelArray,
       N
@@ -211,7 +255,12 @@ export default function adaptiveConvolution(regl, signalArray, kernelArray) {
   }
 
   // Case 3: FFT
-  return fftConvolution(regl, signalArray, kernelArray);
+  else {
+    result = fftConvolution(regl, signalArray, kernelArray);
+  }
+
+  // Repack internal R-channel result into 4-packed output for sampleColumn
+  return repackToQuadTexture(regl, result, N);
 }
 
 class ConvolutionComputation extends TextureComputation {

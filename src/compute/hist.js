@@ -38,14 +38,18 @@ function autoBins(data, options = {}) {
   return autoBinsScott(data, options)
 }
 
-// Build a histogram texture from a regl texture (values in R channel).
+// Build a histogram texture from a column texture (4 values per texel).
 // Assumes input values are already normalized to [0, 1].
-// Returns a regl texture: width=bins, height=1, counts in R channel.
+// Returns a 4-packed texture: bins values packed 4 per texel.
 export default function makeHistogram(regl, inputTex, options = {}) {
-  const N = inputTex._dataLength ?? inputTex.width * inputTex.height
+  const N = inputTex._dataLength ?? inputTex.width * inputTex.height * 4
   const bins = options.bins || 1024
 
-  const histTex = regl.texture({ width: bins, height: 1, type: 'float', format: 'rgba' })
+  const nTexels = Math.ceil(bins / 4)
+  const wTexels = Math.min(nTexels, regl.limits.maxTextureSize)
+  const hTexels = Math.ceil(nTexels / wTexels)
+
+  const histTex = regl.texture({ width: wTexels, height: hTexels, type: 'float', format: 'rgba' })
   const histFBO = regl.framebuffer({ color: histTex, depth: false, stencil: false })
   regl.clear({ color: [0, 0, 0, 0], framebuffer: histFBO })
 
@@ -61,16 +65,26 @@ precision highp sampler2D;
 in float a_pickId;
 uniform sampler2D u_inputTex;
 ${SAMPLE_COLUMN_GLSL}
+out float v_chan;
 void main() {
   float value = sampleColumn(u_inputTex, a_pickId);
-  float x = (floor(value * ${bins}.0) + 0.5) / ${bins}.0 * 2.0 - 1.0;
-  gl_Position = vec4(x, 0.0, 0.0, 1.0);
+  int b = int(clamp(floor(value * float(${bins})), 0.0, float(${bins - 1})));
+  int texelI = b / 4;
+  int chan = b % 4;
+  float tx = (float(texelI % ${wTexels}) + 0.5) / float(${wTexels}) * 2.0 - 1.0;
+  float ty = (float(texelI / ${wTexels}) + 0.5) / float(${hTexels}) * 2.0 - 1.0;
+  gl_Position = vec4(tx, ty, 0.0, 1.0);
   gl_PointSize = 1.0;
+  v_chan = float(chan);
 }`,
     frag: `#version 300 es
 precision highp float;
+in float v_chan;
 out vec4 fragColor;
-void main() { fragColor = vec4(1.0, 0.0, 0.0, 1.0); }`,
+void main() {
+  int c = int(v_chan + 0.5);
+  fragColor = vec4(float(c == 0), float(c == 1), float(c == 2), float(c == 3));
+}`,
     attributes: { a_pickId: pickIds },
     uniforms: { u_inputTex: inputTex },
     count: N,
@@ -78,6 +92,7 @@ void main() { fragColor = vec4(1.0, 0.0, 0.0, 1.0); }`,
   })
 
   drawPoints()
+  histTex._dataLength = bins
   return histTex
 }
 
@@ -153,9 +168,12 @@ class HistogramData extends ComputedData {
     const normalized = new Float32Array(srcV.length)
     for (let i = 0; i < srcV.length; i++) normalized[i] = (srcV[i] - min) / range
 
-    const centersData = new Float32Array(bins * 4)
-    for (let i = 0; i < bins; i++) centersData[i * 4] = min + (i + 0.5) * binWidth
-    const binCentersTex = regl.texture({ data: centersData, shape: [bins, 1], type: 'float', format: 'rgba' })
+    const nTexels = Math.ceil(bins / 4)
+    const centersW = Math.min(nTexels, regl.limits.maxTextureSize)
+    const centersH = Math.ceil(nTexels / centersW)
+    const centersData = new Float32Array(centersW * centersH * 4)
+    for (let i = 0; i < bins; i++) centersData[i] = min + (i + 0.5) * binWidth
+    const binCentersTex = regl.texture({ data: centersData, shape: [centersW, centersH], type: 'float', format: 'rgba' })
     binCentersTex._dataLength = bins
 
     const normalizedTex = uploadToTexture(regl, normalized)

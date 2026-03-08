@@ -13,9 +13,7 @@ function subtractTextures(regl, texA, texB) {
     vert: `#version 300 es
       precision highp float;
       in vec2 position;
-      void main() {
-        gl_Position = vec4(position, 0.0, 1.0);
-      }
+      void main() { gl_Position = vec4(position, 0.0, 1.0); }
     `,
     frag: `#version 300 es
       precision highp float;
@@ -24,9 +22,7 @@ function subtractTextures(regl, texA, texB) {
       out vec4 fragColor;
       void main() {
         ivec2 coord = ivec2(gl_FragCoord.xy);
-        float a = texelFetch(texA, coord, 0).r;
-        float b = texelFetch(texB, coord, 0).r;
-        fragColor = vec4(a - b, 0.0, 0.0, 1.0);
+        fragColor = texelFetch(texA, coord, 0) - texelFetch(texB, coord, 0);
       }
     `,
     attributes: { position: [[-1, -1], [1, -1], [-1, 1], [1, 1]] },
@@ -42,15 +38,16 @@ function subtractTextures(regl, texA, texB) {
 /**
  * Generic 1D convolution filter
  * @param {regl} regl - regl context
- * @param {Texture} inputTex - GPU texture with values in R channel, _dataLength set
+ * @param {Texture} inputTex - 4-packed GPU texture, _dataLength set
  * @param {Float32Array} kernel - 1D kernel weights
- * @returns {Texture} - filtered output texture
+ * @returns {Texture} - filtered output texture (4-packed, same dimensions as input)
  */
 function filter1D(regl, inputTex, kernel) {
-  const length = inputTex._dataLength ?? inputTex.width * inputTex.height
+  const length = inputTex._dataLength ?? inputTex.width * inputTex.height * 4
   const w = inputTex.width
   const h = inputTex.height
 
+  // Kernel texture stays R-channel (internal, not exposed via sampleColumn)
   const kernelData = new Float32Array(kernel.length * 4)
   for (let i = 0; i < kernel.length; i++) kernelData[i * 4] = kernel[i]
   const kernelTex = regl.texture({ data: kernelData, shape: [kernel.length, 1], type: 'float', format: 'rgba' })
@@ -64,9 +61,7 @@ function filter1D(regl, inputTex, kernel) {
     vert: `#version 300 es
       precision highp float;
       in vec2 position;
-      void main() {
-        gl_Position = vec4(position, 0.0, 1.0);
-      }
+      void main() { gl_Position = vec4(position, 0.0, 1.0); }
     `,
     frag: `#version 300 es
       precision highp float;
@@ -79,16 +74,18 @@ function filter1D(regl, inputTex, kernel) {
       ${SAMPLE_COLUMN_GLSL}
       void main() {
         ivec2 sz = textureSize(inputTex, 0);
-        ivec2 coord = ivec2(gl_FragCoord.xy);
-        int di = coord.y * sz.x + coord.x;
-        float sum = 0.0;
+        int texelI = int(gl_FragCoord.y) * sz.x + int(gl_FragCoord.x);
+        int base = texelI * 4;
+        float s0 = 0.0, s1 = 0.0, s2 = 0.0, s3 = 0.0;
         for (int i = -16; i <= 16; i++) {
           if (i + 16 >= radius * 2 + 1) break;
-          int si = clamp(di + i, 0, totalLength - 1);
           float kw = texelFetch(kernelTex, ivec2(i + radius, 0), 0).r;
-          sum += sampleColumn(inputTex, float(si)) * kw;
+          s0 += sampleColumn(inputTex, float(clamp(base + 0 + i, 0, totalLength - 1))) * kw;
+          s1 += sampleColumn(inputTex, float(clamp(base + 1 + i, 0, totalLength - 1))) * kw;
+          s2 += sampleColumn(inputTex, float(clamp(base + 2 + i, 0, totalLength - 1))) * kw;
+          s3 += sampleColumn(inputTex, float(clamp(base + 3 + i, 0, totalLength - 1))) * kw;
         }
-        fragColor = vec4(sum, 0.0, 0.0, 1.0);
+        fragColor = vec4(s0, s1, s2, s3);
       }
     `,
     attributes: { position: [[-1, -1], [1, -1], [-1, 1], [1, 1]] },
@@ -118,7 +115,7 @@ function gaussianKernel(size, sigma) {
 /**
  * Low-pass filter
  * @param {regl} regl
- * @param {Texture} inputTex - GPU texture with values in R channel
+ * @param {Texture} inputTex - 4-packed GPU texture
  */
 function lowPass(regl, inputTex, sigma = 3, kernelSize = null) {
   const size = kernelSize || (Math.ceil(sigma * 6) | 1) // ensure odd
@@ -129,7 +126,7 @@ function lowPass(regl, inputTex, sigma = 3, kernelSize = null) {
 /**
  * High-pass filter: subtract low-pass
  * @param {regl} regl
- * @param {Texture} inputTex - GPU texture with values in R channel
+ * @param {Texture} inputTex - 4-packed GPU texture
  */
 function highPass(regl, inputTex, sigma = 3, kernelSize = null) {
   const low = lowPass(regl, inputTex, sigma, kernelSize)
@@ -139,7 +136,7 @@ function highPass(regl, inputTex, sigma = 3, kernelSize = null) {
 /**
  * Band-pass filter: difference of low-pass filters
  * @param {regl} regl
- * @param {Texture} inputTex - GPU texture with values in R channel
+ * @param {Texture} inputTex - 4-packed GPU texture
  */
 function bandPass(regl, inputTex, sigmaLow, sigmaHigh) {
   const lowHigh = lowPass(regl, inputTex, sigmaHigh)

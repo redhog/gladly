@@ -1,16 +1,25 @@
 // ─── GLSL helper injected into any shader that samples column data ─────────────
+// Values are packed 4 per texel (RGBA). Element i → texel i/4, channel i%4.
 export const SAMPLE_COLUMN_GLSL = `float sampleColumn(sampler2D tex, float idx) {
   ivec2 sz = textureSize(tex, 0);
   int i = int(idx);
-  return texelFetch(tex, ivec2(i % sz.x, i / sz.x), 0).r;
+  int texelI = i / 4;
+  int chan = i % 4;
+  ivec2 coord = ivec2(texelI % sz.x, texelI / sz.x);
+  vec4 texel = texelFetch(tex, coord, 0);
+  if (chan == 0) return texel.r;
+  if (chan == 1) return texel.g;
+  if (chan == 2) return texel.b;
+  return texel.a;
 }`
 
-// Upload a Float32Array as a 2D RGBA texture with values in the R channel.
+// Upload a Float32Array as a 2D RGBA texture with 4 values packed per texel.
 export function uploadToTexture(regl, array) {
-  const w = Math.min(array.length, regl.limits.maxTextureSize)
-  const h = Math.ceil(array.length / w)
+  const nTexels = Math.ceil(array.length / 4)
+  const w = Math.min(nTexels, regl.limits.maxTextureSize)
+  const h = Math.ceil(nTexels / w)
   const texData = new Float32Array(w * h * 4)
-  for (let i = 0; i < array.length; i++) texData[i * 4] = array[i]
+  for (let i = 0; i < array.length; i++) texData[i] = array[i]
   const tex = regl.texture({ data: texData, shape: [w, h], type: 'float', format: 'rgba' })
   tex._dataLength = array.length
   return tex
@@ -26,7 +35,7 @@ export class ColumnData {
   // path must be a valid GLSL identifier fragment (no dots or special chars)
   resolve(path, regl) { throw new Error('Not implemented') }
 
-  // Returns a regl texture (R channel, 1 value per texel, 2D layout).
+  // Returns a regl texture (4 values per texel, RGBA, 2D layout).
   // May run a GPU render pass for GlslColumn.
   toTexture(regl) { throw new Error('Not implemented') }
 
@@ -144,39 +153,46 @@ export class GlslColumn extends ColumnData {
   toTexture(regl) {
     const N = this.length
     if (N === null) throw new Error('GlslColumn: cannot determine length for toTexture()')
-    const w = Math.min(N, regl.limits.maxTextureSize)
-    const h = Math.ceil(N / w)
+    const nTexels = Math.ceil(N / 4)
+    const w = Math.min(nTexels, regl.limits.maxTextureSize)
+    const h = Math.ceil(nTexels / w)
     const { glslExpr, textures } = this.resolve('glsl_mat', regl)
-    const pickIds = new Float32Array(N)
-    for (let i = 0; i < N; i++) pickIds[i] = i
-    const outputTex = regl.texture({ width: w, height: h, type: 'float', format: 'rgba' })
-    const outputFBO = regl.framebuffer({ color: outputTex, depth: false, stencil: false })
     const samplerDecls = Object.keys(textures).map(n => `uniform sampler2D ${n};`).join('\n')
     const vert = `#version 300 es
 precision highp float;
-precision highp sampler2D;
-in float a_pickId;
-${samplerDecls}
-${SAMPLE_COLUMN_GLSL}
-out float v_value;
+in vec2 a_position;
 void main() {
-  float tx = mod(a_pickId, ${w}.0);
-  float ty = floor(a_pickId / ${w}.0);
-  float x = (tx + 0.5) / ${w}.0 * 2.0 - 1.0;
-  float y = (ty + 0.5) / ${h}.0 * 2.0 - 1.0;
-  gl_Position = vec4(x, y, 0.0, 1.0);
-  gl_PointSize = 1.0;
-  v_value = ${glslExpr};
+  gl_Position = vec4(a_position, 0.0, 1.0);
 }`
     const frag = `#version 300 es
 precision highp float;
-in float v_value;
+precision highp sampler2D;
+${samplerDecls}
+${SAMPLE_COLUMN_GLSL}
 out vec4 fragColor;
-void main() { fragColor = vec4(v_value, 0.0, 0.0, 1.0); }`
+float gladly_eval(float a_pickId) {
+  return ${glslExpr};
+}
+void main() {
+  int texelI = int(gl_FragCoord.y) * ${w} + int(gl_FragCoord.x);
+  int base = texelI * 4;
+  float v0 = base + 0 < ${N} ? gladly_eval(float(base + 0)) : 0.0;
+  float v1 = base + 1 < ${N} ? gladly_eval(float(base + 1)) : 0.0;
+  float v2 = base + 2 < ${N} ? gladly_eval(float(base + 2)) : 0.0;
+  float v3 = base + 3 < ${N} ? gladly_eval(float(base + 3)) : 0.0;
+  fragColor = vec4(v0, v1, v2, v3);
+}`
+    const outputTex = regl.texture({ width: w, height: h, type: 'float', format: 'rgba' })
+    const outputFBO = regl.framebuffer({ color: outputTex, depth: false, stencil: false })
     const uniforms = {}
     for (const [k, fn] of Object.entries(textures)) uniforms[k] = fn
-    regl({ framebuffer: outputFBO, vert, frag,
-      attributes: { a_pickId: pickIds }, uniforms, count: N, primitive: 'points' })()
+    regl({
+      framebuffer: outputFBO, vert, frag,
+      attributes: { a_position: [[-1, -1], [1, -1], [-1, 1], [1, 1]] },
+      uniforms,
+      count: 4,
+      primitive: 'triangle strip'
+    })()
     outputTex._dataLength = N
     return outputTex
   }
