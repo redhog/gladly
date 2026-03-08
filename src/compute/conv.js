@@ -1,5 +1,6 @@
 import { fftConvolution } from "./fft.js"
-import { registerTextureComputation, TextureComputation, EXPRESSION_REF, resolveQuantityKind } from "./ComputationRegistry.js"
+import { registerTextureComputation, EXPRESSION_REF, resolveQuantityKind } from "./ComputationRegistry.js"
+import { TextureComputation } from "../data/Computation.js"
 
 /*
   ============================================================

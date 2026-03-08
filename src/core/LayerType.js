@@ -1,7 +1,8 @@
 import { Layer } from "./Layer.js"
 import { buildColorGlsl } from "../colorscales/ColorscaleRegistry.js"
 import { buildFilterGlsl } from "../axes/FilterAxisRegistry.js"
-import { resolveAttributeExpr, SAMPLE_COLUMN_GLSL } from "../compute/ComputationRegistry.js"
+import { resolveAttributeExpr } from "../compute/ComputationRegistry.js"
+import { SAMPLE_COLUMN_GLSL } from "../data/ColumnData.js"
 
 function buildSpatialGlsl() {
   return `uniform vec2 xDomain;

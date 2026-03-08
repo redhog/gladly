@@ -7,7 +7,7 @@
 // (a_x0, a_y0) producing a zero-length degenerate line that the rasterizer discards.
 
 import { ScatterLayerTypeBase } from "./ScatterShared.js"
-import { Data } from "../core/Data.js"
+import { Data } from "../data/Data.js"
 import { registerLayerType } from "../core/LayerTypeRegistry.js"
 import { EXPRESSION_REF_OPT, resolveQuantityKind, resolveExprToColumn } from "../compute/ComputationRegistry.js"
 

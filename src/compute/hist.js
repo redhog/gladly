@@ -1,7 +1,6 @@
-import {
-  registerTextureComputation, TextureComputation, EXPRESSION_REF,
-  ComputedData, registerComputedData, ArrayColumn, uploadToTexture, SAMPLE_COLUMN_GLSL
-} from "./ComputationRegistry.js"
+import { registerTextureComputation, registerComputedData, EXPRESSION_REF } from "./ComputationRegistry.js"
+import { TextureComputation, ComputedData } from "../data/Computation.js"
+import { ArrayColumn, uploadToTexture, SAMPLE_COLUMN_GLSL } from "../data/ColumnData.js"
 
 function autoBinsScott(data, options = {}) {
   const N = data.length

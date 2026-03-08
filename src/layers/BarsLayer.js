@@ -1,5 +1,5 @@
 import { LayerType } from "../core/LayerType.js"
-import { Data } from "../core/Data.js"
+import { Data } from "../data/Data.js"
 import { registerLayerType } from "../core/LayerTypeRegistry.js"
 import { AXES } from "../axes/AxisRegistry.js"
 

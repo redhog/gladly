@@ -1,4 +1,4 @@
-import { ArrayColumn, TextureColumn } from '../compute/ComputationRegistry.js'
+import { ArrayColumn, TextureColumn } from './ColumnData.js'
 
 function domainsEqual(a, b) {
   if (a === b) return true

@@ -1,4 +1,6 @@
-import { ComputedData, registerComputedData, EXPRESSION_REF, resolveExprToColumn, ColumnData } from "./ComputationRegistry.js"
+import { registerComputedData, EXPRESSION_REF, resolveExprToColumn } from "./ComputationRegistry.js"
+import { ComputedData } from "../data/Computation.js"
+import { ColumnData } from "../data/ColumnData.js"
 
 class ElementwiseData extends ComputedData {
   columns(params) {

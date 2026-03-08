@@ -1,7 +1,7 @@
 import { LayerType } from "../../src/core/LayerType.js"
 import { registerLayerType } from "../../src/core/LayerTypeRegistry.js"
 import { AXES } from "../../src/axes/AxisRegistry.js"
-import { Data } from "../../src/core/Data.js"
+import { Data } from "../../src/data/Data.js"
 
 function makeMultiLineVert(hasFilter) {
   return `#version 300 es

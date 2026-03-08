@@ -1,2 +1,4 @@
 * Remove computed attributes from layer types - only dataset columns now
-
+* Add filter axis to ComputedData
+* 1d colorbar shows color ramp in wrong direction (horizontal for a vertical colorbar!)
+* ComputationRegistry: uploadToTexture: copies all data and makes sparse data format wasting 3/4 of all space!!

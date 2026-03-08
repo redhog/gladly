@@ -1,6 +1,6 @@
 import { LayerType } from "../core/LayerType.js"
 import { AXES } from "../axes/AxisRegistry.js"
-import { Data } from "../core/Data.js"
+import { Data } from "../data/Data.js"
 import { computationSchema, EXPRESSION_REF, EXPRESSION_REF_OPT, resolveQuantityKind } from "../compute/ComputationRegistry.js"
 
 export class ScatterLayerTypeBase extends LayerType {

@@ -1,4 +1,6 @@
-import { registerTextureComputation, TextureComputation, EXPRESSION_REF, ArrayColumn, resolveQuantityKind, SAMPLE_COLUMN_GLSL } from "./ComputationRegistry.js"
+import { registerTextureComputation, EXPRESSION_REF, resolveQuantityKind } from "./ComputationRegistry.js"
+import { TextureComputation } from "../data/Computation.js"
+import { ArrayColumn, SAMPLE_COLUMN_GLSL } from "../data/ColumnData.js"
 
 function subtractTextures(regl, texA, texB) {
   const w = texA.width

@@ -10,7 +10,7 @@ import { getAxisQuantityKind, getScaleTypeFloat } from "../axes/AxisQuantityKind
 import { getRegisteredColorscales, getRegistered2DColorscales } from "../colorscales/ColorscaleRegistry.js"
 import { Float } from "../floats/Float.js"
 import { computationSchema, buildTransformSchema, getComputedData } from "../compute/ComputationRegistry.js"
-import { Data, DataGroup, ComputedDataNode, normalizeData } from "./Data.js"
+import { Data, DataGroup, ComputedDataNode, normalizeData } from "../data/Data.js"
 
 function buildPlotSchema(data, config) {
   const layerTypes = getRegisteredLayerTypes()

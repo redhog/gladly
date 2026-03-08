@@ -1,8 +1,8 @@
 import { LayerType } from "../core/LayerType.js"
-import { Data } from "../core/Data.js"
+import { Data } from "../data/Data.js"
 import { registerLayerType } from "../core/LayerTypeRegistry.js"
 import { AXES } from "../axes/AxisRegistry.js"
-import { ArrayColumn } from "../compute/ComputationRegistry.js"
+import { ArrayColumn } from "../data/ColumnData.js"
 
 // Ensure the 'histogram' and 'filteredHistogram' texture computations are registered.
 import "../compute/hist.js"

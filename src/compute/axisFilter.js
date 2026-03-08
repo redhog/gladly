@@ -1,4 +1,6 @@
-import { registerTextureComputation, TextureComputation, EXPRESSION_REF, ArrayColumn, uploadToTexture } from "./ComputationRegistry.js"
+import { registerTextureComputation, EXPRESSION_REF } from "./ComputationRegistry.js"
+import { TextureComputation } from "../data/Computation.js"
+import { ArrayColumn, uploadToTexture } from "../data/ColumnData.js"
 import makeHistogram from "./hist.js"
 
 // Texture computation that filters the input data by a filter axis range and
