@@ -71,7 +71,7 @@ export const colorbar2dLayerType = new LayerType({
     required: ["xAxis", "yAxis"]
   }),
 
-  createLayer: function(parameters) {
+  createLayer: function(regl, parameters) {
     const { xAxis, yAxis } = parameters
     return [{
       attributes: { cx: quadCx, cy: quadCy },

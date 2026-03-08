@@ -55,7 +55,7 @@ export const colorbarLayerType = new LayerType({
     required: ["colorAxis"]
   }),
 
-  createLayer: function(parameters) {
+  createLayer: function(regl, parameters) {
     const { colorAxis, orientation = "horizontal" } = parameters
     return [{
       attributes: { cx: quadCx, cy: quadCy },
