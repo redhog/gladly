@@ -173,4 +173,4 @@ plot.update({
 - **[Writing Layer Types](api/LayerTypes.md)** — `LayerType` constructor, shaders, color axes, filter axes, GLSL helpers, constants
 - **[Computed Attributes](api/ComputedAttributes.md)** — GPU texture and GLSL computations in layer attributes; `TextureComputation` / `GlslComputation` base classes; `EXPRESSION_REF`; `computationSchema`; built-in computations
 - **[Built-in Layer Types](api/BuiltInLayerTypes.md)** — `points`, `lines`, `colorbar`, `filterbar` layer type reference
-- **[API Reference](api/Reference.md)** — `Plot`, `registerLayerType`, `getLayerType`, `Data`, `DataGroup` and other public API entries
+- **[API Reference](api/Reference.md)** — `Plot`, `ComputePipeline`, `registerLayerType`, `getLayerType`, `Data`, `DataGroup` and other public API entries
