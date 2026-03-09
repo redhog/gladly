@@ -9,20 +9,24 @@ set -euo pipefail
 rm -rf dist-example
 mkdir -p dist-example
 
-# Rewrite import map and script src paths:
-#   /node_modules/X  →  ./node_modules/X  (import map entries + UMD script tags)
-#   /example/vendor/ →  ./vendor/          (vendor shim entries)
-sed \
-  -e 's|src="/node_modules/|src="./node_modules/|g' \
-  -e 's|"/node_modules/|"./node_modules/|g' \
+# Keep the full example/ directory structure so all relative imports
+# (e.g. "../src/index.js", "../../src/...") remain valid.
+cp -r example dist-example/
+
+# Rewrite only the import map's absolute /node_modules/ and /example/vendor/
+# paths to be relative from example/index.html's new location.
+#   /node_modules/X  →  ../node_modules/X
+#   /example/vendor/ →  ./vendor/
+sed -i \
+  -e 's|src="/node_modules/|src="../node_modules/|g' \
+  -e 's|"/node_modules/|"../node_modules/|g' \
   -e 's|"/example/vendor/|"./vendor/|g' \
-  example/index.html > dist-example/index.html
+  dist-example/example/index.html
 
-# Example JS files and vendor shims
-cp example/*.js dist-example/
-cp -r example/vendor dist-example/
+# Root redirect so the Pages homepage points to the example
+echo '<meta http-equiv="refresh" content="0;url=example/">' > dist-example/index.html
 
-# Gladly source (imported directly by example scripts)
+# Gladly source (imported directly by example scripts via ../src/...)
 cp -r src dist-example/
 
 # node_modules — only the specific files referenced by the import map
