@@ -1,7 +1,5 @@
-import reglInit from "regl"
 import * as d3 from "d3-selection"
 import { AXES, AxisRegistry } from "../axes/AxisRegistry.js"
-import { Axis } from "../axes/Axis.js"
 import { ColorAxisRegistry } from "../axes/ColorAxisRegistry.js"
 import { FilterAxisRegistry } from "../axes/FilterAxisRegistry.js"
 import { ZoomController } from "../axes/ZoomController.js"
@@ -10,8 +8,9 @@ import { getAxisQuantityKind, getScaleTypeFloat } from "../axes/AxisQuantityKind
 import { getRegisteredColorscales, getRegistered2DColorscales } from "../colorscales/ColorscaleRegistry.js"
 import { Float } from "../floats/Float.js"
 import { computationSchema, buildTransformSchema, getComputedData } from "../compute/ComputationRegistry.js"
-import { Data, DataGroup, ComputedDataNode, normalizeData } from "../data/Data.js"
+import { DataGroup, normalizeData } from "../data/Data.js"
 import { enqueueRegl, compileEnqueuedShaders } from "./ShaderQueue.js"
+import { GlBase } from "./GlBase.js"
 
 function buildPlotSchema(data, config) {
   const layerTypes = getRegisteredLayerTypes()
@@ -175,7 +174,7 @@ function buildPlotSchema(data, config) {
   }
 }
 
-export class Plot {
+export class Plot extends GlBase {
   // Registry of float factories keyed by type name.
   // Each entry: { factory(parentPlot, container, opts) → widget, defaultSize(opts) → {width,height} }
   // Populated by Colorbar.js, Filterbar.js, Colorbar2d.js at module load time.
@@ -186,6 +185,7 @@ export class Plot {
   }
 
   constructor(container, { margin } = {}) {
+    super()
     this.container = container
     this.margin = margin ?? { top: 60, right: 60, bottom: 60, left: 60 }
 
@@ -208,22 +208,13 @@ export class Plot {
       .style('user-select', 'none')
 
     this.currentConfig = null
-    this.currentData = null
-    this._rawData = null          // last user-provided data (pre-transform)
-    this.regl = null
     this.layers = []
-    this._dataTransformNodes = [] // ComputedDataNode instances from _processTransforms
     this.axisRegistry = null
     this.colorAxisRegistry = null
-    this.filterAxisRegistry = null
     this._renderCallbacks = new Set()
     this._zoomEndCallbacks = new Set()
     this._dirty = false
     this._rafId = null
-
-    // Stable Axis instances keyed by axis name — persist across update() calls
-    this._axisCache = new Map()
-    this._axesProxy = null
 
     // Compiled regl draw commands keyed by vert+frag shader source.
     // Persists across update() calls so shader recompilation is avoided.
@@ -290,31 +281,6 @@ export class Plot {
     this.update({})
   }
 
-  /**
-   * Returns a stable Axis instance for the given axis name.
-   * Works for spatial axes (e.g. "xaxis_bottom") and quantity-kind axes (color/filter).
-   * The same instance is returned across plot.update() calls, so links survive updates.
-   *
-   * Usage: plot.axes.xaxis_bottom, plot.axes["velocity_ms"], etc.
-   */
-  get axes() {
-    if (!this._axesProxy) {
-      this._axesProxy = new Proxy(this._axisCache, {
-        get: (cache, name) => {
-          if (typeof name !== 'string') return undefined
-          if (!cache.has(name)) cache.set(name, new Axis(this, name))
-          return cache.get(name)
-        }
-      })
-    }
-    return this._axesProxy
-  }
-
-  _getAxis(name) {
-    if (!this._axisCache.has(name)) this._axisCache.set(name, new Axis(this, name))
-    return this._axisCache.get(name)
-  }
-
   getConfig() {
     const axes = { ...(this.currentConfig?.axes ?? {}) }
 
@@ -366,54 +332,7 @@ export class Plot {
     const { layers = [], axes = {}, colorbars = [], transforms = [] } = this.currentConfig
 
     if (!this.regl) {
-      const gl = this.canvas.getContext('webgl2')
-      if (!gl) throw new Error('WebGL 2.0 is required but not supported by this browser')
-
-      // In WebGL 2.0, float texture support is core and is no longer exposed as
-      // OES_texture_float / OES_texture_float_linear extensions — getExtension()
-      // returns null for them. Regl v2.1.0 doesn't bypass its extension check for
-      // WebGL 2.0 contexts, so shim these two capability-only extensions (they have
-      // no methods, so returning {} is safe).
-      // The comparison is case-insensitive: regl normalises names to lowercase
-      // before calling getExtension (e.g. 'oes_texture_float').
-      const origGetExtension = gl.getExtension.bind(gl)
-      gl.getExtension = (name) => {
-        const lname = name.toLowerCase()
-        // OES_texture_float / OES_texture_float_linear: core in WebGL 2.0, no methods needed.
-        const wgl2CoreExts = ['oes_texture_float', 'oes_texture_float_linear']
-        if (wgl2CoreExts.includes(lname)) return origGetExtension(name) ?? {}
-        // ANGLE_instanced_arrays: core in WebGL 2.0 — proxy to native instancing methods.
-        if (lname === 'angle_instanced_arrays') {
-          return origGetExtension(name) ?? {
-            vertexAttribDivisorANGLE: gl.vertexAttribDivisor.bind(gl),
-            drawArraysInstancedANGLE: gl.drawArraysInstanced.bind(gl),
-            drawElementsInstancedANGLE: gl.drawElementsInstanced.bind(gl),
-            VERTEX_ATTRIB_ARRAY_DIVISOR_ANGLE: 0x88FE
-          }
-        }
-        return origGetExtension(name)
-      }
-
-      // In WebGL 2.0, texImage2D with unsized internalformat GL_RGBA (0x1908) and
-      // type GL_FLOAT (0x1406) is invalid — WebGL 2.0 requires the sized format
-      // GL_RGBA32F (0x8814). Regl v2.1.0 does not upgrade the internal format
-      // automatically, so shim texImage2D to do it here.
-      const GL_RGBA = 0x1908, GL_FLOAT = 0x1406, GL_RGBA32F = 0x8814
-      const origTexImage2D = gl.texImage2D.bind(gl)
-      gl.texImage2D = function (...args) {
-        // signature: texImage2D(target, level, internalformat, width, height, border, format, type, data)
-        if (args.length >= 8 && args[2] === GL_RGBA && args[7] === GL_FLOAT) {
-          args = [...args]
-          args[2] = GL_RGBA32F
-        }
-        return origTexImage2D(...args)
-      }
-
-      this.regl = reglInit({
-        gl,
-        extensions: ['OES_texture_float', 'EXT_color_buffer_float', 'ANGLE_instanced_arrays'],
-        optionalExtensions: ['OES_texture_float_linear'],
-      })
+      this._initRegl(this.canvas)
     } else {
       // Notify regl of any canvas dimension change so its internal state stays
       // consistent (e.g. default framebuffer size used by regl.clear).
@@ -632,45 +551,6 @@ export class Plot {
     this._renderCallbacks.clear()
     this.canvas.remove()
     this.svg.remove()
-  }
-
-  _processTransforms(transforms) {
-    if (!transforms || transforms.length === 0) return
-
-    // currentData is always a DataGroup at this point (normalised in update()).
-    for (const { name, transform: spec } of transforms) {
-      const entries = Object.entries(spec)
-      if (entries.length !== 1) throw new Error(`Transform '${name}' must have exactly one key`)
-      const [className, params] = entries[0]
-
-      const computedData = getComputedData(className)
-      if (!computedData) throw new Error(`Unknown computed data type: '${className}'`)
-
-      // Register any filter axes declared by this transform before initializing,
-      // so that getAxisDomain() returns the filter range during compute().
-      const filterAxes = computedData.filterAxes(params, this.currentData)
-      for (const quantityKind of Object.values(filterAxes)) {
-        this.filterAxisRegistry.ensureFilterAxis(quantityKind)
-      }
-
-      const node = new ComputedDataNode(computedData, params)
-      try {
-        node._initialize(this.regl, this.currentData, this)
-      } catch (e) {
-        throw new Error(`Transform '${name}' (${className}) failed to initialize: ${e.message}`, { cause: e })
-      }
-
-      // Set data extents for filter axes so the Filterbar UI knows the full data range.
-      const filterDataExtents = node._meta?.filterDataExtents ?? {}
-      for (const [qk, extent] of Object.entries(filterDataExtents)) {
-        if (this.filterAxisRegistry.hasAxis(qk)) {
-          this.filterAxisRegistry.setDataExtent(qk, extent[0], extent[1])
-        }
-      }
-
-      this.currentData._children[name] = node
-      this._dataTransformNodes.push(node)
-    }
   }
 
   _processLayers(layersConfig, data) {
