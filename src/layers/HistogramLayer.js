@@ -1,7 +1,8 @@
 import { LayerType } from "../core/LayerType.js"
-import { Data } from "../core/Data.js"
+import { Data } from "../data/Data.js"
 import { registerLayerType } from "../core/LayerTypeRegistry.js"
 import { AXES } from "../axes/AxisRegistry.js"
+import { ArrayColumn } from "../data/ColumnData.js"
 
 // Ensure the 'histogram' and 'filteredHistogram' texture computations are registered.
 import "../compute/hist.js"
@@ -15,12 +16,12 @@ import "../compute/axisFilter.js"
 // The `count` attribute is resolved via the 'histogram' texture computation so
 // its value equals the bin count sampled at a_pickId.
 
-const HIST_VERT = `
+const HIST_VERT = `#version 300 es
   precision mediump float;
 
-  attribute float a_corner;
-  attribute float x_center;
-  attribute float count;
+  in float a_corner;
+  in float x_center;
+  in float count;
 
   uniform vec2  xDomain;
   uniform vec2  yDomain;
@@ -39,11 +40,11 @@ const HIST_VERT = `
   }
 `
 
-const HIST_FRAG = `
+const HIST_FRAG = `#version 300 es
   precision mediump float;
   uniform vec4 u_color;
   void main() {
-    gl_FragColor = gladly_apply_color(u_color);
+    fragColor = gladly_apply_color(u_color);
   }
 `
 
@@ -109,7 +110,7 @@ class HistogramLayerType extends LayerType {
     }
   }
 
-  _createLayer(parameters, data) {
+  _createLayer(regl, parameters, data, plot) {
     const d = Data.wrap(data)
     const {
       vData,
@@ -120,6 +121,7 @@ class HistogramLayerType extends LayerType {
 
     const srcV = d.getData(vData)
     if (!srcV) throw new Error(`Data column '${vData}' not found`)
+    const srcVArr = srcV.array
     const vQK = d.getQuantityKind(vData) ?? vData
 
     // --- Optional filter column ---
@@ -130,27 +132,28 @@ class HistogramLayerType extends LayerType {
 
     // --- Compute min/max for normalization ---
     let min = Infinity, max = -Infinity
-    for (let i = 0; i < srcV.length; i++) {
-      if (srcV[i] < min) min = srcV[i]
-      if (srcV[i] > max) max = srcV[i]
+    for (let i = 0; i < srcVArr.length; i++) {
+      if (srcVArr[i] < min) min = srcVArr[i]
+      if (srcVArr[i] > max) max = srcVArr[i]
     }
     const range = max - min || 1
 
     // --- Choose bin count ---
-    const bins = requestedBins || Math.max(10, Math.min(200, Math.ceil(Math.sqrt(srcV.length))))
+    const bins = requestedBins || Math.max(10, Math.min(200, Math.ceil(Math.sqrt(srcVArr.length))))
     const binWidth = range / bins
 
     // --- Normalize data to [0, 1] for the histogram computation ---
-    const normalized = new Float32Array(srcV.length)
-    for (let i = 0; i < srcV.length; i++) {
-      normalized[i] = (srcV[i] - min) / range
+    const normalizedArr = new Float32Array(srcVArr.length)
+    for (let i = 0; i < srcVArr.length; i++) {
+      normalizedArr[i] = (srcVArr[i] - min) / range
     }
+    const normalized = new ArrayColumn(normalizedArr)
 
     // --- CPU histogram for domain (y-axis range) estimation ---
     // Uses unfiltered data so the y-axis scale stays stable while the filter moves.
     const histCpu = new Float32Array(bins)
-    for (let i = 0; i < srcV.length; i++) {
-      const b = Math.min(Math.floor(normalized[i] * bins), bins - 1)
+    for (let i = 0; i < normalizedArr.length; i++) {
+      const b = Math.min(Math.floor(normalizedArr[i] * bins), bins - 1)
       histCpu[b] += 1
     }
     const maxCount = Math.max(...histCpu)
@@ -174,10 +177,11 @@ class HistogramLayerType extends LayerType {
     // --- Compute filter column extent for the filterbar display range ---
     const filterDomains = {}
     if (filterQK && srcF) {
+      const srcFArr = srcF.array
       let fMin = Infinity, fMax = -Infinity
-      for (let i = 0; i < srcF.length; i++) {
-        if (srcF[i] < fMin) fMin = srcF[i]
-        if (srcF[i] > fMax) fMax = srcF[i]
+      for (let i = 0; i < srcFArr.length; i++) {
+        if (srcFArr[i] < fMin) fMin = srcFArr[i]
+        if (srcFArr[i] > fMax) fMax = srcFArr[i]
       }
       filterDomains[filterQK] = [fMin, fMax]
     }

@@ -2,6 +2,7 @@ import { Layer } from "./Layer.js"
 import { buildColorGlsl } from "../colorscales/ColorscaleRegistry.js"
 import { buildFilterGlsl } from "../axes/FilterAxisRegistry.js"
 import { resolveAttributeExpr } from "../compute/ComputationRegistry.js"
+import { SAMPLE_COLUMN_GLSL } from "../data/ColumnData.js"
 
 function buildSpatialGlsl() {
   return `uniform vec2 xDomain;
@@ -22,9 +23,10 @@ vec4 plot_pos(vec2 pos) {
 }
 
 function buildApplyColorGlsl() {
-  return `uniform float u_pickingMode;
+  return `out vec4 fragColor;
+uniform float u_pickingMode;
 uniform float u_pickLayerIndex;
-varying float v_pickId;
+in float v_pickId;
 vec4 gladly_apply_color(vec4 color) {
   if (u_pickingMode > 0.5) {
     float layerIdx = u_pickLayerIndex + 1.0;
@@ -40,15 +42,13 @@ vec4 gladly_apply_color(vec4 color) {
 }`
 }
 
-// Removes `attribute [precision] type varName;` from GLSL source.
 function removeAttributeDecl(src, varName) {
   return src.replace(
-    new RegExp(`[ \\t]*attribute\\s+(?:(?:lowp|mediump|highp)\\s+)?\\w+\\s+${varName}\\s*;[ \\t]*\\n?`, 'g'),
+    new RegExp(`[ \\t]*in\\s+(?:(?:lowp|mediump|highp)\\s+)?\\w+\\s+${varName}\\s*;[ \\t]*\\n?`, 'g'),
     ''
   )
 }
 
-// Removes `uniform [precision] type varName;` from GLSL source.
 function removeUniformDecl(src, varName) {
   return src.replace(
     new RegExp(`[ \\t]*uniform\\s+(?:(?:lowp|mediump|highp)\\s+)?\\w+\\s+${varName}\\s*;[ \\t]*\\n?`, 'g'),
@@ -56,7 +56,6 @@ function removeUniformDecl(src, varName) {
   )
 }
 
-// Injects code immediately after `void main() {`.
 function injectIntoMainStart(src, code) {
   return src.replace(
     /void\s+main\s*\(\s*(?:void\s*)?\)\s*\{/,
@@ -86,19 +85,15 @@ function injectInto(src, helpers) {
 export class LayerType {
   constructor({
     name,
-    // Optional static axis declarations (for schema/introspection — no function call needed)
     xAxis, xAxisQuantityKind,
     yAxis, yAxisQuantityKind,
     colorAxisQuantityKinds,
     colorAxis2dQuantityKinds,
     filterAxisQuantityKinds,
-    // Optional dynamic resolver — overrides statics wherever it returns a non-undefined value
     getAxisConfig,
-    // GPU rendering
     vert, frag, schema, createLayer, createDrawCommand
   }) {
     this.name = name
-    // Static declarations stored as-is (undefined = not declared)
     this.xAxis = xAxis
     this.xAxisQuantityKind = xAxisQuantityKind
     this.yAxis = yAxis
@@ -116,65 +111,70 @@ export class LayerType {
   }
 
   createDrawCommand(regl, layer, plot) {
-    // --- Resolve computed attributes ---
+    // --- Resolve attributes ---
     let vertSrc = this.vert
-    const originalBufferAttrs = {}   // name → Float32Array
-    const computedBufferAttrs = {}   // name → Float32Array  (from context.bufferAttrs)
-    const allTextureUniforms = {}
-    const allScalarUniforms = {}
-    const allGlobalDecls = []
-    const mainInjections = []
-    const allAxisUpdaters = []
+    const bufferAttrs = {}         // name → Float32Array (fixed geometry)
+    const allTextures = {}         // uniformName → () => texture
+    const allDataColumns = []      // ColumnData instances for refresh()
+    const mainInjections = []      // float name = expr; injected inside main()
 
     for (const [key, expr] of Object.entries(layer.attributes)) {
       const result = resolveAttributeExpr(regl, expr, key, plot)
       if (result.kind === 'buffer') {
-        originalBufferAttrs[key] = result.value
+        bufferAttrs[key] = result.value
       } else {
         vertSrc = removeAttributeDecl(vertSrc, key)
-        Object.assign(computedBufferAttrs, result.context.bufferAttrs)
-        Object.assign(allTextureUniforms, result.context.textureUniforms)
-        Object.assign(allScalarUniforms, result.context.scalarUniforms)
-        allGlobalDecls.push(...result.context.globalDecls)
+        Object.assign(allTextures, result.textures)
         mainInjections.push(`float ${key} = ${result.glslExpr};`)
-        allAxisUpdaters.push(...result.context.axisUpdaters)
+        allDataColumns.push(result.col)
       }
     }
 
-    layer._axisUpdaters = allAxisUpdaters
+    layer._dataColumns = allDataColumns
 
     if (mainInjections.length > 0) {
       vertSrc = injectIntoMainStart(vertSrc, mainInjections.join('\n  '))
     }
 
-    // Merged buffer attrs — used for vertex count fallback.
-    const allShaderBuffers = { ...originalBufferAttrs, ...computedBufferAttrs }
+    // Validate buffer attributes
+    for (const [key, buf] of Object.entries(bufferAttrs)) {
+      if (buf instanceof Float32Array && buf.length === 0) {
+        console.warn(`[gladly] Layer '${this.name}': buffer attribute '${key}' is an empty Float32Array — this layer may draw nothing`)
+      }
+    }
 
+    // Pick IDs
     const isInstanced = layer.instanceCount !== null
     const pickCount = isInstanced ? layer.instanceCount :
-      (layer.vertexCount ?? allShaderBuffers['x']?.length
-        ?? Object.values(layer.attributes).find(v => v instanceof Float32Array)?.length ?? 0)
+      (layer.vertexCount ??
+        Object.values(bufferAttrs).find(v => v instanceof Float32Array)?.length ?? 0)
+    if (pickCount === 0) {
+      console.warn(
+        `[gladly] Layer '${this.name}': ` +
+        `${isInstanced ? 'instanceCount' : 'vertex count'} resolved to 0 — ` +
+        `this layer will draw nothing. Check that data columns are non-empty.`
+      )
+    }
     const pickIds = new Float32Array(pickCount)
     for (let i = 0; i < pickCount; i++) pickIds[i] = i
 
-    // --- Build regl attributes ---
+    // Sampler declarations for column textures
+    const samplerDecls = Object.keys(allTextures)
+      .map(n => `uniform sampler2D ${n};`)
+      .join('\n')
+
+    // Build regl attributes
     const attributes = {
-      // Original buffer attrs with possible divisors
       ...Object.fromEntries(
-        Object.entries(originalBufferAttrs).map(([key, buffer]) => {
+        Object.entries(bufferAttrs).map(([key, buffer]) => {
           const divisor = layer.attributeDivisors[key]
-          const attrObj = divisor !== undefined ? { buffer, divisor } : { buffer }
-          return [key, attrObj]
+          return [key, divisor !== undefined ? { buffer, divisor } : { buffer }]
         })
       ),
-      // Computed buffer attrs (no divisors)
-      ...Object.fromEntries(
-        Object.entries(computedBufferAttrs).map(([key, buffer]) => [key, { buffer }])
-      ),
-      a_pickId: isInstanced ? { buffer: regl.buffer(pickIds), divisor: 1 } : regl.buffer(pickIds)
+      a_pickId: isInstanced ? { buffer: pickIds, divisor: 1 } : { buffer: pickIds }
     }
 
-    // --- Build uniforms ---
+    // Build uniforms
     const uniforms = {
       xDomain: regl.prop("xDomain"),
       yDomain: regl.prop("yDomain"),
@@ -183,12 +183,9 @@ export class LayerType {
       u_pickingMode: regl.prop('u_pickingMode'),
       u_pickLayerIndex: regl.prop('u_pickLayerIndex'),
       ...layer.uniforms,
-      ...allTextureUniforms,
-      ...allScalarUniforms
+      ...Object.fromEntries(Object.entries(allTextures).map(([k, fn]) => [k, fn]))
     }
 
-    // Add per-color-axis uniforms keyed by GLSL name suffix → quantity kind.
-    // For suffix '' and qk 'temp_K': colorscale, color_range, color_scale_type read from prop colorscale_temp_K etc.
     for (const [suffix, qk] of Object.entries(layer.colorAxes)) {
       uniforms[`colorscale${suffix}`]       = regl.prop(`colorscale_${qk}`)
       uniforms[`color_range${suffix}`]      = regl.prop(`color_range_${qk}`)
@@ -196,29 +193,27 @@ export class LayerType {
       uniforms[`alpha_blend${suffix}`]      = regl.prop(`alpha_blend_${qk}`)
     }
 
-    // Add per-filter-axis uniforms (vec4: [min, max, hasMin, hasMax] + scale type).
     for (const [suffix, qk] of Object.entries(layer.filterAxes)) {
       uniforms[`filter_range${suffix}`]      = regl.prop(`filter_range_${qk}`)
       uniforms[`filter_scale_type${suffix}`] = regl.prop(`filter_scale_type_${qk}`)
     }
 
-    // Inject GLSL helpers before the layer shader body.
-    // Strip spatial uniform declarations from vert — they are re-declared inside buildSpatialGlsl().
+    // Strip spatial uniforms from vert (re-declared in buildSpatialGlsl)
     vertSrc = removeUniformDecl(vertSrc, 'xDomain')
     vertSrc = removeUniformDecl(vertSrc, 'yDomain')
     vertSrc = removeUniformDecl(vertSrc, 'xScaleType')
     vertSrc = removeUniformDecl(vertSrc, 'yScaleType')
+
     const spatialGlsl = buildSpatialGlsl()
     const colorGlsl = (Object.keys(layer.colorAxes).length > 0 || Object.keys(layer.colorAxes2d).length > 0) ? buildColorGlsl() : ''
     const filterGlsl = Object.keys(layer.filterAxes).length > 0 ? buildFilterGlsl() : ''
-    const pickVertDecls = `attribute float a_pickId;\nvarying float v_pickId;`
+    const pickVertDecls = `in float a_pickId;\nout float v_pickId;`
 
-    // Per-suffix color wrapper: uniform declarations + map_color_SUFFIX(value).
-    // Uniforms are declared here so they precede the function body (GLSL requires
-    // declaration-before-use). Matching declarations are stripped from the frag source
-    // to avoid duplicate-declaration errors.
-    // Suffixes like '_a' would produce 'map_color__a' (double underscore — reserved in GLSL).
-    // Strip any leading underscore when forming the function name.
+    // Column helpers: precision + samplers + sampleColumn function
+    const columnHelpers = allDataColumns.length > 0
+      ? `precision highp sampler2D;\n${samplerDecls}\n${SAMPLE_COLUMN_GLSL}`
+      : ''
+
     const fnSuffix = (s) => s.replace(/^_+/, '')
 
     const colorHelperLines = []
@@ -231,6 +226,14 @@ export class LayerType {
         `uniform float alpha_blend${suffix};`,
         `vec4 map_color_${fnSuffix(suffix)}(float value) {`,
         `  return map_color_s(colorscale${suffix}, color_range${suffix}, value, color_scale_type${suffix}, alpha_blend${suffix});`,
+        `}`,
+        `vec4 map_color_2d_x_${fnSuffix(suffix)}(float value) {`,
+        `  return map_color_s_2d(colorscale${suffix}, color_range${suffix}, value, color_scale_type${suffix}, alpha_blend${suffix},`,
+        `                        colorscale${suffix}, color_range${suffix}, 0.0/0.0, color_scale_type${suffix}, 0.0);`,
+        `}`,
+        `vec4 map_color_2d_y_${fnSuffix(suffix)}(float value) {`,
+        `  return map_color_s_2d(colorscale${suffix}, color_range${suffix}, 0.0/0.0, color_scale_type${suffix}, 0.0,`,
+        `                        colorscale${suffix}, color_range${suffix}, value, color_scale_type${suffix}, alpha_blend${suffix});`,
         `}`
       )
       fragSrc = removeUniformDecl(fragSrc, `colorscale${suffix}`)
@@ -240,20 +243,17 @@ export class LayerType {
     }
     const colorHelpers = colorHelperLines.join('\n')
 
-    // Per-suffix 2D color wrapper: map_color_2d_SUFFIX(vec2 values) calling map_color_s_2d.
-    // Uniforms for the component axes are already declared above in colorHelperLines.
     const color2dHelperLines = []
     for (const [suffix2d, [s1, s2]] of Object.entries(layer.colorAxes2d)) {
       color2dHelperLines.push(
         `vec4 map_color_2d_${fnSuffix(suffix2d)}(vec2 values) {`,
-        `  return map_color_s_2d(colorscale${s1}, color_range${s1}, values.x, color_scale_type${s1}, colorscale${s2}, color_range${s2}, values.y, color_scale_type${s2});`,
+        `  return map_color_s_2d(colorscale${s1}, color_range${s1}, values.x, color_scale_type${s1}, alpha_blend${s1},`,
+        `                        colorscale${s2}, color_range${s2}, values.y, color_scale_type${s2}, alpha_blend${s2});`,
         `}`
       )
     }
     const color2dHelpers = color2dHelperLines.join('\n')
 
-    // Per-suffix filter wrapper: uniform declaration + filter_SUFFIX(value).
-    // filter_range uniform is stripped from vertSrc to avoid duplicate declarations.
     const filterHelperLines = []
     for (const [suffix] of Object.entries(layer.filterAxes)) {
       filterHelperLines.push(
@@ -267,7 +267,7 @@ export class LayerType {
     const filterHelpers = filterHelperLines.join('\n')
 
     const drawConfig = {
-      vert: injectPickIdAssignment(injectInto(vertSrc, [spatialGlsl, filterGlsl, filterHelpers, pickVertDecls, ...allGlobalDecls])),
+      vert: injectPickIdAssignment(injectInto(vertSrc, [spatialGlsl, filterGlsl, filterHelpers, columnHelpers, pickVertDecls])),
       frag: injectInto(fragSrc, [buildApplyColorGlsl(), colorGlsl, colorHelpers, color2dHelpers, filterGlsl, filterHelpers]),
       attributes,
       uniforms,
@@ -275,8 +275,6 @@ export class LayerType {
       primitive: layer.primitive,
       lineWidth: layer.lineWidth,
       count: regl.prop("count"),
-      // Layers with color axes always enable src-alpha blend so alpha_blend can work at any time.
-      // (alpha=1.0 is equivalent to no blending, so this is safe when alpha_blend=0.)
       ...(Object.keys(layer.colorAxes).length > 0 || Object.keys(layer.colorAxes2d).length > 0
         ? { blend: { enable: true, func: { srcRGB: 'src alpha', dstRGB: 'one minus src alpha', srcAlpha: 0, dstAlpha: 1 } } }
         : layer.blend ? { blend: layer.blend } : {})
@@ -286,7 +284,7 @@ export class LayerType {
       drawConfig.instances = regl.prop("instances")
     }
 
-    return regl(drawConfig)
+    return drawConfig
   }
 
   schema(data) {
@@ -294,8 +292,6 @@ export class LayerType {
     throw new Error(`LayerType '${this.name}' does not implement schema()`)
   }
 
-  // Resolves axis config by merging static declarations with dynamic getAxisConfig output.
-  // Dynamic values (non-undefined) override static values.
   resolveAxisConfig(parameters, data) {
     const resolved = {
       xAxis: this.xAxis,
@@ -321,11 +317,11 @@ export class LayerType {
     return resolved
   }
 
-  createLayer(parameters, data) {
+  createLayer(regl, parameters, data, plot) {
     if (!this._createLayer) {
       throw new Error(`LayerType '${this.name}' does not implement createLayer()`)
     }
-    const gpuConfigs = this._createLayer.call(this, parameters, data)
+    const gpuConfigs = this._createLayer.call(this, regl, parameters, data, plot)
     const axisConfig = this.resolveAxisConfig(parameters, data)
 
     return gpuConfigs.map(gpuConfig => new Layer({

@@ -1,7 +1,5 @@
-import reglInit from "regl"
 import * as d3 from "d3-selection"
 import { AXES, AxisRegistry } from "../axes/AxisRegistry.js"
-import { Axis } from "../axes/Axis.js"
 import { ColorAxisRegistry } from "../axes/ColorAxisRegistry.js"
 import { FilterAxisRegistry } from "../axes/FilterAxisRegistry.js"
 import { ZoomController } from "../axes/ZoomController.js"
@@ -9,14 +7,63 @@ import { getLayerType, getRegisteredLayerTypes } from "./LayerTypeRegistry.js"
 import { getAxisQuantityKind, getScaleTypeFloat } from "../axes/AxisQuantityKindRegistry.js"
 import { getRegisteredColorscales, getRegistered2DColorscales } from "../colorscales/ColorscaleRegistry.js"
 import { Float } from "../floats/Float.js"
+import { computationSchema, buildTransformSchema, getComputedData } from "../compute/ComputationRegistry.js"
+import { DataGroup, normalizeData } from "../data/Data.js"
+import { enqueueRegl, compileEnqueuedShaders } from "./ShaderQueue.js"
+import { GlBase } from "./GlBase.js"
 
-function buildPlotSchema(data) {
+function buildPlotSchema(data, config) {
   const layerTypes = getRegisteredLayerTypes()
+  // Normalise once — always a DataGroup (or null). Columns are e.g. "input.x1".
+  const wrappedData = normalizeData(data)
+
+  // Build fullSchemaData: the normalised DataGroup plus lightweight stubs for each
+  // declared transform so that layer schemas enumerate transform output columns.
+  // Stubs only need columns() — getData/getQuantityKind/getDomain return null (schema only).
+  const transforms = config?.transforms ?? []
+  let fullSchemaData = wrappedData
+  if (wrappedData && transforms.length > 0) {
+    const group = new DataGroup({})
+    group._children = { ...wrappedData._children }
+    for (const { name, transform: spec } of transforms) {
+      const entries = Object.entries(spec)
+      if (entries.length !== 1) continue
+      const [className] = entries[0]
+      const cd = getComputedData(className)
+      if (!cd) continue
+      group._children[name] = {
+        columns: () => cd.columns(),
+        getData: () => null,
+        getQuantityKind: () => null,
+        getDomain: () => null,
+      }
+    }
+    fullSchemaData = group
+  }
+
+  const { '$defs': compDefs } = computationSchema(fullSchemaData)
+
+  // wrappedData is already the correctly-shaped DataGroup (columns "input.x1" etc.)
+  const { '$defs': transformDefs } = buildTransformSchema(wrappedData)
 
   return {
     $schema: "https://json-schema.org/draft/2020-12/schema",
+    $defs: { ...compDefs, ...transformDefs },
     type: "object",
     properties: {
+      transforms: {
+        type: "array",
+        description: "Named data transforms applied before layers. Each item is a { name, transform: { ClassName: params } } object.",
+        items: {
+          type: "object",
+          properties: {
+            name: { type: "string" },
+            transform: { '$ref': '#/$defs/transform_expression' }
+          },
+          required: ["name", "transform"],
+          additionalProperties: false
+        }
+      },
       layers: {
         type: "array",
         items: {
@@ -26,7 +73,7 @@ function buildPlotSchema(data) {
             return {
               title: typeName,
               properties: {
-                [typeName]: layerType.schema(data)
+                [typeName]: layerType.schema(fullSchemaData)
               },
               required: [typeName],
               additionalProperties: false
@@ -127,7 +174,7 @@ function buildPlotSchema(data) {
   }
 }
 
-export class Plot {
+export class Plot extends GlBase {
   // Registry of float factories keyed by type name.
   // Each entry: { factory(parentPlot, container, opts) → widget, defaultSize(opts) → {width,height} }
   // Populated by Colorbar.js, Filterbar.js, Colorbar2d.js at module load time.
@@ -138,6 +185,7 @@ export class Plot {
   }
 
   constructor(container, { margin } = {}) {
+    super()
     this.container = container
     this.margin = margin ?? { top: 60, right: 60, bottom: 60, left: 60 }
 
@@ -160,20 +208,17 @@ export class Plot {
       .style('user-select', 'none')
 
     this.currentConfig = null
-    this.currentData = null
-    this.regl = null
     this.layers = []
     this.axisRegistry = null
     this.colorAxisRegistry = null
-    this.filterAxisRegistry = null
     this._renderCallbacks = new Set()
     this._zoomEndCallbacks = new Set()
     this._dirty = false
     this._rafId = null
 
-    // Stable Axis instances keyed by axis name — persist across update() calls
-    this._axisCache = new Map()
-    this._axesProxy = null
+    // Compiled regl draw commands keyed by vert+frag shader source.
+    // Persists across update() calls so shader recompilation is avoided.
+    this._shaderCache = new Map()
 
     // Auto-managed Float widgets keyed by a config-derived tag string.
     // Covers 1D colorbars, 2D colorbars, and filterbars in a single unified Map.
@@ -191,7 +236,8 @@ export class Plot {
         this.currentConfig = config
       }
       if (data !== undefined) {
-        this.currentData = data
+        this._rawData = normalizeData(data)  // normalise once; kept immutable
+        this.currentData = this._rawData
       }
 
       if (!this.currentConfig || !this.currentData) {
@@ -219,12 +265,9 @@ export class Plot {
       this.plotWidth = plotWidth
       this.plotHeight = plotHeight
 
-      if (this.regl) {
-        this.regl.destroy()
-      }
-
       this.svg.selectAll('*').remove()
 
+      this._warnedMissingDomains = false
       this._initialize()
       this._syncFloats()
     } catch (error) {
@@ -236,31 +279,6 @@ export class Plot {
 
   forceUpdate() {
     this.update({})
-  }
-
-  /**
-   * Returns a stable Axis instance for the given axis name.
-   * Works for spatial axes (e.g. "xaxis_bottom") and quantity-kind axes (color/filter).
-   * The same instance is returned across plot.update() calls, so links survive updates.
-   *
-   * Usage: plot.axes.xaxis_bottom, plot.axes["velocity_ms"], etc.
-   */
-  get axes() {
-    if (!this._axesProxy) {
-      this._axesProxy = new Proxy(this._axisCache, {
-        get: (cache, name) => {
-          if (typeof name !== 'string') return undefined
-          if (!cache.has(name)) cache.set(name, new Axis(this, name))
-          return cache.get(name)
-        }
-      })
-    }
-    return this._axesProxy
-  }
-
-  _getAxis(name) {
-    if (!this._axisCache.has(name)) this._axisCache.set(name, new Axis(this, name))
-    return this._axisCache.get(name)
   }
 
   getConfig() {
@@ -307,28 +325,38 @@ export class Plot {
       }
     }
 
-    return { colorbars: [], ...this.currentConfig, axes}
+    return { transforms: [], colorbars: [], ...this.currentConfig, axes}
   }
 
   _initialize() {
-    const { layers = [], axes = {}, colorbars = [] } = this.currentConfig
+    const { layers = [], axes = {}, colorbars = [], transforms = [] } = this.currentConfig
 
-    this.regl = reglInit({
-      canvas: this.canvas,
-      extensions: [
-        'ANGLE_instanced_arrays',
-        'OES_texture_float',
-        'OES_texture_float_linear',
-      ],
-      optionalExtensions: [
-        // WebGL1: render to float framebuffers (needed by compute passes)
-        'WEBGL_color_buffer_float',
-        // WebGL2: render to float framebuffers (standard but must be opted in)
-        'EXT_color_buffer_float',
-      ]
-    })
+    if (!this.regl) {
+      this._initRegl(this.canvas)
+    } else {
+      // Notify regl of any canvas dimension change so its internal state stays
+      // consistent (e.g. default framebuffer size used by regl.clear).
+      this.regl.poll()
+    }
+
+    // Destroy GPU buffers owned by the previous layer set before rebuilding.
+    for (const layer of this.layers) {
+      for (const buf of Object.values(layer._bufferProps ?? {})) {
+        if (buf && typeof buf.destroy === 'function') buf.destroy()
+      }
+    }
 
     this.layers = []
+    this._dataTransformNodes = []
+
+    // Restore original user data before applying transforms (handles re-initialization).
+    // Create a fresh shallow copy of _rawData's children so _rawData is never mutated
+    // and transform nodes from previous runs don't carry over.
+    if (this._rawData != null) {
+      const fresh = new DataGroup({})
+      fresh._children = { ...this._rawData._children }
+      this.currentData = fresh
+    }
 
     AXES.forEach(a => this.svg.append("g").attr("class", a))
 
@@ -336,6 +364,7 @@ export class Plot {
     this.colorAxisRegistry = new ColorAxisRegistry()
     this.filterAxisRegistry = new FilterAxisRegistry()
 
+    this._processTransforms(transforms)
     this._processLayers(layers, this.currentData)
     this._setDomains(axes)
 
@@ -361,11 +390,23 @@ export class Plot {
         // Defer to next animation frame so the ResizeObserver callback exits
         // before any DOM/layout changes happen, avoiding the "loop completed
         // with undelivered notifications" browser error.
-        requestAnimationFrame(() => this.forceUpdate())
+        requestAnimationFrame(() => {
+          try {
+            this.forceUpdate()
+          } catch (e) {
+            console.error('[gladly] Error during resize-triggered update():', e)
+          }
+        })
       })
       this.resizeObserver.observe(this.container)
     } else {
-      this._resizeHandler = () => this.forceUpdate()
+      this._resizeHandler = () => {
+        try {
+          this.forceUpdate()
+        } catch (e) {
+          console.error('[gladly] Error during resize-triggered update():', e)
+        }
+      }
       window.addEventListener('resize', this._resizeHandler)
     }
   }
@@ -500,8 +541,11 @@ export class Plot {
       this._rafId = null
     }
 
+    this._shaderCache.clear()
+
     if (this.regl) {
       this.regl.destroy()
+      this.regl = null
     }
 
     this._renderCallbacks.clear()
@@ -519,6 +563,7 @@ export class Plot {
 
       const [layerTypeName, parameters] = entries[0]
       const layerType = getLayerType(layerTypeName)
+      if (!layerType) throw new Error(`Unknown layer type '${layerTypeName}'`)
 
       // Resolve axis config once per layer spec for registration (independent of draw call count).
       const ac = layerType.resolveAxisConfig(parameters, data)
@@ -540,11 +585,91 @@ export class Plot {
       }
 
       // Create one draw command per GPU config returned by the layer type.
-      for (const layer of layerType.createLayer(parameters, data)) {
+      let gpuLayers
+      try {
+        gpuLayers = layerType.createLayer(this.regl, parameters, data, this)
+      } catch (e) {
+        throw new Error(`Layer '${layerTypeName}' (index ${configLayerIndex}) failed to create: ${e.message}`, { cause: e })
+      }
+      for (const layer of gpuLayers) {
         layer.configLayerIndex = configLayerIndex
-        layer.draw = layer.type.createDrawCommand(this.regl, layer, this)
+        try {
+          layer.draw = this._compileLayerDraw(layer)
+        } catch (e) {
+          throw new Error(`Layer '${layerTypeName}' (index ${configLayerIndex}) failed to build draw command: ${e.message}`, { cause: e })
+        }
         this.layers.push(layer)
       }
+    }
+    compileEnqueuedShaders(this.regl)
+  }
+
+  _compileLayerDraw(layer) {
+    const drawConfig = layer.type.createDrawCommand(this.regl, layer, this)
+
+    // Layer types that fully override createDrawCommand (e.g. TileLayer) return
+    // a ready-to-call function instead of a plain drawConfig object. Pass through.
+    if (typeof drawConfig === 'function') return drawConfig
+
+    const shaderKey = drawConfig.vert + '\0' + drawConfig.frag
+
+    if (!this._shaderCache.has(shaderKey)) {
+      // Build a version of the draw config where all layer-specific data
+      // (attribute buffers and texture closures) is replaced with regl.prop()
+      // references. This compiled command can then be reused for any layer
+      // that produces the same shader source, regardless of its data.
+      const propAttrs = {}
+      for (const [key, val] of Object.entries(drawConfig.attributes)) {
+        const rawBuf = val?.buffer instanceof Float32Array ? val.buffer
+          : val instanceof Float32Array ? val : null
+        if (rawBuf !== null) {
+          const propKey = `attr_${key}`
+          const divisor = val?.divisor
+          propAttrs[key] = divisor !== undefined
+            ? { buffer: this.regl.prop(propKey), divisor }
+            : this.regl.prop(propKey)
+        } else {
+          propAttrs[key] = val
+        }
+      }
+
+      const propUniforms = {}
+      for (const [key, val] of Object.entries(drawConfig.uniforms)) {
+        propUniforms[key] = typeof val === 'function' ? this.regl.prop(key) : val
+      }
+
+      const propConfig = { ...drawConfig, attributes: propAttrs, uniforms: propUniforms }
+      this._shaderCache.set(shaderKey, enqueueRegl(this.regl, propConfig))
+    }
+
+    const cmd = this._shaderCache.get(shaderKey)
+
+    // Extract per-layer data: GPU buffers for Float32Array attributes,
+    // and texture closures for sampler uniforms.
+    const bufferProps = {}
+    for (const [key, val] of Object.entries(drawConfig.attributes)) {
+      const rawBuf = val?.buffer instanceof Float32Array ? val.buffer
+        : val instanceof Float32Array ? val : null
+      if (rawBuf !== null) {
+        bufferProps[`attr_${key}`] = this.regl.buffer(rawBuf)
+      }
+    }
+
+    const textureClosures = {}
+    for (const [key, val] of Object.entries(drawConfig.uniforms)) {
+      if (typeof val === 'function') textureClosures[key] = val
+    }
+
+    layer._bufferProps = bufferProps
+    layer._textureClosures = textureClosures
+
+    return (runtimeProps) => {
+      // Resolve texture closures at draw time so live texture swaps are picked up.
+      const textureProps = {}
+      for (const [key, fn] of Object.entries(textureClosures)) {
+        textureProps[key] = fn()
+      }
+      cmd({ ...bufferProps, ...textureProps, ...runtimeProps })
     }
   }
 
@@ -561,8 +686,8 @@ export class Plot {
     return getScaleTypeFloat(quantityKind, this.currentConfig?.axes)
   }
 
-  static schema(data) {
-    return buildPlotSchema(data)
+  static schema(data, config) {
+    return buildPlotSchema(data, config)
   }
 
   scheduleRender() {
@@ -572,7 +697,11 @@ export class Plot {
         this._rafId = null
         if (this._dirty) {
           this._dirty = false
-          this.render()
+          try {
+            this.render()
+          } catch (e) {
+            console.error('[gladly] Error during render():', e)
+          }
         }
       })
     }
@@ -581,6 +710,29 @@ export class Plot {
   render() {
     this._dirty = false
     this.regl.clear({ color: [1,1,1,1], depth:1 })
+
+    // Validate axis domains once per render (warn only when domain is still
+    // the D3 default, i.e. was never set — indicates a missing ensureAxis call)
+    if (!this._warnedMissingDomains && this.axisRegistry) {
+      for (const axisId of AXES) {
+        const scale = this.axisRegistry.getScale(axisId)
+        if (!scale) continue
+        const [lo, hi] = scale.domain()
+        if (!isFinite(lo) || !isFinite(hi)) {
+          console.warn(
+            `[gladly] Axis '${axisId}': domain [${lo}, ${hi}] is non-finite at render time. ` +
+            `All data on this axis will be invisible.`
+          )
+          this._warnedMissingDomains = true
+        } else if (lo === hi) {
+          console.warn(
+            `[gladly] Axis '${axisId}': domain is degenerate [${lo}] at render time. ` +
+            `Data on this axis will collapse to a single line.`
+          )
+          this._warnedMissingDomains = true
+        }
+      }
+    }
     const viewport = {
       x: this.margin.left,
       y: this.margin.bottom,
@@ -589,10 +741,17 @@ export class Plot {
     }
     const axesConfig = this.currentConfig?.axes
 
-    for (const layer of this.layers) {
-      if (layer._axisUpdaters) {
-        for (const updater of layer._axisUpdaters) updater.refreshIfNeeded(this)
+    // Refresh transform nodes before drawing (recomputes if tracked axis domains changed)
+    for (const node of this._dataTransformNodes) {
+      try {
+        node.refreshIfNeeded(this)
+      } catch (e) {
+        throw new Error(`Transform refresh failed: ${e.message}`, { cause: e })
       }
+    }
+
+    for (const layer of this.layers) {
+      for (const col of layer._dataColumns ?? []) col.refresh(this)
 
       const xIsLog = layer.xAxis ? this.axisRegistry.isLogScale(layer.xAxis) : false
       const yIsLog = layer.yAxis ? this.axisRegistry.isLogScale(layer.yAxis) : false
@@ -609,6 +768,18 @@ export class Plot {
 
       if (layer.instanceCount !== null) {
         props.instances = layer.instanceCount
+      }
+
+      // Warn once if this draw call will produce no geometry
+      if (!layer._warnedZeroCount) {
+        const drawCount = props.instances ?? props.count
+        if (drawCount === 0) {
+          console.warn(
+            `[gladly] Layer '${layer.type?.name ?? 'unknown'}' (config index ${layer.configLayerIndex}): ` +
+            `draw count is 0 — nothing will be rendered`
+          )
+          layer._warnedZeroCount = true
+        }
       }
 
       for (const qk of Object.values(layer.colorAxes)) {
@@ -667,16 +838,25 @@ export class Plot {
   pick(x, y) {
     if (!this.regl || !this.layers.length) return null
 
+    const glX = Math.round(x)
+    const glY = this.height - Math.round(y) - 1
+
+    if (glX < 0 || glX >= this.width || glY < 0 || glY >= this.height) return null
+
     const fbo = this.regl.framebuffer({
       width: this.width, height: this.height,
       colorFormat: 'rgba', colorType: 'uint8', depth: false,
     })
 
-    const glX = Math.round(x)
-    const glY = this.height - Math.round(y) - 1
     const axesConfig = this.currentConfig?.axes
 
+    // Refresh transform nodes before picking (same as render)
+    for (const node of this._dataTransformNodes) {
+      node.refreshIfNeeded(this)
+    }
+
     let result = null
+    try {
     this.regl({ framebuffer: fbo })(() => {
       this.regl.clear({ color: [0, 0, 0, 0] })
       const viewport = {
@@ -685,9 +865,7 @@ export class Plot {
       }
       for (let i = 0; i < this.layers.length; i++) {
         const layer = this.layers[i]
-        if (layer._axisUpdaters) {
-          for (const updater of layer._axisUpdaters) updater.refreshIfNeeded(this)
-        }
+        for (const col of layer._dataColumns ?? []) col.refresh(this)
 
         const xIsLog = layer.xAxis ? this.axisRegistry.isLogScale(layer.xAxis) : false
         const yIsLog = layer.yAxis ? this.axisRegistry.isLogScale(layer.yAxis) : false
@@ -707,6 +885,7 @@ export class Plot {
           const range = this.colorAxisRegistry.getRange(qk)
           props[`color_range_${qk}`] = range ?? [0, 1]
           props[`color_scale_type_${qk}`] = this._getScaleTypeFloat(qk)
+          props[`alpha_blend_${qk}`] = this.colorAxisRegistry.getAlphaBlend(qk)
         }
         for (const qk of Object.values(layer.filterAxes)) {
           props[`filter_range_${qk}`] = this.filterAxisRegistry.getRangeUniform(qk)
@@ -729,8 +908,9 @@ export class Plot {
         result = { layerIndex, configLayerIndex: layer.configLayerIndex, dataIndex, layer }
       }
     })
-
-    fbo.destroy()
+    } finally {
+      fbo.destroy()
+    }
     return result
   }
 }

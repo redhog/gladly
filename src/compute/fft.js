@@ -1,4 +1,6 @@
-import { registerTextureComputation, TextureComputation, EXPRESSION_REF } from "./ComputationRegistry.js"
+import { registerTextureComputation, registerComputedData, EXPRESSION_REF, resolveQuantityKind } from "./ComputationRegistry.js"
+import { TextureComputation, ComputedData } from "../data/Computation.js"
+import { ArrayColumn } from "../data/ColumnData.js"
 
 /* ============================================================
    Utilities
@@ -8,6 +10,8 @@ function nextPow2(n) {
   return 1 << Math.ceil(Math.log2(n));
 }
 
+// Internal: complex texture (R=real, G=imag per frequency bin), 1 element per texel.
+// Not exposed via sampleColumn — only used as intermediate within this module.
 function makeComplexTexture(regl, data, N) {
   // data: Float32Array (real), imag assumed 0
   const texData = new Float32Array(N * 4);
@@ -39,7 +43,7 @@ function makeEmptyComplexTexture(regl, N) {
 }
 
 function makeFBO(regl, tex) {
-  return regl.framebuffer({ color: tex });
+  return regl.framebuffer({ color: tex, depth: false, stencil: false });
 }
 
 /* ============================================================
@@ -167,7 +171,8 @@ function scalePass(regl, N) {
 }
 
 /* ============================================================
-   Public: GPU FFT (top-level API)
+   Internal GPU FFT — returns a complex texture (R=real, G=imag)
+   with 1 frequency bin per texel. NOT for direct use with sampleColumn.
    ============================================================ */
 
 export function fft1d(regl, realArray, inverse = false) {
@@ -209,7 +214,7 @@ export function fft1d(regl, realArray, inverse = false) {
 }
 
 /* ============================================================
-   FFT-based convolution
+   FFT-based convolution (internal)
    ============================================================ */
 
 export function fftConvolution(regl, signal, kernel) {
@@ -254,29 +259,105 @@ export function fftConvolution(regl, signal, kernel) {
   return fft1d(regl, new Float32Array(N), true);
 }
 
-class Fft1dComputation extends TextureComputation {
-  compute(regl, params) {
-    return fft1d(regl, params.input, params.inverse ?? false)
+/* ============================================================
+   extractAndRepack: extract one channel from a complex texture
+   (1 element per texel, R=real/G=imag) into a 4-packed RGBA texture.
+   channelSwizzle: 'r' for real part, 'g' for imaginary part.
+   ============================================================ */
+
+function extractAndRepack(regl, complexTex, channelSwizzle, N) {
+  const nTexels = Math.ceil(N / 4)
+  const w = Math.min(nTexels, regl.limits.maxTextureSize)
+  const h = Math.ceil(nTexels / w)
+  const outputTex = regl.texture({ width: w, height: h, type: 'float', format: 'rgba' })
+  const outputFBO = regl.framebuffer({ color: outputTex, depth: false, stencil: false })
+
+  regl({
+    framebuffer: outputFBO,
+    vert: `#version 300 es
+    in vec2 position;
+    void main() { gl_Position = vec4(position, 0.0, 1.0); }`,
+    frag: `#version 300 es
+    precision highp float;
+    uniform sampler2D complexTex;
+    uniform int totalLength;
+    out vec4 fragColor;
+    void main() {
+      int texelI = int(gl_FragCoord.y) * ${w} + int(gl_FragCoord.x);
+      int base = texelI * 4;
+      float v0 = base + 0 < totalLength ? texelFetch(complexTex, ivec2(base+0, 0), 0).${channelSwizzle} : 0.0;
+      float v1 = base + 1 < totalLength ? texelFetch(complexTex, ivec2(base+1, 0), 0).${channelSwizzle} : 0.0;
+      float v2 = base + 2 < totalLength ? texelFetch(complexTex, ivec2(base+2, 0), 0).${channelSwizzle} : 0.0;
+      float v3 = base + 3 < totalLength ? texelFetch(complexTex, ivec2(base+3, 0), 0).${channelSwizzle} : 0.0;
+      fragColor = vec4(v0, v1, v2, v3);
+    }`,
+    attributes: { position: [[-1,-1],[1,-1],[-1,1],[1,1]] },
+    uniforms: { complexTex, totalLength: N },
+    count: 4,
+    primitive: 'triangle strip'
+  })()
+
+  outputTex._dataLength = N
+  return outputTex
+}
+
+/* ============================================================
+   FftData — ComputedData producing 'real' and 'imag' columns
+   ============================================================ */
+
+class FftData extends ComputedData {
+  columns() { return ['real', 'imag'] }
+
+  compute(regl, params, data, getAxisDomain) {
+    const inputCol = data.getData(params.input)
+    if (!(inputCol instanceof ArrayColumn)) {
+      throw new Error(`FftData: input '${params.input}' must be a plain data column`)
+    }
+    const N = nextPow2(inputCol.array.length)
+    const complexTex = fft1d(regl, inputCol.array, params.inverse ?? false)
+    return {
+      real: extractAndRepack(regl, complexTex, 'r', N),
+      imag: extractAndRepack(regl, complexTex, 'g', N),
+      _meta: {
+        domains: { real: null, imag: null },
+        quantityKinds: { real: null, imag: null }
+      }
+    }
   }
+
   schema(data) {
+    const cols = data ? data.columns() : []
     return {
       type: 'object',
+      title: 'FftData',
       properties: {
-        input: EXPRESSION_REF,
-        inverse: { type: 'boolean' }
+        input: { type: 'string', enum: cols, description: 'Input signal column' },
+        inverse: { type: 'boolean', default: false, description: 'Inverse FFT' }
       },
       required: ['input']
     }
   }
 }
 
+registerComputedData('FftData', new FftData())
+
+/* ============================================================
+   FftConvolutionComputation — TextureComputation (real output)
+   ============================================================ */
+
 class FftConvolutionComputation extends TextureComputation {
-  compute(regl, params) {
-    return fftConvolution(regl, params.signal, params.kernel)
+  getQuantityKind(params, data) { return resolveQuantityKind(params.signal, data) }
+  compute(regl, params, data, getAxisDomain) {
+    const signal = params.signal instanceof ArrayColumn ? params.signal.array : params.signal
+    const kernel = params.kernel instanceof ArrayColumn ? params.kernel.array : params.kernel
+    const N = nextPow2(signal.length + kernel.length)
+    const complexResult = fftConvolution(regl, signal, kernel)
+    return extractAndRepack(regl, complexResult, 'r', N)
   }
   schema(data) {
     return {
       type: 'object',
+      title: 'fftConvolution',
       properties: {
         signal: EXPRESSION_REF,
         kernel: EXPRESSION_REF
@@ -286,7 +367,4 @@ class FftConvolutionComputation extends TextureComputation {
   }
 }
 
-// fft1d: output is a complex texture — R = real part, G = imaginary part.
-// Use a downstream computation (e.g. magnitude) to get a single scalar per bin.
-registerTextureComputation('fft1d', new Fft1dComputation())
 registerTextureComputation('fftConvolution', new FftConvolutionComputation())

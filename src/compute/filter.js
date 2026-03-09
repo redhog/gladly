@@ -1,166 +1,162 @@
-import { registerTextureComputation, TextureComputation, EXPRESSION_REF } from "./ComputationRegistry.js"
-
-function toTexture(regl, input, length) {
-  if (input instanceof Float32Array) {
-    return regl.texture({ data: input, shape: [length, 1], type: 'float', format: 'rgba' });
-  }
-  return input; // already a texture
-}
+import { registerTextureComputation, EXPRESSION_REF, resolveQuantityKind } from "./ComputationRegistry.js"
+import { TextureComputation } from "../data/Computation.js"
+import { ArrayColumn, SAMPLE_COLUMN_GLSL } from "../data/ColumnData.js"
 
 function subtractTextures(regl, texA, texB) {
-  const length = texA.width;
-  const outputTex = regl.texture({ width: length, height: 1, type: 'float', format: 'rgba' });
-  const outputFBO = regl.framebuffer({ color: outputTex });
+  const w = texA.width
+  const h = texA.height
+  const outputTex = regl.texture({ width: w, height: h, type: 'float', format: 'rgba' })
+  const outputFBO = regl.framebuffer({ color: outputTex, depth: false, stencil: false })
 
-  const drawSub = regl({
+  regl({
     framebuffer: outputFBO,
-    vert: `
+    vert: `#version 300 es
       precision highp float;
-      attribute float bin;
-      void main() {
-        float x = (bin + 0.5)/${length}.0*2.0 - 1.0;
-        gl_Position = vec4(x,0.0,0.0,1.0);
-      }
+      in vec2 position;
+      void main() { gl_Position = vec4(position, 0.0, 1.0); }
     `,
-    frag: `
+    frag: `#version 300 es
       precision highp float;
       uniform sampler2D texA;
       uniform sampler2D texB;
       out vec4 fragColor;
       void main() {
-        int idx = int(gl_FragCoord.x-0.5);
-        float a = texelFetch(texA, ivec2(idx,0),0).r;
-        float b = texelFetch(texB, ivec2(idx,0),0).r;
-        fragColor = vec4(a-b,0.0,0.0,1.0);
+        ivec2 coord = ivec2(gl_FragCoord.xy);
+        fragColor = texelFetch(texA, coord, 0) - texelFetch(texB, coord, 0);
       }
     `,
-    attributes: { bin: Array.from({ length }, (_, i) => i) },
+    attributes: { position: [[-1, -1], [1, -1], [-1, 1], [1, 1]] },
     uniforms: { texA, texB },
-    count: length,
-    primitive: 'points'
-  });
+    count: 4,
+    primitive: 'triangle strip'
+  })()
 
-  drawSub();
-  return outputTex;
+  if (texA._dataLength !== undefined) outputTex._dataLength = texA._dataLength
+  return outputTex
 }
 
 /**
  * Generic 1D convolution filter
  * @param {regl} regl - regl context
- * @param {Float32Array | Texture} input - CPU array or GPU texture
- * @param {Float32Array} kernel - 1D kernel
- * @returns {Texture} - filtered output texture
+ * @param {Texture} inputTex - 4-packed GPU texture, _dataLength set
+ * @param {Float32Array} kernel - 1D kernel weights
+ * @returns {Texture} - filtered output texture (4-packed, same dimensions as input)
  */
-function filter1D(regl, input, kernel) {
-  const length = input instanceof Float32Array ? input.length : input.width;
-  const inputTex = toTexture(regl, input, length);
+function filter1D(regl, inputTex, kernel) {
+  const length = inputTex._dataLength ?? inputTex.width * inputTex.height * 4
+  const w = inputTex.width
+  const h = inputTex.height
 
-  const kernelTex = regl.texture({ data: kernel, shape: [kernel.length, 1], type: 'float' });
+  // Kernel texture stays R-channel (internal, not exposed via sampleColumn)
+  const kernelData = new Float32Array(kernel.length * 4)
+  for (let i = 0; i < kernel.length; i++) kernelData[i * 4] = kernel[i]
+  const kernelTex = regl.texture({ data: kernelData, shape: [kernel.length, 1], type: 'float', format: 'rgba' })
+  const outputTex = regl.texture({ width: w, height: h, type: 'float', format: 'rgba' })
+  const outputFBO = regl.framebuffer({ color: outputTex, depth: false, stencil: false })
 
-  const outputTex = regl.texture({ width: length, height: 1, type: 'float', format: 'rgba' });
-  const outputFBO = regl.framebuffer({ color: outputTex });
+  const radius = Math.floor(kernel.length / 2)
 
-  const radius = Math.floor(kernel.length / 2);
-
-  const drawFilter = regl({
+  regl({
     framebuffer: outputFBO,
-    vert: `
+    vert: `#version 300 es
       precision highp float;
-      attribute float bin;
-      void main() {
-        float x = (bin + 0.5)/${length}.0*2.0 - 1.0;
-        gl_Position = vec4(x, 0.0, 0.0, 1.0);
-      }
+      in vec2 position;
+      void main() { gl_Position = vec4(position, 0.0, 1.0); }
     `,
-    frag: `
-      #version 300 es
+    frag: `#version 300 es
       precision highp float;
+      precision highp sampler2D;
       uniform sampler2D inputTex;
       uniform sampler2D kernelTex;
       uniform int radius;
-      uniform int length;
+      uniform int totalLength;
       out vec4 fragColor;
-
+      ${SAMPLE_COLUMN_GLSL}
       void main() {
-        float idx = gl_FragCoord.x - 0.5;
-        float sum = 0.0;
-        for (int i=-16; i<=16; i++) { // max kernel radius 16
-          if (i+16 >= radius*2+1) break;
-          int sampleIdx = int(clamp(idx + float(i), 0.0, float(length-1)));
-          float val = texelFetch(inputTex, ivec2(sampleIdx,0),0).r;
-          float w = texelFetch(kernelTex, ivec2(i+radius,0),0).r;
-          sum += val * w;
+        ivec2 sz = textureSize(inputTex, 0);
+        int texelI = int(gl_FragCoord.y) * sz.x + int(gl_FragCoord.x);
+        int base = texelI * 4;
+        float s0 = 0.0, s1 = 0.0, s2 = 0.0, s3 = 0.0;
+        for (int i = -16; i <= 16; i++) {
+          if (i + 16 >= radius * 2 + 1) break;
+          float kw = texelFetch(kernelTex, ivec2(i + radius, 0), 0).r;
+          s0 += sampleColumn(inputTex, float(clamp(base + 0 + i, 0, totalLength - 1))) * kw;
+          s1 += sampleColumn(inputTex, float(clamp(base + 1 + i, 0, totalLength - 1))) * kw;
+          s2 += sampleColumn(inputTex, float(clamp(base + 2 + i, 0, totalLength - 1))) * kw;
+          s3 += sampleColumn(inputTex, float(clamp(base + 3 + i, 0, totalLength - 1))) * kw;
         }
-        fragColor = vec4(sum,0.0,0.0,1.0);
+        fragColor = vec4(s0, s1, s2, s3);
       }
     `,
-    attributes: {
-      bin: Array.from({ length }, (_, i) => i)
-    },
-    uniforms: {
-      inputTex,
-      kernelTex,
-      radius,
-      length
-    },
-    count: length,
-    primitive: 'points'
-  });
+    attributes: { position: [[-1, -1], [1, -1], [-1, 1], [1, 1]] },
+    uniforms: { inputTex, kernelTex, radius, totalLength: length },
+    count: 4,
+    primitive: 'triangle strip'
+  })()
 
-  drawFilter();
-  return outputTex;
+  outputTex._dataLength = length
+  return outputTex
 }
 
 // Gaussian kernel helper
 function gaussianKernel(size, sigma) {
-  const radius = Math.floor(size / 2);
-  const kernel = new Float32Array(size);
-  let sum = 0;
+  const radius = Math.floor(size / 2)
+  const kernel = new Float32Array(size)
+  let sum = 0
   for (let i = -radius; i <= radius; i++) {
-    const v = Math.exp(-0.5 * (i / sigma) ** 2);
-    kernel[i + radius] = v;
-    sum += v;
+    const v = Math.exp(-0.5 * (i / sigma) ** 2)
+    kernel[i + radius] = v
+    sum += v
   }
-  for (let i = 0; i < size; i++) kernel[i] /= sum;
-  return kernel;
+  for (let i = 0; i < size; i++) kernel[i] /= sum
+  return kernel
 }
 
 /**
  * Low-pass filter
+ * @param {regl} regl
+ * @param {Texture} inputTex - 4-packed GPU texture
  */
-function lowPass(regl, input, sigma = 3, kernelSize = null) {
-  const size = kernelSize || Math.ceil(sigma*6)|1; // ensure odd
-  const kernel = gaussianKernel(size, sigma);
-  return filter1D(regl, input, kernel);
+function lowPass(regl, inputTex, sigma = 3, kernelSize = null) {
+  const size = kernelSize || (Math.ceil(sigma * 6) | 1) // ensure odd
+  const kernel = gaussianKernel(size, sigma)
+  return filter1D(regl, inputTex, kernel)
 }
 
 /**
  * High-pass filter: subtract low-pass
+ * @param {regl} regl
+ * @param {Texture} inputTex - 4-packed GPU texture
  */
-function highPass(regl, input, sigma = 3, kernelSize = null) {
-  const low = lowPass(regl, input, sigma, kernelSize);
-  // high = input - low (using a shader)
-  return subtractTextures(regl, input, low);
+function highPass(regl, inputTex, sigma = 3, kernelSize = null) {
+  const low = lowPass(regl, inputTex, sigma, kernelSize)
+  return subtractTextures(regl, inputTex, low)
 }
 
 /**
  * Band-pass filter: difference of low-pass filters
+ * @param {regl} regl
+ * @param {Texture} inputTex - 4-packed GPU texture
  */
-function bandPass(regl, input, sigmaLow, sigmaHigh) {
-  const lowHigh = lowPass(regl, input, sigmaHigh);
-  const lowLow = lowPass(regl, input, sigmaLow);
-  return subtractTextures(regl, lowHigh, lowLow);
+function bandPass(regl, inputTex, sigmaLow, sigmaHigh) {
+  const lowHigh = lowPass(regl, inputTex, sigmaHigh)
+  const lowLow  = lowPass(regl, inputTex, sigmaLow)
+  return subtractTextures(regl, lowHigh, lowLow)
 }
 
 export { filter1D, gaussianKernel, lowPass, highPass, bandPass }
 
 class Filter1DComputation extends TextureComputation {
-  compute(regl, params) {
-    return filter1D(regl, params.input, params.kernel)
+  getQuantityKind(params, data) { return resolveQuantityKind(params.input, data) }
+  compute(regl, inputs, getAxisDomain) {
+    const inputTex = inputs.input.toTexture(regl)
+    const kernelArr = inputs.kernel instanceof ArrayColumn ? inputs.kernel.array : inputs.kernel
+    return filter1D(regl, inputTex, kernelArr)
   }
   schema(data) {
     return {
       type: 'object',
+      title: 'filter1D',
       properties: {
         input: EXPRESSION_REF,
         kernel: EXPRESSION_REF
@@ -171,12 +167,14 @@ class Filter1DComputation extends TextureComputation {
 }
 
 class LowPassComputation extends TextureComputation {
-  compute(regl, params) {
-    return lowPass(regl, params.input, params.sigma, params.kernelSize)
+  getQuantityKind(params, data) { return resolveQuantityKind(params.input, data) }
+  compute(regl, inputs, getAxisDomain) {
+    return lowPass(regl, inputs.input.toTexture(regl), inputs.sigma, inputs.kernelSize)
   }
   schema(data) {
     return {
       type: 'object',
+      title: 'lowPass',
       properties: {
         input: EXPRESSION_REF,
         sigma: { type: 'number' },
@@ -188,12 +186,14 @@ class LowPassComputation extends TextureComputation {
 }
 
 class HighPassComputation extends TextureComputation {
-  compute(regl, params) {
-    return highPass(regl, params.input, params.sigma, params.kernelSize)
+  getQuantityKind(params, data) { return resolveQuantityKind(params.input, data) }
+  compute(regl, inputs, getAxisDomain) {
+    return highPass(regl, inputs.input.toTexture(regl), inputs.sigma, inputs.kernelSize)
   }
   schema(data) {
     return {
       type: 'object',
+      title: 'highPass',
       properties: {
         input: EXPRESSION_REF,
         sigma: { type: 'number' },
@@ -205,12 +205,14 @@ class HighPassComputation extends TextureComputation {
 }
 
 class BandPassComputation extends TextureComputation {
-  compute(regl, params) {
-    return bandPass(regl, params.input, params.sigmaLow, params.sigmaHigh)
+  getQuantityKind(params, data) { return resolveQuantityKind(params.input, data) }
+  compute(regl, inputs, getAxisDomain) {
+    return bandPass(regl, inputs.input.toTexture(regl), inputs.sigmaLow, inputs.sigmaHigh)
   }
   schema(data) {
     return {
       type: 'object',
+      title: 'bandPass',
       properties: {
         input: EXPRESSION_REF,
         sigmaLow: { type: 'number' },

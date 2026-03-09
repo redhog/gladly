@@ -39,7 +39,53 @@ dataPromise.then(data => {
 
 let activePlot = 'plot1'
 let lastEditorValue = ''
+let lastSchema = ''
 let editor
+
+function createEditor(config) {
+  lastSchema = JSON.stringify(Plot.schema({ input: data }, config))
+  if (editor) editor.destroy()
+  editor = new JSONEditor(document.getElementById('tab1-editor-container'), {
+    schema: Plot.schema({ input: data }, config),
+    startval: config,
+    theme: 'html',
+    iconlib: 'fontawesome4',
+    disable_collapse: false,
+    disable_edit_json: false,
+    disable_properties: false,
+    no_additional_properties: false,
+    required_by_default: false,
+    show_errors: 'always',
+    compact: false
+  })
+  editor.on('ready', () => {
+    const rootEditor = editor.editors['root']
+    if (rootEditor && rootEditor.editjson_control) {
+      rootEditor.editjson_control.classList.add('je-root-editjson')
+    }
+    lastEditorValue = JSON.stringify(editor.getValue())
+  })
+  editor.on('change', () => {
+    const value = editor.getValue()
+    if (JSON.stringify(value) === lastEditorValue) return
+    lastEditorValue = JSON.stringify(value)
+    const errors = editor.validate()
+    if (errors.length === 0) {
+      const schemaChanged = updatePlot(activePlot, value)
+      if (schemaChanged) {
+        const currentConfig = activePlot === 'plot1' ? plot1Config : plot2Config
+        setTimeout(() => createEditor(currentConfig), 0)
+      }
+    } else {
+      const errorMessages = errors.map(err => `${err.path}: ${err.message}`).join('<br>')
+      document.getElementById('tab1-validation-errors').innerHTML = `
+        <div class="validation-error">
+          <strong>Validation Errors:</strong><br>${errorMessages}
+        </div>
+      `
+    }
+  })
+}
 
 const plot1 = new Plot(document.getElementById('tab1-plot1'))
 const plot2 = new Plot(document.getElementById('tab1-plot2'))
@@ -50,13 +96,12 @@ let plot1Config = {
   "layers": [
     {
       "points": {
-        "xData": "x1",
-        "yData": "y1",
-        "vData": "v1",
-        "vData2": "v2",
+        "xData": "input.x1",
+        "yData": "input.y1",
+        "vData": "input.v1",
+        "vData2": "input.v2",
         "xAxis": "xaxis_bottom",
-        "yAxis": "yaxis_left",
-        "alphaBlend": false
+        "yAxis": "yaxis_left"
       }
     }
   ],
@@ -110,13 +155,12 @@ let plot2Config = {
   "layers": [
     {
       "points": {
-        "xData": "x1",
-        "yData": "y2",
-        "vData": "v1",
+        "xData": "input.x1",
+        "yData": "input.y2",
+        "vData": "input.v1",
         "vData2": "none",
         "xAxis": "xaxis_top",
-        "yAxis": "yaxis_left",
-        "alphaBlend": false
+        "yAxis": "yaxis_left"
       }
     }
   ],
@@ -147,7 +191,7 @@ let plot2Config = {
 function updatePlot(plotId, plotConfig) {
   const plot = plotId === 'plot1' ? plot1 : plot2
   try {
-    plot.update({ config: plotConfig, data })
+    plot.update({ config: plotConfig, data: { input: data } })
     document.getElementById('tab1-validation-errors').innerHTML = ''
 
     const fullConfig = plot.getConfig()
@@ -156,12 +200,18 @@ function updatePlot(plotId, plotConfig) {
     } else {
       plot2Config = fullConfig
     }
-    if (editor && plotId === activePlot) {
-      editor.setValue(fullConfig)
-      lastEditorValue = JSON.stringify(editor.getValue())
+    if (plotId === activePlot) {
+      const newSchema = JSON.stringify(Plot.schema({ input: data }, fullConfig))
+      if (newSchema !== lastSchema) {
+        return true
+      } else if (editor) {
+        editor.setValue(fullConfig)
+        lastEditorValue = JSON.stringify(editor.getValue())
+      }
     }
-    return true
+    return false
   } catch (error) {
+    console.error(error)
     document.getElementById('tab1-validation-errors').innerHTML = `
       <div class="validation-error">
         <strong>Error:</strong> ${error.message}
@@ -195,46 +245,7 @@ function attachPickHandler(plot) {
 attachPickHandler(plot1)
 attachPickHandler(plot2)
 
-editor = new JSONEditor(document.getElementById('tab1-editor-container'), {
-  schema: Plot.schema(data),
-  startval: plot1Config,
-  theme: 'html',
-  iconlib: 'fontawesome4',
-  disable_collapse: false,
-  disable_edit_json: false,
-  disable_properties: false,
-  no_additional_properties: false,
-  required_by_default: false,
-  show_errors: 'always',
-  compact: false
-})
-
-editor.on('ready', () => {
-  const rootEditor = editor.editors['root']
-  if (rootEditor && rootEditor.editjson_control) {
-    rootEditor.editjson_control.classList.add('je-root-editjson')
-  }
-  lastEditorValue = JSON.stringify(editor.getValue())
-})
-
-editor.on('change', () => {
-  const value = editor.getValue()
-  if (JSON.stringify(value) === lastEditorValue) return
-  lastEditorValue = JSON.stringify(value)
-
-  const errors = editor.validate()
-
-  if (errors.length === 0) {
-    updatePlot(activePlot, value)
-  } else {
-    const errorMessages = errors.map(err => `${err.path}: ${err.message}`).join('<br>')
-    document.getElementById('tab1-validation-errors').innerHTML = `
-      <div class="validation-error">
-        <strong>Validation Errors:</strong><br>${errorMessages}
-      </div>
-    `
-  }
-})
+createEditor(plot1Config)
 
 function switchToPlot(plotId) {
   activePlot = plotId
@@ -243,8 +254,13 @@ function switchToPlot(plotId) {
   document.getElementById('tab1-plot2').classList.toggle('active', plotId === 'plot2')
 
   const newConfig = plotId === 'plot1' ? plot1Config : plot2Config
-  editor.setValue(newConfig)
-  lastEditorValue = JSON.stringify(editor.getValue())
+  const newSchema = JSON.stringify(Plot.schema({ input: data }, newConfig))
+  if (newSchema !== lastSchema) {
+    createEditor(newConfig)
+  } else {
+    editor.setValue(newConfig)
+    lastEditorValue = JSON.stringify(editor.getValue())
+  }
 
   document.getElementById('tab1-validation-errors').innerHTML = ''
 }

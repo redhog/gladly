@@ -1,21 +1,22 @@
 import { ScatterLayerTypeBase } from "./ScatterShared.js"
-import { Data } from "../core/Data.js"
+import { Data } from "../data/Data.js"
 import { registerLayerType } from "../core/LayerTypeRegistry.js"
+import { resolveQuantityKind } from "../compute/ComputationRegistry.js"
 
 function makePointsVert(hasFilter) {
-  return `
+  return `#version 300 es
   precision mediump float;
-  attribute float x;
-  attribute float y;
-  attribute float color_data;
-  attribute float color_data2;
-  ${hasFilter ? 'attribute float filter_data;\n  uniform vec4 filter_range;' : ''}
+  in float x;
+  in float y;
+  in float color_data;
+  in float color_data2;
+  ${hasFilter ? 'in float filter_data;' : ''}
   uniform vec2 xDomain;
   uniform vec2 yDomain;
   uniform float xScaleType;
   uniform float yScaleType;
-  varying float value;
-  varying float value2;
+  out float value;
+  out float value2;
   void main() {
     ${hasFilter ? 'if (!filter_(filter_data)) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }' : ''}
     gl_Position = plot_pos(vec2(x, y));
@@ -26,15 +27,19 @@ function makePointsVert(hasFilter) {
 `
 }
 
-function makePointsFrag(hasSecond) {
-  return `
+function makePointsFrag(hasFirst, hasSecond) {
+  return `#version 300 es
   precision mediump float;
-  varying float value;
-  varying float value2;
+  in float value;
+  in float value2;
   void main() {
-    ${hasSecond
-      ? 'gl_FragColor = map_color_2d_(vec2(value, value2));'
-      : 'gl_FragColor = map_color_(value);'}
+    ${hasFirst
+       ? (hasSecond
+           ? 'fragColor = map_color_2d_(vec2(value, value2));'
+           : 'fragColor = map_color_2d_x_(value);')
+       : (hasSecond
+           ? 'fragColor = map_color_2d_y_2(value2);'
+           : 'fragColor = vec4(0.0, 0.0, 0.0, 1.0);')}
   }
 `
 }
@@ -45,41 +50,58 @@ class PointsLayerType extends ScatterLayerTypeBase {
   }
 
   schema(data) {
-    const dataProperties = Data.wrap(data).columns()
+    const d = Data.wrap(data)
     return {
-      $schema: "https://json-schema.org/draft/2020-12/schema",
       type: "object",
-      properties: this._commonSchemaProperties(dataProperties),
-      required: ["xData", "yData", "vData"]
+      properties: this._commonSchemaProperties(d),
+      required: ["xData", "yData"]
     }
   }
 
-  _createLayer(parameters, data) {
+  _createLayer(regl, parameters, data, plot) {
     const d = Data.wrap(data)
-    const { xData, yData, vData, vData2, fData, xQK, yQK, vQK, vQK2, fQK, srcX, srcY, srcV, srcV2, srcF } =
-      this._resolveColorData(parameters, d)
+    const { vData: vDataRaw, vData2: vData2Raw, fData: fDataRaw } = parameters
+    const vDataIn  = (vDataRaw  == null || vDataRaw  === "none") ? null : vDataRaw
+    const vData2In = (vData2Raw == null || vData2Raw === "none") ? null : vData2Raw
+    const fData    = (fDataRaw  == null || fDataRaw  === "none") ? null : fDataRaw
+    const vData  = vDataIn
+    const vData2 = vData2In
 
-    const domains = this._buildDomains(d, xData, yData, vData, vData2, xQK, yQK, vQK, vQK2)
+    const xQK  = resolveQuantityKind(parameters.xData, d) ?? undefined
+    const yQK  = resolveQuantityKind(parameters.yData, d) ?? undefined
+    const vQK  = vData  ? resolveQuantityKind(vData,  d) : null
+    const vQK2 = vData2 ? resolveQuantityKind(vData2, d) : null
+
+    const domains = this._buildDomains(d, parameters.xData, parameters.yData, vData, vData2, xQK, yQK, vQK, vQK2)
+
+    // Vertex count: read from data when xData is a plain column name so that
+    // Plot.render() can determine how many vertices to draw even when other
+    // attributes are computed expressions resolved at draw time.
+    const vertexCount = typeof parameters.xData === 'string'
+      ? (d.getData(parameters.xData)?.length ?? null)
+      : null
 
     return [{
       attributes: {
-        x: srcX,
-        y: srcY,
-        color_data: vData ? srcV : new Float32Array(srcX.length),
-        color_data2: vData2 ? srcV2 : new Float32Array(srcX.length),
-        ...(fData ? { filter_data: srcF } : {}),
+        x: parameters.xData,
+        y: parameters.yData,
+        color_data:  vData  !== null ? vData  : new Float32Array(vertexCount ?? 0).fill(NaN),
+        color_data2: vData2 !== null ? vData2 : new Float32Array(vertexCount ?? 0).fill(NaN),
+        ...(fData != null ? { filter_data: fData } : {}),
       },
       uniforms: {},
       domains,
+      vertexCount,
     }]
   }
 
-  createDrawCommand(regl, layer) {
+  createDrawCommand(regl, layer, plot) {
     const hasFilter = Object.keys(layer.filterAxes).length > 0
-    const hasSecond = Object.keys(layer.colorAxes2d).length > 0
+    const hasFirst = '' in layer.colorAxes
+    const hasSecond = '2' in layer.colorAxes
     this.vert = makePointsVert(hasFilter)
-    this.frag = makePointsFrag(hasSecond)
-    return super.createDrawCommand(regl, layer)
+    this.frag = makePointsFrag(hasFirst, hasSecond)
+    return super.createDrawCommand(regl, layer, plot)
   }
 }
 

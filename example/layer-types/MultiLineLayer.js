@@ -1,7 +1,33 @@
 import { LayerType } from "../../src/core/LayerType.js"
 import { registerLayerType } from "../../src/core/LayerTypeRegistry.js"
 import { AXES } from "../../src/axes/AxisRegistry.js"
-import { Data } from "../../src/core/Data.js"
+import { Data } from "../../src/data/Data.js"
+
+function makeMultiLineVert(hasFilter) {
+  return `#version 300 es
+    precision mediump float;
+    in float a_endPoint;
+    in float x;
+    in float y;
+    ${hasFilter ? 'in float filter0;\n    in float filter1;' : ''}
+    uniform float u_line_index;
+    ${hasFilter ? 'uniform float u_cutoff;' : ''}
+    uniform vec2 xDomain;
+    uniform vec2 yDomain;
+    uniform float xScaleType;
+    uniform float yScaleType;
+    out float vLineIndex;
+    out float vBadSegment;
+    void main() {
+      ${hasFilter
+        ? 'float isBad = (filter0 > u_cutoff || filter1 > u_cutoff) ? 1.0 : 0.0;'
+        : 'float isBad = 0.0;'}
+      gl_Position = plot_pos(vec2(x, y));
+      vLineIndex = u_line_index;
+      vBadSegment = isBad;
+    }
+  `
+}
 
 export const multiLineLayerType = new LayerType({
   name: "multi-line",
@@ -20,38 +46,18 @@ export const multiLineLayerType = new LayerType({
     }
   },
 
-  vert: `
-    precision mediump float;
-    attribute float x;
-    attribute float y;
-    attribute float line_index;
-    attribute float bad_segment;
-    uniform vec2 xDomain;
-    uniform vec2 yDomain;
-    uniform float xScaleType;
-    uniform float yScaleType;
-    varying float vLineIndex;
-    varying float vBadSegment;
-    void main() {
-      gl_Position = plot_pos(vec2(x, y));
-      vLineIndex = line_index;
-      vBadSegment = bad_segment;
-    }
-  `,
+  vert: makeMultiLineVert(false),
 
-  frag: `
+  frag: `#version 300 es
     precision mediump float;
-    uniform int colorscale;
-    uniform vec2 color_range;
-    uniform float color_scale_type;
     uniform vec4 bad_color;
-    varying float vLineIndex;
-    varying float vBadSegment;
+    in float vLineIndex;
+    in float vBadSegment;
     void main() {
       if (vBadSegment > 0.5) {
-        gl_FragColor = gladly_apply_color(bad_color);
+        fragColor = gladly_apply_color(bad_color);
       } else {
-        gl_FragColor = map_color_(vLineIndex);
+        fragColor = map_color_(vLineIndex);
       }
     }
   `,
@@ -100,7 +106,7 @@ export const multiLineLayerType = new LayerType({
     }
   },
 
-  createLayer: function(parameters, data) {
+  createLayer: function(regl, parameters, data) {
     const d = Data.wrap(data)
     const {
       xData,
@@ -109,39 +115,46 @@ export const multiLineLayerType = new LayerType({
       badColor = [0.5, 0.5, 0.5, 1.0],
     } = parameters
 
-    const xArr = d.getData(xData)
-    if (!xArr) throw new Error(`Data column '${xData}' not found`)
-    const filterArr = filterData ? d.getData(filterData) : null
-    const N = xArr.length
+    const colX = d.getData(xData)
+    if (!colX) throw new Error(`Data column '${xData}' not found`)
+    const colFilter = filterData ? d.getData(filterData) : null
+    const N = colX.length
     const nSegs = N - 1
 
     const yColumns = d.columns().filter(k => k !== xData && k !== filterData)
 
     return yColumns.map((colName, idx) => {
-      const yArr = d.getData(colName)
-      const xs      = new Float32Array(nSegs * 2)
-      const ys      = new Float32Array(nSegs * 2)
-      const lineIdx = new Float32Array(nSegs * 2)
-      const badSeg  = new Float32Array(nSegs * 2)
-
-      for (let i = 0; i < nSegs; i++) {
-        xs[i*2]     = xArr[i];      xs[i*2+1]     = xArr[i+1]
-        ys[i*2]     = yArr[i];      ys[i*2+1]     = yArr[i+1]
-        lineIdx[i*2] = idx;         lineIdx[i*2+1] = idx
-        const isBad = filterArr !== null && (filterArr[i] > cutoff || filterArr[i+1] > cutoff)
-        badSeg[i*2]  = isBad ? 1.0 : 0.0
-        badSeg[i*2+1] = isBad ? 1.0 : 0.0
-      }
+      const colY = d.getData(colName)
 
       return {
-        attributes: { x: xs, y: ys, line_index: lineIdx, bad_segment: badSeg },
-        uniforms: { bad_color: badColor },
+        attributes: {
+          a_endPoint: new Float32Array([0.0, 1.0]),
+          x: colX.withOffset('a_endPoint'),
+          y: colY.withOffset('a_endPoint'),
+          ...(colFilter ? {
+            filter0: colFilter.withOffset('0.0'),
+            filter1: colFilter.withOffset('1.0'),
+          } : {}),
+        },
+        uniforms: {
+          bad_color: badColor,
+          u_line_index: yColumns.length > 1 ? idx / (yColumns.length - 1) : 0.5,
+          ...(colFilter ? { u_cutoff: cutoff } : {}),
+        },
         domains: { line_index: [idx, idx] },
         primitive: "lines",
         lineWidth: 2,
+        vertexCount: 2,
+        instanceCount: nSegs,
       }
     })
-  }
+  },
+
+  createDrawCommand: function(regl, layer, plot) {
+    const hasFilter = 'filter0' in layer.attributes
+    this.vert = makeMultiLineVert(hasFilter)
+    return LayerType.prototype.createDrawCommand.call(this, regl, layer, plot)
+  },
 })
 
 registerLayerType("multi-line", multiLineLayerType)

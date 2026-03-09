@@ -45,7 +45,7 @@ Updates the plot with new configuration and/or data.
 | `config` | object | `{ layers, axes }` — see [Configuring Plots](PlotConfiguration.md) |
 | `config.layers` | array | Layer specifications: `[{ typeName: params }, ...]` |
 | `config.axes` | object | Range overrides for spatial, color, and filter axes |
-| `data` | object | Named `Float32Array` values |
+| `data` | object | Any plain object that `normalizeData()` can convert to a `DataGroup` tree (see [Data Format](../API.md#data-format)) |
 
 **Behaviour:**
 - Config-only: stores config, waits for data before rendering
@@ -397,13 +397,17 @@ import { Computation } from 'gladly-plot'
 Base class for computations that produce a regl texture. Extend this to register a new texture computation.
 
 ```javascript
-import { TextureComputation, EXPRESSION_REF, registerTextureComputation } from 'gladly-plot'
+import { TextureComputation, ArrayColumn, EXPRESSION_REF, registerTextureComputation } from 'gladly-plot'
 
 class MyComp extends TextureComputation {
-  compute(regl, params, getAxisDomain) {
-    // params: resolved parameter object (arrays, textures, numbers)
-    // getAxisDomain(axisId): returns [min|null, max|null]; registers axis as dependency
-    // Returns a regl texture (R channel read as float attribute per vertex)
+  compute(regl, inputs, getAxisDomain) {
+    // inputs: resolved parameter object.
+    // - String params that matched data columns are ColumnData instances.
+    // - Use inputs.col.toTexture(regl) to get a GPU texture from any ColumnData.
+    // - Check `inputs.col instanceof ArrayColumn` for CPU-accessible data; use .array.
+    // - Numbers, booleans, and Float32Array values pass through unchanged.
+    // getAxisDomain(axisId): returns [min|null, max|null]; registers axis as dependency.
+    // Returns a regl texture (R channel, 1 value/texel, 2D layout).
   }
   schema(data) {
     return {
@@ -417,11 +421,11 @@ class MyComp extends TextureComputation {
 registerTextureComputation('myComp', new MyComp())
 ```
 
-In `createLayer`, reference the computation as an attribute value:
+In `createLayer`, reference the computation as an attribute value (column names or expressions):
 
 ```javascript
 attributes: {
-  count: { myComp: { input: normalized, bins: 50 } }
+  count: { myComp: { input: 'myColumn', bins: 50 } }
 }
 ```
 
@@ -488,7 +492,7 @@ Registers a `GlslComputation` instance under `name`.
 import { EXPRESSION_REF } from 'gladly-plot'
 ```
 
-A JSON Schema `$ref` (`{ '$ref': '#/$defs/expression' }`) for use inside `schema()` methods. Marks a parameter as accepting either a `Float32Array` (data column) or a nested computation expression. See [Computed Attributes — EXPRESSION_REF](ComputedAttributes.md#expression_ref).
+A JSON Schema `$ref` (`{ '$ref': '#/$defs/expression' }`) for use inside `schema()` methods. Marks a parameter as accepting a column name string, a `Float32Array`, or a nested computation expression. The framework resolves column names and expressions to `ColumnData` instances before passing them to `compute()`. See [Computed Attributes — EXPRESSION_REF](ComputedAttributes.md#expression_ref).
 
 ---
 
@@ -507,22 +511,82 @@ Returns a JSON Schema Draft 2020-12 document covering the full space of valid co
 
 ---
 
-## `isTexture(value)`
+## `ColumnData`, `ArrayColumn`, `TextureColumn`, `GlslColumn`, `OffsetColumn`
 
-Duck-type check for regl textures. Returns `true` if `value` is a non-null object with a numeric `width` property and a `subimage` method.
+The unified column data hierarchy. All columnar values in the computation pipeline — whether they come from `Data.getData()`, a `TextureComputation`, a `GlslComputation`, or a `col.withOffset()` call — are represented as one of these classes.
 
 ```javascript
-import { isTexture } from 'gladly-plot'
+import { ColumnData, ArrayColumn, TextureColumn, GlslColumn, OffsetColumn } from 'gladly-plot'
+```
 
-class MyComp extends TextureComputation {
-  compute(regl, params) {
-    const input = isTexture(params.input)
-      ? params.input
-      : uploadToTexture(regl, params.input)
-    // ...
-  }
+**Subtypes:**
+
+| Class | Source | GPU access | CPU access |
+|-------|--------|------------|------------|
+| `ArrayColumn` | `Data.getData()` — wraps a `Float32Array` | `col.toTexture(regl)` (lazy upload) | `col.array` |
+| `TextureColumn` | `TextureComputation.createColumn()` — wraps a mutable `{ texture }` ref | `col.toTexture(regl)` | — |
+| `GlslColumn` | `GlslComputation.createColumn()` — composes a GLSL expression from named inputs | `col.toTexture(regl)` (GPU scatter pass) | — |
+| `OffsetColumn` | `col.withOffset(glslExpr)` — shifts the sampling index in the vertex shader | delegates to base | delegates to base |
+
+**Common interface** (all subtypes):
+
+| Member | Description |
+|--------|-------------|
+| `col.length` | Number of data elements, or `null` if unknown |
+| `col.domain` | `[min, max]` or `null` |
+| `col.quantityKind` | string or `null` |
+| `col.resolve(path, regl)` | Returns `{ glslExpr: string, textures: { uniformName: () => tex } }` for shader injection |
+| `col.toTexture(regl)` | Returns a raw regl texture (R channel, 2D layout) |
+| `col.refresh(plot)` | Refreshes if axis-reactive; returns `true` if updated |
+| `col.withOffset(glslExpr)` | Returns an `OffsetColumn` that samples at `a_pickId + (glslExpr)` |
+
+**`ArrayColumn` extras:**
+- `col.array` — the raw `Float32Array` (CPU-accessible)
+
+**`OffsetColumn`** is used in instanced rendering to read consecutive data points from the same underlying column without building interleaved CPU arrays:
+
+```javascript
+// Both attributes read from the same colX, offset by 0 or 1 per instance
+attributes: {
+  x0: colX.withOffset('0.0'),   // segment start
+  x1: colX.withOffset('1.0'),   // segment end
+  xi: colX.withOffset('a_endPoint'),  // per-vertex interpolation via template attribute
 }
 ```
+
+Use `instanceof ArrayColumn` guards in `TextureComputation.compute()` when CPU data is required.
+
+---
+
+## `uploadToTexture(regl, array)`
+
+```javascript
+import { uploadToTexture } from 'gladly-plot'
+const tex = uploadToTexture(regl, float32Array)
+```
+
+Uploads a `Float32Array` as an R-channel, one-value-per-texel, 2D GPU texture. Sets `tex._dataLength = array.length`. Use this inside `TextureComputation.compute()` to convert a CPU result into a returnable texture.
+
+---
+
+## `resolveExprToColumn(expr, data, regl, plot)`
+
+```javascript
+import { resolveExprToColumn } from 'gladly-plot'
+const col = resolveExprToColumn(expr, data, regl, plot)  // → ColumnData
+```
+
+Resolves any expression to a `ColumnData` instance: passes through existing `ColumnData`, looks up string column names, or runs registered computations.
+
+---
+
+## `SAMPLE_COLUMN_GLSL`
+
+```javascript
+import { SAMPLE_COLUMN_GLSL } from 'gladly-plot'
+```
+
+A GLSL helper string defining `sampleColumn(sampler2D tex, float idx) → float`. Automatically injected by the framework into any vertex shader that uses column data. Import it directly only when writing custom GPU compute passes that need to sample column textures.
 
 ---
 
@@ -595,9 +659,9 @@ Returns an array of all registered quantity kind name strings.
 
 ## `Data`
 
-A utility class that normalises plain JavaScript objects of various shapes into a consistent columnar interface.
+A class that normalises a flat plain JavaScript dataset into a consistent columnar interface. `getData()` always returns a `ColumnData` instance.
 
-> **This class is completely optional.** The plotting framework itself never inspects or requires any particular shape for the `data` object passed to `plot.update()` — it is passed through unchanged to each layer type's `createLayer` and `getAxisConfig` functions. Only the built-in layer types call `Data.wrap`, and custom layer type authors may adopt it voluntarily for the same benefit.
+The framework calls `normalizeData()` on the `data` argument to `plot.update()`, which uses `Data.wrap()` internally. The result is always a `DataGroup` tree whose leaves are `Data` instances. Layer types receive this normalised `DataGroup` as their `data` argument and call `Data.wrap(data)` on it (a no-op when already normalised).
 
 ### Supported plain-object formats
 
@@ -651,7 +715,17 @@ import { Data } from './src/index.js'
 const d = Data.wrap(rawData)
 ```
 
-The primary entry point. Returns `data` **unchanged** if it already has `columns` and `getData` methods (duck-typing — any conforming class works, not just `Data` itself). Otherwise wraps the plain object, auto-detecting which format it uses.
+The primary entry point. Returns `data` **unchanged** if it already has `columns` and `getData` methods (duck-typing — any conforming class works, not just `Data` itself). Otherwise inspects the plain object and selects the appropriate wrapper:
+
+| Input shape | Result |
+|-------------|--------|
+| Already has `columns` + `getData` methods | returned unchanged |
+| Has a top-level `data` key whose value is a plain object | `Data` — columnar format |
+| All top-level values are `Float32Array` | `Data` — simple format |
+| All top-level values are `{ data: Float32Array, ... }` | `Data` — per-column rich format |
+| Any other case (top-level values are plain objects) | [`DataGroup`](#datagroup) — hierarchical |
+
+When a `DataGroup` is created, each child value is recursively passed through `Data.wrap()`, so any nesting depth is handled automatically.
 
 ### `data.columns()`
 
@@ -659,11 +733,19 @@ Returns `string[]` — the list of column names.
 
 ### `data.getData(col)`
 
-Returns the `Float32Array` for column `col`, or `undefined` if the column does not exist.
+Returns a `ColumnData` instance (`ArrayColumn` for plain `Float32Array` data) for column `col`, or `null` if the column does not exist. To get the underlying `Float32Array`, use `col.array` (only on `ArrayColumn` instances); to upload as a GPU texture use `col.toTexture(regl)` (any `ColumnData` subtype).
+
+```javascript
+const col = d.getData('x')   // → ArrayColumn (or null)
+if (col instanceof ArrayColumn) {
+  const arr = col.array      // Float32Array (CPU access)
+}
+const tex = col.toTexture(regl)  // regl texture (any ColumnData subtype)
+```
 
 ### `data.getQuantityKind(col)`
 
-Returns the quantity kind string for column `col`, or `undefined` if none was specified. Layer type authors typically fall back to the column name when undefined:
+Returns the quantity kind string for column `col`, or `null`/`undefined` if none was specified. Layer type authors typically fall back to the column name when undefined:
 
 ```javascript
 const qk = d.getQuantityKind(params.vData) ?? params.vData
@@ -674,6 +756,215 @@ When a quantity kind is present, it is used as the axis identity (the key in `co
 ### `data.getDomain(col)`
 
 Returns `[min, max]` for column `col`, or `undefined` if no domain was specified. When returned, the built-in layers pass it as the `domains` entry in the `createLayer` return value, which tells the plot to skip its own min/max scan of the data array for that axis.
+
+---
+
+## `DataGroup`
+
+A class that wraps a **nested** object — where the top-level values are themselves data collections rather than typed arrays — into a consistent hierarchical interface. Column names are expressed in **dot notation**: `"child.column"` or `"subgroup.child.column"` at any depth. `getData()` always returns a `ColumnData` instance.
+
+`DataGroup` is the top-level container produced by `normalizeData()`. The framework stores the normalised `DataGroup` as `plot.currentData` and passes it as the `data` argument to every layer type's `createLayer` and `getAxisConfig`. It is created automatically by `Data.wrap()` when the input is a nested object; you do not normally construct it directly.
+
+### Examples
+
+**Nested datasets → `DataGroup` of flat `Data` objects:**
+
+```javascript
+import { Data } from './src/index.js'
+
+const group = Data.wrap({
+  survey1: { x: new Float32Array([1, 2, 3]), y: new Float32Array([4, 5, 6]) },
+  survey2: { x: new Float32Array([7, 8, 9]), y: new Float32Array([0, 1, 2]) }
+})
+// → DataGroup
+//   group.columns()            → ['survey1.x', 'survey1.y', 'survey2.x', 'survey2.y']
+//   group.getData('survey1.x') → Float32Array([1, 2, 3])
+//   group.listData()           → { survey1: Data, survey2: Data }
+```
+
+**Columnar children → each child is detected as columnar `Data`:**
+
+```javascript
+const group = Data.wrap({
+  run1: {
+    data: { depth: new Float32Array([...]), vp: new Float32Array([...]) },
+    quantity_kinds: { depth: 'depth_m', vp: 'velocity_ms' }
+  },
+  run2: {
+    data: { depth: new Float32Array([...]), vp: new Float32Array([...]) }
+  }
+})
+// group.getQuantityKind('run1.depth') → 'depth_m'
+// group.getData('run2.vp')           → Float32Array([...])
+```
+
+**Multi-level nesting → `DataGroup` of `DataGroup` of `Data`:**
+
+```javascript
+const group = Data.wrap({
+  region_a: {
+    shallow: { depth: new Float32Array([...]), vp: new Float32Array([...]) },
+    deep:    { depth: new Float32Array([...]), vp: new Float32Array([...]) }
+  },
+  region_b: { depth: new Float32Array([...]), vp: new Float32Array([...]) }
+})
+// group.columns() →
+//   ['region_a.shallow.depth', 'region_a.shallow.vp',
+//    'region_a.deep.depth',    'region_a.deep.vp',
+//    'region_b.depth',         'region_b.vp']
+// group.subgroups()  → { region_a: DataGroup }
+// group.listData()   → { region_b: Data }
+```
+
+### `dataGroup.listData()`
+
+Returns `{ [key]: Data }` — a plain object of the immediate children that are `Data` instances (not sub-groups).
+
+### `dataGroup.subgroups()`
+
+Returns `{ [key]: DataGroup }` — a plain object of the immediate children that are `DataGroup` instances.
+
+### `dataGroup.columns()`
+
+Returns all dotted column names recursively across all children. The order follows insertion order of the top-level keys, recursing depth-first.
+
+### `dataGroup.getData(col)`
+
+Returns the `ColumnData` instance for the dotted column name `col`, or `undefined` if the path does not exist. Delegates to the appropriate child `Data` or `DataGroup` node.
+
+### `dataGroup.getQuantityKind(col)`
+
+Returns the quantity kind string for the dotted column name, or `undefined` if none was specified.
+
+### `dataGroup.getDomain(col)`
+
+Returns `[min, max]` for the dotted column name, or `undefined` if none was specified.
+
+---
+
+## `ComputePipeline`
+
+A headless GPU compute pipeline for running data transforms without any visual output. It creates its own offscreen WebGL context — no DOM container or `<canvas>` element is needed.
+
+`ComputePipeline` uses the same [transform system](../API.md#transforms) as `Plot` (`config.transforms`), including filter axes. Use it to run computations server-side, in workers, or any time you need GPU-accelerated results as CPU arrays.
+
+**Constructor:**
+```javascript
+new ComputePipeline()
+```
+
+No arguments. The WebGL context is created immediately in the constructor.
+
+**Instance properties:**
+
+### `pipeline.axes`
+
+A proxy that returns a stable [`Axis`](#axis) instance for any registered filter axis name:
+
+```javascript
+pipeline.axes["depth_m"].getDomain()          // [min, max] or null
+pipeline.axes["depth_m"].setDomain([0, 500])  // update filter range
+```
+
+Axis instances are stable across `update()` calls. They support `subscribe()` / `unsubscribe()` and can be linked to axes on a `Plot` or another `ComputePipeline` via [`linkAxes()`](#linkaxesaxis1-axis2):
+
+```javascript
+// Sync the filter on a plot's filterbar to the pipeline's filter axis
+linkAxes(plot.axes["depth_m"], pipeline.axes["depth_m"])
+```
+
+Only **filter axes** are meaningful on a `ComputePipeline` (there are no spatial or color axes). Axis instances are created on first access; they become non-null after the first `update()` call that registers the axis.
+
+**Instance methods:**
+
+### `update({ data, transforms, axes })`
+
+Runs the given transforms over `data` and returns a [`ComputeOutput`](#computeoutput).
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `data` | object | Input data — any plain object that `normalizeData()` can convert (see [Data Format](../API.md#data-format)). Omit to reuse the data from the previous `update()` call. |
+| `transforms` | array | Array of `{ name, transform: { ClassName: params } }` objects, in the same format as `config.transforms` in `Plot`. Default: `[]`. |
+| `axes` | object | Filter axis range overrides: `{ [quantityKind]: { min, max } }`. Either bound may be omitted for an open interval. Default: `{}`. |
+
+**Behaviour:**
+
+Transforms are run in declaration order. Each transform can reference columns from `data` (as `"input.colName"`) or from a previously declared transform output (as `"transformName.colName"`).
+
+Filter axis ranges are applied **after** transforms register their axes (so the range is always set on an axis that exists). Transforms whose output depends on a filter axis are then re-run with the configured range in place.
+
+```javascript
+const pipeline = new ComputePipeline()
+
+const output = pipeline.update({
+  data: { depth: new Float32Array([...]), vp: new Float32Array([...]) },
+  transforms: [
+    { name: 'hist', transform: { HistogramData: { input: 'input.vp', bins: 64 } } }
+  ],
+  axes: {
+    // If the transform registers a filter axis, set its range here:
+    depth_m: { min: 0, max: 3000 }
+  }
+})
+
+const counts = output.getData('hist.counts').getArray()  // Float32Array
+const centers = output.getData('hist.binCenters').getArray()
+```
+
+### `destroy()`
+
+Destroys the WebGL context and frees GPU resources. After `destroy()`, calling `update()` will throw.
+
+---
+
+## `ComputeOutput`
+
+The object returned by [`ComputePipeline.update()`](#updatedata-transforms-axes). Provides access to transform output columns as CPU arrays.
+
+Column names use dot notation: input data columns are under `"input.*"`, and each transform's outputs are under `"transformName.*"` (matching the `name` given in the `transforms` array).
+
+### `output.columns()`
+
+Returns `string[]` — all available dotted column names, including both input data columns and transform outputs.
+
+```javascript
+output.columns()
+// ['input.depth', 'input.vp', 'hist.counts', 'hist.binCenters', ...]
+```
+
+### `output.getData(col)`
+
+Returns a [`ColumnData`](#columndata-arraycolumn-texturecolumn-glslcolumn-offsetcolumn) subclass instance for column `col`, extended with an additional `getArray()` method. Returns `null` if the column does not exist.
+
+```javascript
+const col = output.getData('hist.counts')
+const arr = col.getArray()  // Float32Array — GPU readback if needed
+```
+
+The returned object is a full `ColumnData` instance — it also supports `col.length`, `col.domain`, `col.quantityKind`, `col.toTexture(regl)`, etc.
+
+### `output.getData(col).getArray()`
+
+Returns a `Float32Array` of the column's values on the CPU.
+
+- For columns backed by a `Float32Array` (input data), returns the array directly with no GPU round-trip.
+- For columns produced by a texture computation (transform outputs), reads the GPU texture back to CPU via a temporary framebuffer. The texture data is unpacked from the 4-values-per-texel RGBA format used internally.
+
+### `output.getArrays()`
+
+Reads all columns to CPU at once and returns a plain object:
+
+```javascript
+const arrays = output.getArrays()
+// {
+//   'input.depth':    Float32Array([...]),
+//   'input.vp':       Float32Array([...]),
+//   'hist.counts':    Float32Array([...]),
+//   'hist.binCenters': Float32Array([...]),
+// }
+```
+
+Columns that fail to read (e.g. uninitialized texture) are skipped with a `console.warn`; the rest are still returned.
 
 ---
 

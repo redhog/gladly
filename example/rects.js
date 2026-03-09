@@ -77,7 +77,7 @@ const data = {
 
 const plotConfig = {
   layers: [
-    { rects: { xData: "barX", yTopData: "barTop", yBottomData: "barBottom", vData: "barColor", e: 250000 } }
+    { rects: { xData: "input.barX", yTopData: "input.barTop", yBottomData: "input.barBottom", vData: "input.barColor", e: 250000 } }
   ],
   axes: {
     reflectance_au: { colorbar: "vertical", colorscale: "viridis" }
@@ -88,20 +88,67 @@ const plot = new Plot(document.getElementById('tab3-plot1'))
 
 let currentPlotConfig = plotConfig
 let lastEditorValue = ''
+let lastSchema = ''
 let editor
+
+function createEditor(config) {
+  lastSchema = JSON.stringify(Plot.schema({ input: data }, config))
+  if (editor) editor.destroy()
+  editor = new JSONEditor(document.getElementById('tab3-editor-container'), {
+    schema: Plot.schema({ input: data }, config),
+    startval: config,
+    theme: 'html',
+    iconlib: 'fontawesome4',
+    disable_collapse: false,
+    disable_edit_json: false,
+    disable_properties: false,
+    no_additional_properties: false,
+    required_by_default: false,
+    show_errors: 'always',
+    compact: false
+  })
+  editor.on('ready', () => {
+    const rootEditor = editor.editors['root']
+    if (rootEditor && rootEditor.editjson_control) {
+      rootEditor.editjson_control.classList.add('je-root-editjson')
+    }
+    lastEditorValue = JSON.stringify(editor.getValue())
+  })
+  editor.on('change', () => {
+    const value = editor.getValue()
+    if (JSON.stringify(value) === lastEditorValue) return
+    lastEditorValue = JSON.stringify(value)
+    const errors = editor.validate()
+    if (errors.length === 0) {
+      const schemaChanged = updatePlot(value)
+      if (schemaChanged) setTimeout(() => createEditor(currentPlotConfig), 0)
+    } else {
+      const errorMessages = errors.map(err => `${err.path}: ${err.message}`).join('<br>')
+      document.getElementById('tab3-validation-errors').innerHTML = `
+        <div class="validation-error">
+          <strong>Validation Errors:</strong><br>${errorMessages}
+        </div>
+      `
+    }
+  })
+}
 
 function updatePlot(cfg) {
   try {
-    plot.update({ config: cfg, data })
+    plot.update({ config: cfg, data: { input: data } })
     document.getElementById('tab3-validation-errors').innerHTML = ''
     const fullConfig = plot.getConfig()
     currentPlotConfig = fullConfig
-    if (editor) {
+    const newSchema = JSON.stringify(Plot.schema({ input: data }, fullConfig))
+    if (newSchema !== lastSchema) {
+      return true
+    } else if (editor) {
       editor.setValue(fullConfig)
       lastEditorValue = JSON.stringify(editor.getValue())
     }
-    return true
+    return false
   } catch (error) {
+    console.error(error)
     document.getElementById('tab3-validation-errors').innerHTML = `
       <div class="validation-error"><strong>Error:</strong> ${error.message}</div>
     `
@@ -122,45 +169,7 @@ plot.on('mouseup', (e) => {
   status.textContent = `layer=${configLayerIndex} index=${dataIndex} ${JSON.stringify(row)}`
 })
 
-editor = new JSONEditor(document.getElementById('tab3-editor-container'), {
-  schema: Plot.schema(data),
-  startval: currentPlotConfig,
-  theme: 'html',
-  iconlib: 'fontawesome4',
-  disable_collapse: false,
-  disable_edit_json: false,
-  disable_properties: false,
-  no_additional_properties: false,
-  required_by_default: false,
-  show_errors: 'always',
-  compact: false
-})
-
-editor.on('ready', () => {
-  const rootEditor = editor.editors['root']
-  if (rootEditor && rootEditor.editjson_control) {
-    rootEditor.editjson_control.classList.add('je-root-editjson')
-  }
-  lastEditorValue = JSON.stringify(editor.getValue())
-})
-
-editor.on('change', () => {
-  const value = editor.getValue()
-  if (JSON.stringify(value) === lastEditorValue) return
-  lastEditorValue = JSON.stringify(value)
-
-  const errors = editor.validate()
-  if (errors.length === 0) {
-    updatePlot(value)
-  } else {
-    const errorMessages = errors.map(err => `${err.path}: ${err.message}`).join('<br>')
-    document.getElementById('tab3-validation-errors').innerHTML = `
-      <div class="validation-error">
-        <strong>Validation Errors:</strong><br>${errorMessages}
-      </div>
-    `
-  }
-})
+createEditor(currentPlotConfig)
 
 plot.onZoomEnd(() => {
   const config = plot.getConfig()

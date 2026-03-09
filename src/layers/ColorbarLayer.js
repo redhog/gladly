@@ -19,29 +19,29 @@ export const colorbarLayerType = new LayerType({
     }
   },
 
-  vert: `
+  vert: `#version 300 es
     precision mediump float;
-    attribute float cx;
-    attribute float cy;
+    in float cx;
+    in float cy;
     uniform int horizontal;
-    varying float tval;
+    out float tval;
     void main() {
       gl_Position = vec4(cx, cy, 0.0, 1.0);
       tval = horizontal == 1 ? (cx + 1.0) / 2.0 : (cy + 1.0) / 2.0;
     }
   `,
 
-  frag: `
+  frag: `#version 300 es
     precision mediump float;
     uniform int colorscale;
     uniform vec2 color_range;
     uniform float color_scale_type;
-    varying float tval;
+    in float tval;
     void main() {
       float r0 = color_scale_type > 0.5 ? log(color_range.x) : color_range.x;
       float r1 = color_scale_type > 0.5 ? log(color_range.y) : color_range.y;
       float v  = r0 + tval * (r1 - r0);
-      gl_FragColor = gladly_apply_color(map_color(colorscale, vec2(r0, r1), v));
+      fragColor = gladly_apply_color(map_color(colorscale, vec2(r0, r1), v));
     }
   `,
 
@@ -55,7 +55,7 @@ export const colorbarLayerType = new LayerType({
     required: ["colorAxis"]
   }),
 
-  createLayer: function(parameters) {
+  createLayer: function(regl, parameters) {
     const { colorAxis, orientation = "horizontal" } = parameters
     return [{
       attributes: { cx: quadCx, cy: quadCy },

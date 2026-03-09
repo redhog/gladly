@@ -10,15 +10,13 @@
     "src"
   ],
   "scripts": {
-    "prepare": "node scripts/fix-numjs-wasm.js",
-    "dev": "parcel serve example/index.html --no-cache",
-    "build:example": "parcel build example/index.html --dist-dir dist-example --public-url ./",
-    "preview": "npm run build:example && npx serve dist-example"
+    "dev": "npx serve . -l 1234",
+    "build:example": "bash scripts/build-example.sh"
   },
   "dependencies": {
     "d3": "^7.8.5",
     "proj4": "^2.15.0",
-    "projnames": "^0.0.2",
+    "projnames": "^0.0.3",
     "regl": "^2.1.0"
   },
   "browserslist": [
@@ -29,10 +27,6 @@
   ],
 
   "devDependencies": {
-    "@jayce789/numjs": "^2.2.6",
-    "@json-editor/json-editor": "^2.15.1",
-    "parcel": "^2.9.0",
-    "process": "^0.11.10",
-    "url": "^0.11.4"
+    "@json-editor/json-editor": "^2.15.1"
   }
 }

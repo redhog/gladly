@@ -410,15 +410,15 @@ class TileManager {
 
 // ─── GLSL ─────────────────────────────────────────────────────────────────────
 
-const TILE_VERT = `
+const TILE_VERT = `#version 300 es
   precision mediump float;
-  attribute vec2 position;
-  attribute vec2 uv;
+  in vec2 position;
+  in vec2 uv;
   uniform vec2 xDomain;
   uniform vec2 yDomain;
   uniform float xScaleType;
   uniform float yScaleType;
-  varying vec2 vUv;
+  out vec2 vUv;
 
   float normalize_axis(float v, vec2 domain, float scaleType) {
     float vt = scaleType > 0.5 ? log(v) : v;
@@ -438,15 +438,16 @@ const TILE_VERT = `
   }
 `
 
-const TILE_FRAG = `
+const TILE_FRAG = `#version 300 es
   precision mediump float;
   uniform sampler2D tileTexture;
   uniform float opacity;
-  varying vec2 vUv;
+  in vec2 vUv;
+  out vec4 fragColor;
 
   void main() {
-    vec4 color = texture2D(tileTexture, vUv);
-    gl_FragColor = vec4(color.rgb, color.a * opacity);
+    vec4 color = texture(tileTexture, vUv);
+    fragColor = vec4(color.rgb, color.a * opacity);
   }
 `
 
@@ -595,7 +596,7 @@ class TileLayerType extends LayerType {
     }
   }
 
-  createLayer(parameters, _data) {
+  createLayer(regl, parameters, _data) {
     const {
       xAxis = 'xaxis_bottom',
       yAxis = 'yaxis_left',

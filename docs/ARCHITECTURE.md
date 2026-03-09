@@ -169,7 +169,30 @@ Each `LayerType` encapsulates shaders, axis quantity kinds, schema, and a factor
 
 ---
 
-### 7. Separation of Concerns — Canvas + SVG
+### 7. WebGL 2.0 Context with Regl Compatibility Shims
+
+**Intent:** Use a WebGL 2.0 context for the full GLSL ES 3.00 feature set (integer bit-ops, sized internal formats, core instancing) while keeping regl v2.x as the draw-call API.
+
+**Why WebGL 2.0 is required:** The GPU compute shaders (`compute/fft.js`, etc.) use integer bitwise operations (`<<`, `>>`, `|`, `&`) that are only available in GLSL ES 3.00 (`#version 300 es`), which requires a WebGL 2.0 context. All layer and compute shaders therefore use GLSL ES 3.00 syntax (`in`/`out` instead of `attribute`/`varying`, `texture()` instead of `texture2D()`, declared `out vec4 fragColor` instead of `gl_FragColor`).
+
+**Why shims are needed:** Regl v2.1.0 was designed for WebGL 1.0. It treats several capabilities that became core in WebGL 2.0 as if they were still optional extensions, and fails when `getExtension()` returns `null` for them. Three shims are applied to the `WebGL2RenderingContext` before passing it to regl:
+
+| Shim | Root cause | Fix |
+|------|-----------|-----|
+| `gl.getExtension('OES_texture_float')` | Float textures are core in WebGL 2.0; `getExtension` returns `null`. Regl aborts if it doesn't see the extension. | Return `{}` — the extension has no methods, so an empty object satisfies regl's presence check. |
+| `gl.getExtension('OES_texture_float_linear')` | Same as above for linear filtering of float textures. | Return `{}`. |
+| `gl.getExtension('ANGLE_instanced_arrays')` | Instancing is core in WebGL 2.0; the extension is not queryable. Regl disables instancing if it can't find the extension. Regl only calls `getExtension` for this if it is explicitly listed in the `extensions` array passed to `reglInit`. | Return a proxy object that maps each `*ANGLE` method (`vertexAttribDivisorANGLE`, `drawArraysInstancedANGLE`, `drawElementsInstancedANGLE`) to the corresponding WebGL 2.0 core method (`gl.vertexAttribDivisor`, etc.), plus the `VERTEX_ATTRIB_ARRAY_DIVISOR_ANGLE` (0x88FE) constant. `'ANGLE_instanced_arrays'` is also listed in the `extensions` array passed to `reglInit` to force the lookup. |
+| `gl.texImage2D(target, level, GL_RGBA, w, h, 0, GL_RGBA, GL_FLOAT, data)` | In WebGL 2.0, the unsized `GL_RGBA` (0x1908) internal format is invalid with `GL_FLOAT` type — the call requires the sized `GL_RGBA32F` (0x8814). Regl passes the unsized format. | Intercept `gl.texImage2D`; when `internalformat === GL_RGBA` and `type === GL_FLOAT`, upgrade `internalformat` to `GL_RGBA32F`. |
+
+**Note on extension name casing:** Regl normalises all extension names to lowercase before calling `getExtension` (e.g. `'oes_texture_float'`). The shims therefore compare via `name.toLowerCase()`.
+
+**Future:** If regl is updated to natively handle WebGL 2.0 contexts (detecting core capabilities without falling back to extension queries), all four shims can be removed with no other changes required.
+
+All shims live in `Plot._initialize()` in `src/core/Plot.js`.
+
+---
+
+### 8. Separation of Concerns — Canvas + SVG
 
 **Intent:** Leverage each technology for what it does best.
 
@@ -229,7 +252,7 @@ Datasets larger than GPU memory (~1 M+ points) may need chunking. No virtual scr
 
 Potential enhancements that maintain the current architecture:
 
-1. **WebGL2** — upgrade regl context for instancing and compute
+1. ~~**WebGL2** — upgrade regl context for instancing and compute~~ ✓ Done (WebGL 2.0 context + GLSL ES 3.00 shaders; see architectural decision #7)
 2. **Layer Groups** — batch show/hide
 3. **Animation** — time-based attribute updates
 4. **Point Picking** — GPU-based selection

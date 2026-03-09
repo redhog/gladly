@@ -53,17 +53,29 @@ export class AxisRegistry {
           const [dMin, dMax] = layer.domains[qk]
           if (dMin < min) min = dMin
           if (dMax > max) max = dMax
-        } else {
-          const dataArray = isXAxis ? layer.attributes.x : layer.attributes.y
-          if (!dataArray) continue
-          for (let i = 0; i < dataArray.length; i++) {
-            const val = dataArray[i]
-            if (val < min) min = val
-            if (val > max) max = val
-          }
+        } else if (qk) {
+          console.warn(
+            `[gladly] Layer type '${layer.type?.name ?? 'unknown'}' has no domain for ` +
+            `quantity kind '${qk}' on axis '${axis}'. ` +
+            `Auto-domain for this axis cannot be computed from this layer.`
+          )
         }
       }
-      if (min !== Infinity) autoDomains[axis] = [min, max]
+      if (min !== Infinity) {
+        if (!isFinite(min) || !isFinite(max)) {
+          throw new Error(
+            `[gladly] Axis '${axis}': auto-computed domain [${min}, ${max}] contains non-finite values. ` +
+            `Check that data columns contain no NaN or Infinity values.`
+          )
+        }
+        if (min === max) {
+          console.warn(
+            `[gladly] Axis '${axis}': auto-computed domain is degenerate — all data on this axis has the same value (${min}). ` +
+            `Data will collapse to a single line. Set an explicit min/max in the axes config to widen the range.`
+          )
+        }
+        autoDomains[axis] = [min, max]
+      }
     }
 
     for (const axis of AXES) {
@@ -71,7 +83,22 @@ export class AxisRegistry {
       if (!scale) continue
       const override = axesOverrides[axis]
       const domain = override ? [override.min, override.max] : autoDomains[axis]
-      if (domain) scale.domain(domain)
+      if (domain) {
+        const [lo, hi] = domain
+        if (lo == null || hi == null || !isFinite(lo) || !isFinite(hi)) {
+          throw new Error(
+            `[gladly] Axis '${axis}': domain [${lo}, ${hi}] contains null or non-finite values. ` +
+            `Check the axes config min/max or your data.`
+          )
+        }
+        if (lo === hi) {
+          console.warn(
+            `[gladly] Axis '${axis}': domain [${lo}] is degenerate (min equals max). ` +
+            `Data will collapse to a single line on this axis.`
+          )
+        }
+        scale.domain(domain)
+      }
     }
 
     for (const axis of AXES) {

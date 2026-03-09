@@ -107,18 +107,38 @@ export function buildColorGlsl() {
   // map_color_s_2d — blend two 1D colorscales, or dispatch to a true 2D colorscale.
   // A true 2D colorscale is selected when cs_a < 0 && cs_a == cs_b (both axes share the
   // same 2D colorscale, identified by the negative index -(idx+1)).
-  parts.push('vec4 map_color_s_2d(int cs_a, vec2 range_a, float v_a, float type_a,')
-  parts.push('                    int cs_b, vec2 range_b, float v_b, float type_b) {')
-  parts.push('  if (cs_a < 0 && cs_a == cs_b) {')
-  parts.push('    float ta = gladly_normalize_color(range_a, v_a, type_a);')
-  parts.push('    float tb = gladly_normalize_color(range_b, v_b, type_b);')
-  parts.push('    return gladly_apply_color(map_color_2d(-(cs_a + 1), vec2(ta, tb)));')
-  parts.push('  }')
-  parts.push('  return gladly_apply_color(')
-  parts.push('    (gladly_map_color_raw(cs_a, range_a, v_a, type_a) +')
-  parts.push('     gladly_map_color_raw(cs_b, range_b, v_b, type_b)) / 2.0')
-  parts.push('  );')
-  parts.push('}')
+  // useAlpha_a / useAlpha_b: if > 0.5, the normalised value for that axis modulates alpha.
+  parts.push('vec4 map_color_s_2d(int cs_a, vec2 range_a, float v_a, float type_a, float useAlpha_a,')
+  parts.push('                    int cs_b, vec2 range_b, float v_b, float type_b, float useAlpha_b) {')
 
+  parts.push('  bool a_nan = isnan(v_a);')
+  parts.push('  bool b_nan = isnan(v_b);')
+  parts.push('  vec4 c;')
+
+  parts.push('  if (cs_a < 0 && cs_a == cs_b) {')
+  parts.push('    float ta = a_nan ? 0.0 : gladly_normalize_color(range_a, v_a, type_a);')
+  parts.push('    float tb = b_nan ? 0.0 : gladly_normalize_color(range_b, v_b, type_b);')
+  parts.push('    c = map_color_2d(-(cs_a + 1), vec2(ta, tb));')
+  parts.push('  } else if (cs_a >= 0) {')
+  parts.push('    if (!a_nan)      c = gladly_map_color_raw(cs_a, range_a, v_a, type_a);')
+  parts.push('    else if (!b_nan) c = gladly_map_color_raw(cs_b, range_b, v_b, type_b);')
+  parts.push('    else             c = vec4(0.0);')
+  parts.push('  } else {')
+  parts.push('    // fallback (cs_a < 0 but not equal to cs_b)')
+  parts.push('    if (!a_nan && !b_nan) {')
+  parts.push('      vec4 ca = gladly_map_color_raw(cs_a, range_a, v_a, type_a);')
+  parts.push('      vec4 cb = gladly_map_color_raw(cs_b, range_b, v_b, type_b);')
+  parts.push('      c = (ca + cb) / 2.0;')
+  parts.push('    } else if (!a_nan) c = gladly_map_color_raw(cs_a, range_a, v_a, type_a);')
+  parts.push('    else if (!b_nan)   c = gladly_map_color_raw(cs_b, range_b, v_b, type_b);')
+  parts.push('    else               c = vec4(0.0);')
+  parts.push('  }')
+
+  parts.push('  if (!a_nan && useAlpha_a > 0.5) c.a  = gladly_normalize_color(range_a, v_a, type_a);')
+  parts.push('  if (!b_nan && useAlpha_b > 0.5) c.a *= gladly_normalize_color(range_b, v_b, type_b);')
+
+  parts.push('  return gladly_apply_color(c);')
+  parts.push('}')
+  
   return parts.join('\n')
 }

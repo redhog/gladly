@@ -16,11 +16,10 @@ A scatter plot that renders individual points coloured by a per-point value mapp
 |-----------|----------|---------|-------------|
 | `xData` | yes | — | Data key for x coordinates; also used as the x-axis quantity kind |
 | `yData` | yes | — | Data key for y coordinates; also used as the y-axis quantity kind |
-| `vData` | yes | — | Data key for primary color values; also used as the color axis quantity kind |
-| `vData2` | no | — | Data key for secondary color values for 2D colorscale mapping |
+| `vData` | no | — | Data key for primary color values; also used as the color axis quantity kind. If omitted, points are drawn black |
+| `vData2` | no | — | Data key for secondary color values for 2D colorscale mapping. If omitted with `vData` present, uses 1D colorscale |
 | `xAxis` | no | `"xaxis_bottom"` | x-axis position |
 | `yAxis` | no | `"yaxis_left"` | y-axis position |
-| `alphaBlend` | no | `false` | When `true`, the normalized color value is used as the fragment alpha, so points at the bottom of the color range fade to fully transparent rather than rendering the colorscale's zero color. RGB blending uses standard `src alpha` / `one minus src alpha`; the framebuffer alpha channel is left unchanged. Useful for density or heatmap-style overlays where the absence of data should be invisible. |
 
 **Behavior:**
 - Point size: 4.0 px
@@ -82,11 +81,10 @@ A connected-line plot that renders segments between consecutive points, with per
 |-----------|----------|---------|-------------|
 | `xData` | yes | — | Data key for x coordinates |
 | `yData` | yes | — | Data key for y coordinates |
-| `vData` | yes | — | Data key for primary color values |
+| `vData` | no | — | Data key for primary color values. If omitted, lines are drawn black |
 | `vData2` | no | — | Data key for secondary color values for 2D colorscale mapping |
 | `xAxis` | no | `"xaxis_bottom"` | x-axis position |
 | `yAxis` | no | `"yaxis_left"` | y-axis position |
-| `alphaBlend` | no | `false` | Alpha blending — see `points` description |
 | `lineSegmentIdData` | no | — | Column of segment IDs; only consecutive points sharing the same ID are connected. Segments with mismatched IDs produce a zero-length degenerate line that the rasterizer discards |
 | `lineColorMode` | no | `"gradient"` | `"gradient"` — color interpolated linearly along each segment; `"midpoint"` — each half of the segment uses the color of the nearest endpoint |
 | `lineWidth` | no | `1.0` | Line width in pixels (browsers typically clamp values above 1) |

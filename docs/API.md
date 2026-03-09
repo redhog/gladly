@@ -77,24 +77,51 @@ See [Configuring Plots](api/PlotConfiguration.md) for the full config format.
 
 ### Data Format
 
-The plotting framework is **agnostic about the shape of the `data` object** passed to `plot.update()`. It stores it and passes it unchanged to each layer type's `createLayer` and `getAxisConfig` functions. What those functions do with it is entirely up to the layer type author.
+All data in Gladly is represented as a **tree of `DataGroup` nodes with `Data` leaves**, where every column in a `Data` leaf is a [`ColumnData`](api/ComputedAttributes.md#columndata--the-unified-column-type) instance.
+
+When you call `plot.update({ data, config })`, the framework automatically converts the plain `data` object into this tree via `normalizeData()`:
+
+- A flat object whose values are `Float32Array` columns (`{ x, y, v }`) is wrapped as `Data` and placed under the key `"input"` in an enclosing `DataGroup`.
+- A nested object whose values are themselves flat datasets or sub-groups (`{ survey1: { x, y }, survey2: { x, y } }`) is converted directly to a `DataGroup`, with each child recursively wrapped.
+- An object that already implements the `DataGroup`/`Data` interface (has `columns()` and `getData()`) is used unchanged.
+
+After normalisation, columns in a `Data` leaf are always accessed as `ColumnData` instances via `getData()`. Column names in a `DataGroup` use **dot notation** (`"survey1.x"`, `"input.y"`, etc.).
+
+The normalised `DataGroup` is what `createLayer` and `getAxisConfig` receive as their `data` argument. Layer types call `Data.wrap(data)` on it (a no-op when already normalised) and then use `d.getData(colName)` to retrieve columns as `ColumnData`.
 
 Each value in the `attributes` map returned from `createLayer` must be one of:
 
 - A **`Float32Array`** — uploaded directly as a GPU vertex buffer.
-- A **computed attribute expression** — a single-key object `{ computationName: params }` that the framework resolves to a GPU texture or GLSL expression at draw-command build time.
+- A **column name string** — resolved at draw time via `getData()` on the current `DataGroup`; the resulting `ColumnData` is uploaded as a GPU texture and sampled in the vertex shader.
+- A **`ColumnData`** instance — used directly; uploaded as a GPU texture.
+- A **computed attribute expression** — a single-key object `{ computationName: params }` that the framework resolves to a `ColumnData` (GPU texture or GLSL expression) at draw-command build time.
 
 ```javascript
-// Correct — plain Float32Arrays
-const data = {
-  x: new Float32Array([1, 2, 3]),
-  y: new Float32Array([4, 5, 6]),
-  v: new Float32Array([0.1, 0.5, 0.9])
-}
+// Flat data — normalised to DataGroup { input: Data { x, y, v } }
+// Columns accessible as 'input.x', 'input.y', 'input.v' via getData()
+plot.update({
+  data: {
+    x: new Float32Array([1, 2, 3]),
+    y: new Float32Array([4, 5, 6]),
+    v: new Float32Array([0.1, 0.5, 0.9])
+  },
+  config: { layers: [{ points: { xData: 'input.x', yData: 'input.y', vData: 'input.v' } }] }
+})
 
-// Also correct — computed attribute expression
+// Nested data — normalised to DataGroup { survey1: Data, survey2: Data }
+// Columns accessible as 'survey1.x', 'survey2.x', etc.
+plot.update({
+  data: {
+    survey1: { x: new Float32Array([...]), y: new Float32Array([...]) },
+    survey2: { x: new Float32Array([...]), y: new Float32Array([...]) }
+  },
+  config: { layers: [{ points: { xData: 'survey1.x', yData: 'survey1.y' } }] }
+})
+
+// Attribute values — column name string, ColumnData, or computed expression
 attributes: {
-  count: { histogram: { input: normalized, bins: 50 } }
+  x: 'survey1.x',                              // column name → resolved to ColumnData at draw time
+  count: { histogram: { input: 'input.v', bins: 50 } }  // computed expression
 }
 
 // Incorrect — plain JS arrays will throw
@@ -103,11 +130,15 @@ const bad = { x: [1, 2, 3], y: [4, 5, 6] }
 
 See [Computed Attributes](api/ComputedAttributes.md) for the full expression syntax, built-in computations, and how to write custom ones.
 
-#### Optional: the `Data` class
+#### The `Data` and `DataGroup` classes
 
-For convenience, Gladly provides an optional `Data` class that normalises several common plain-object shapes — including per-column metadata (quantity kinds, pre-computed domains) and a columnar format separating arrays from their metadata — into a single consistent interface. The built-in layer types use it internally; custom layer types may adopt it voluntarily.
+**`Data`** normalises a flat plain-object dataset into a consistent columnar interface. It supports three equivalent input shapes (simple `Float32Array` values, per-column rich objects with metadata, and a columnar format with parallel sub-objects) and exposes `columns()` / `getData()` / `getQuantityKind()` / `getDomain()`. `getData()` always returns a `ColumnData` instance (`ArrayColumn` for plain arrays).
 
-The framework itself never calls `Data`. See [`Data`](api/Reference.md#data) in the API reference for the full interface and all supported formats.
+**`DataGroup`** wraps a nested object where the top-level values are themselves datasets or sub-groups. It exposes the same four methods using **dot-notation column names** and adds `listData()` / `subgroups()` for navigating the hierarchy. `getData()` delegates to the appropriate child, always returning `ColumnData`.
+
+`Data.wrap()` is the single entry point: it inspects a plain object and returns either a `Data` or `DataGroup` automatically. Passing an object that already has `columns()` and `getData()` is a no-op — the object is returned unchanged. The framework calls `normalizeData()` (which uses `Data.wrap()` internally) on the `data` argument to `plot.update()` before passing it to layer types.
+
+See [`Data`](api/Reference.md#data) and [`DataGroup`](api/Reference.md#datagroup) in the API reference for the full interface, all supported formats, and the detection rules.
 
 ### Config Structure
 
@@ -142,4 +173,4 @@ plot.update({
 - **[Writing Layer Types](api/LayerTypes.md)** — `LayerType` constructor, shaders, color axes, filter axes, GLSL helpers, constants
 - **[Computed Attributes](api/ComputedAttributes.md)** — GPU texture and GLSL computations in layer attributes; `TextureComputation` / `GlslComputation` base classes; `EXPRESSION_REF`; `computationSchema`; built-in computations
 - **[Built-in Layer Types](api/BuiltInLayerTypes.md)** — `points`, `lines`, `colorbar`, `filterbar` layer type reference
-- **[API Reference](api/Reference.md)** — `Plot`, `registerLayerType`, `getLayerType`, `Data` and other public API entries
+- **[API Reference](api/Reference.md)** — `Plot`, `ComputePipeline`, `registerLayerType`, `getLayerType`, `Data`, `DataGroup` and other public API entries
