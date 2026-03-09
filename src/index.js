@@ -39,6 +39,7 @@ import "./compute/conv.js"
 import "./compute/hist.js"
 import "./compute/axisFilter.js"
 import "./compute/elementwise.js"
+import "./compute/util.js"
 
 // Register BarsLayer (side-effect import)
 import "./layers/BarsLayer.js"
