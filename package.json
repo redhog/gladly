@@ -25,7 +25,6 @@
     "last 2 Firefox versions",
     "last 2 Safari versions"
   ],
-
   "devDependencies": {
     "@json-editor/json-editor": "^2.15.1"
   }
