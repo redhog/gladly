@@ -11,6 +11,7 @@ import { getRegisteredColorscales, getRegistered2DColorscales } from "../colorsc
 import { Float } from "../floats/Float.js"
 import { computationSchema, buildTransformSchema, getComputedData } from "../compute/ComputationRegistry.js"
 import { Data, DataGroup, ComputedDataNode, normalizeData } from "../data/Data.js"
+import { enqueueRegl, compileEnqueuedShaders } from "./ShaderQueue.js"
 
 function buildPlotSchema(data, config) {
   const layerTypes = getRegisteredLayerTypes()
@@ -720,6 +721,7 @@ export class Plot {
         this.layers.push(layer)
       }
     }
+    compileEnqueuedShaders(this.regl)
   }
 
   _compileLayerDraw(layer) {
@@ -757,7 +759,7 @@ export class Plot {
       }
 
       const propConfig = { ...drawConfig, attributes: propAttrs, uniforms: propUniforms }
-      this._shaderCache.set(shaderKey, this.regl(propConfig))
+      this._shaderCache.set(shaderKey, enqueueRegl(this.regl, propConfig))
     }
 
     const cmd = this._shaderCache.get(shaderKey)
