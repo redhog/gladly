@@ -17,7 +17,7 @@ exclude:
   - src
   - example
   - dist-example
-  - .parcel-cache
+  - scripts
   - Gemfile.lock
   - package.json
   - package-lock.json
