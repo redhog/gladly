@@ -211,6 +211,42 @@ Removes a previously added subscriber.
 
 ---
 
+## `PlotGroup`
+
+Coordinates a set of named [`Plot`](#plot) instances with atomic multi-plot updates and optional auto-linking of axes that share the same quantity kind.
+
+**Constructor:**
+```javascript
+new PlotGroup(plots, { autoLink } = {})
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `plots` | `{ [name]: Plot }` | Initial named plots. May be `{}`. |
+| `autoLink` | boolean | Default `false`. When `true`, axes sharing the same quantity kind across member plots are automatically linked and reconciled on every `update()`. |
+
+**Instance methods:**
+
+### `plotGroup.update({ data, plots })`
+
+Normalises `data` once (all plots share the same `DataGroup` instance), calls `plot.update()` on every mentioned plot, then reconciles auto-links. See [PlotGroup](PlotGroup.md#plotgroupupdatedata-plots) for full details.
+
+### `plotGroup.add(name, plot)`
+
+Adds a named plot to the group and reconciles auto-links.
+
+### `plotGroup.remove(name)`
+
+Removes a named plot, tearing down auto-managed links that involve it.
+
+### `plotGroup.destroy()`
+
+Tears down all auto-managed links. Does not destroy the individual plots.
+
+For full documentation, examples, and auto-linking behaviour see **[PlotGroup](PlotGroup.md)**.
+
+---
+
 ## `linkAxes(axis1, axis2)`
 
 Links two axes bidirectionally. When either axis's domain changes via `setDomain()`, the other is updated to match.
@@ -237,6 +273,8 @@ link.unlink()
 ```
 
 After `unlink()` the two axes are fully independent again. If a `Plot` is destroyed with `plot.destroy()`, its axis listeners are cleared automatically, but the complementary side of any link still holds a dead callback. Explicitly calling `unlink()` before destroying a plot is the clean way to avoid that.
+
+**Links are silent during `plot.update()`.**  `plot._initialize()` sets D3 scale domains directly (bypassing `axis.setDomain()`), so linked axes are never notified when a plot is reconfigured. Links only fire on user interaction (zoom/pan) or explicit `axis.setDomain()` calls. This means it is safe to have a link between two plots and call `plot.update()` on both — even if the update changes quantity kinds — without the link firing in an intermediate state or throwing.
 
 ---
 

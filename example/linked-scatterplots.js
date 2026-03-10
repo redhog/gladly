@@ -1,4 +1,4 @@
-import { Plot, linkAxes } from "../src/index.js"
+import { Plot, PlotGroup } from "../src/index.js"
 import { JSONEditor } from '@json-editor/json-editor'
 import { data as dataPromise } from "./shared.js"
 
@@ -90,7 +90,7 @@ function createEditor(config) {
 const plot1 = new Plot(document.getElementById('tab1-plot1'))
 const plot2 = new Plot(document.getElementById('tab1-plot2'))
 
-linkAxes(plot1.axes.xaxis_bottom, plot2.axes.xaxis_top)
+const group = new PlotGroup({ plot1, plot2 }, { autoLink: true })
 
 let plot1Config = {
   "layers": [
@@ -191,7 +191,7 @@ let plot2Config = {
 function updatePlot(plotId, plotConfig) {
   const plot = plotId === 'plot1' ? plot1 : plot2
   try {
-    plot.update({ config: plotConfig, data: { input: data } })
+    group.update({ data: { input: data }, plots: { [plotId]: plotConfig } })
     document.getElementById('tab1-validation-errors').innerHTML = ''
 
     const fullConfig = plot.getConfig()
@@ -221,8 +221,12 @@ function updatePlot(plotId, plotConfig) {
   }
 }
 
-updatePlot('plot1', plot1Config)
-updatePlot('plot2', plot2Config)
+group.update({
+  data: { input: data },
+  plots: { plot1: plot1Config, plot2: plot2Config }
+})
+plot1Config = plot1.getConfig()
+plot2Config = plot2.getConfig()
 
 function attachPickHandler(plot) {
   plot.on('mouseup', (e) => {

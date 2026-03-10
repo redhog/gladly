@@ -1,3 +1,2 @@
 * Remove computed attributes from layer types - only dataset columns now
-* Profile and possibly convert sample data generation to gpu compute
 * Add PlotGroup concept

@@ -21,11 +21,15 @@ export function linkAxes(axis1, axis2) {
 
   axis1.subscribe(cb1)
   axis2.subscribe(cb2)
+  axis1._linkedAxes.add(axis2)
+  axis2._linkedAxes.add(axis1)
 
   return {
     unlink() {
       axis1.unsubscribe(cb1)
       axis2.unsubscribe(cb2)
+      axis1._linkedAxes.delete(axis2)
+      axis2._linkedAxes.delete(axis1)
     }
   }
 }

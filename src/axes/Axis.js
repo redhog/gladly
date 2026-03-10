@@ -82,6 +82,7 @@ export class Axis {
     this._plot = plot
     this._name = name
     this._listeners = new Set()
+    this._linkedAxes = new Set()
     this._propagating = false
   }
 

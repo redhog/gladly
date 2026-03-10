@@ -227,52 +227,71 @@ export class Plot extends GlBase {
     this._setupResizeObserver()
   }
 
+  // Stores new config/data and re-initialises the plot. No link validation.
+  // Called directly by PlotGroup so it can validate all plots together after
+  // all have been updated.
+  _applyUpdate({ config, data } = {}) {
+    if (config !== undefined) this.currentConfig = config
+    if (data !== undefined) {
+      this._rawData = normalizeData(data)  // normalise once; kept immutable
+    }
+
+    if (!this.currentConfig || !this._rawData) return
+
+    const width = this.container.clientWidth
+    const height = this.container.clientHeight
+    const plotWidth = width - this.margin.left - this.margin.right
+    const plotHeight = height - this.margin.top - this.margin.bottom
+
+    // Container is hidden, not yet laid out, or too small to fit the margins.
+    // Store config/data and return; ResizeObserver will call forceUpdate() once
+    // the container gets real dimensions.
+    if (width === 0 || height === 0 || plotWidth <= 0 || plotHeight <= 0) return
+
+    this.canvas.width = width
+    this.canvas.height = height
+    this.svg.attr('width', width).attr('height', height)
+
+    this.width = width
+    this.height = height
+    this.plotWidth = plotWidth
+    this.plotHeight = plotHeight
+
+    this.svg.selectAll('*').remove()
+
+    this._warnedMissingDomains = false
+    this._initialize()
+    this._syncFloats()
+  }
+
+  // Validates that all axes on this plot that are linked to axes on other plots
+  // still share the same quantity kind. Throws if any mismatch is found.
+  _validateLinks() {
+    for (const [name, axis] of this._axisCache) {
+      const qk = axis.quantityKind
+      if (!qk) continue
+      for (const other of axis._linkedAxes) {
+        const otherQk = other.quantityKind
+        if (otherQk && otherQk !== qk) {
+          throw new Error(
+            `Axis '${name}' (quantity kind '${qk}') is linked to axis '${other._name}' ` +
+            `with incompatible quantity kind '${otherQk}'. ` +
+            `Unlink the axes before changing their quantity kinds, or update both plots atomically via PlotGroup.`
+          )
+        }
+      }
+    }
+  }
+
   update({ config, data } = {}) {
     const previousConfig = this.currentConfig
-    const previousData = this.currentData
-
+    const previousRawData = this._rawData
     try {
-      if (config !== undefined) {
-        this.currentConfig = config
-      }
-      if (data !== undefined) {
-        this._rawData = normalizeData(data)  // normalise once; kept immutable
-        this.currentData = this._rawData
-      }
-
-      if (!this.currentConfig || !this.currentData) {
-        return
-      }
-
-      const width = this.container.clientWidth
-      const height = this.container.clientHeight
-      const plotWidth = width - this.margin.left - this.margin.right
-      const plotHeight = height - this.margin.top - this.margin.bottom
-
-      // Container is hidden, not yet laid out, or too small to fit the margins.
-      // Store config/data and return; ResizeObserver will call forceUpdate() once
-      // the container gets real dimensions.
-      if (width === 0 || height === 0 || plotWidth <= 0 || plotHeight <= 0) {
-        return
-      }
-
-      this.canvas.width = width
-      this.canvas.height = height
-      this.svg.attr('width', width).attr('height', height)
-
-      this.width = width
-      this.height = height
-      this.plotWidth = plotWidth
-      this.plotHeight = plotHeight
-
-      this.svg.selectAll('*').remove()
-
-      this._warnedMissingDomains = false
-      this._initialize()
-      this._syncFloats()
+      this._applyUpdate({ config, data })
+      this._validateLinks()
     } catch (error) {
       this.currentConfig = previousConfig
-      this.currentData = previousData
+      this._rawData = previousRawData
       throw error
     }
   }

@@ -169,6 +169,7 @@ plot.update({
 
 - **[Quick Start](Quickstart.md)** — installation and minimal working example
 - **[Configuring Plots](api/PlotConfiguration.md)** — `plot.update()`, axes config, auto-range, multi-layer, interaction, examples
+- **[PlotGroup](api/PlotGroup.md)** — coordinating multiple plots: shared data, atomic updates, auto-linking axes by quantity kind
 - **[Colorbars and Filterbars](api/ColorbarsAndFilterbars.md)** — floating color/filter widgets, auto-creation via config, manual placement
 - **[Writing Layer Types](api/LayerTypes.md)** — `LayerType` constructor, shaders, color axes, filter axes, GLSL helpers, constants
 - **[Computed Attributes](api/ComputedAttributes.md)** — GPU texture and GLSL computations in layer attributes; `TextureComputation` / `GlslComputation` base classes; `EXPRESSION_REF`; `computationSchema`; built-in computations
