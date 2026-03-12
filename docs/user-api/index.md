@@ -13,3 +13,9 @@ Programmatic APIs for working with plots, axes, data, and computations.
 - [ComputePipeline](ComputePipeline.md) — headless GPU compute pipeline for data transforms
 - [Widgets](Widgets.md) — manual Colorbar, Float, Filterbar creation
 - [Registries](Registries.md) — registerAxisQuantityKind, registerEpsgDef
+
+## Reference
+
+- [BuiltInLayerTypes](BuiltInLayerTypes.md) — `points`, `lines`, `tile`, `colorbar`, `filterbar` layer types
+- [BuiltInComputations](BuiltInComputations.md) — built-in computations: histogram, kde, filter, fft, convolution, etc.
+- [Colorscales](Colorscales.md) — colorscale names list

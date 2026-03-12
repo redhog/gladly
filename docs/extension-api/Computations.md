@@ -1,6 +1,6 @@
 # Computations
 
-This page covers how to write custom computations. For using built-in computations see [Built-in Computations](../configuration/BuiltInComputations.md).
+This page covers how to write custom computations. For using built-in computations see [Built-in Computations](../user-api/BuiltInComputations.md).
 
 ---
 
