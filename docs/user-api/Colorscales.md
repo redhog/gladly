@@ -45,3 +45,11 @@ Use `registerColorscale(name, glslFn)` to add custom colorscales.
 ## Miscellaneous
 
 `jet`, `turbo`, `rainbow`, `gnuplot`, `gnuplot2`, `CMRmap`, `cubehelix`, `nipy_spectral`, `gist_rainbow`, `gist_earth`, `terrain`, `ocean`, `brg`
+
+---
+
+## 2D (Bivariate)
+
+2D colorscales map a 2D position to a color. Use with layers that support two color axes or with `config.colorbars` by specifying both `xAxis` and `yAxis`.
+
+`bilinear4corner`, `Gred`, `Reen`, `hsv_phase_magnitude`, `diverging_diverging`, `lightness_hue`, `brewer_3x3`, `moreland_5x5`, `boys_surface`, `diverging_sequential`

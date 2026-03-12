@@ -178,10 +178,10 @@ config: {
   transforms: [
     {
       name: "histogram",
-      hist: {
-        dataAxis: "temperature",
+      HistogramData: {
+        input: "temperature",
         bins: 50,
-        filterAxis: "depth"
+        filter: "depth"
       }
     }
   ]
@@ -189,30 +189,23 @@ config: {
 ```
 
 Each entry is an object with:
-- `name`: key to access the transformed data (e.g., `data.histogram`)
-- `transformType`: the computation type (e.g., `hist`, `kde`, `filter1D`)
+- `name`: key to access the transformed data (e.g., `data.histogram.counts`)
+- `transformType`: the computation type (e.g., `HistogramData`, `FftData`, `ElementwiseData`)
 - `params`: computation-specific parameters
 
-Available transform types include:
+See [Computations](Computations.md) for the full list of available transforms and their parameters.
 
-| Transform | Description |
-|-----------|-------------|
-| `hist` | Histogram with configurable bins |
-| `kde` | Kernel density estimation |
-| `filter1D` | 1D range filter |
-| `lowPass` | Low-pass frequency filter |
-| `highPass` | High-pass frequency filter |
-| `bandPass` | Band-pass frequency filter |
-| `fft1d` | Fast Fourier transform |
-| `fftConvolution` | FFT-based convolution |
-
-Transforms auto-create filter axes for any `filterAxis` parameter. Configure these in `config.axes` just like any other filter axis.
+Transforms auto-create filter axes for any `filter` parameter. Configure these in `config.axes` just like any other filter axis.
 
 ---
 
 ## Colorbars
 
-The `config.colorbars` array overrides colorscale settings for specific axes. This is useful for explicitly controlling colorscales outside of the axis configuration.
+The `config.colorbars` array creates floating colorbar widgets and overrides colorscale settings for specific axes. This is useful for explicitly controlling colorscales outside of the axis configuration.
+
+### 1D Colorbars
+
+Specify a single axis to create a 1D colorbar:
 
 ```javascript
 config: {
@@ -223,13 +216,27 @@ config: {
 }
 ```
 
+### 2D Colorbars
+
+Specify both `xAxis` and `yAxis` with a 2D colorscale to create a 2D (bivariate) colorbar:
+
+```javascript
+config: {
+  colorbars: [
+    { xAxis: "temperature", yAxis: "humidity", colorscale: "coolwarm" }
+  ]
+}
+```
+
+2D colorscales map a 2D position to a color and are useful for visualizing relationships between two quantities. Available 2D colorscales include `"coolwarm"`, `"BuPu"`, and others registered as bivariate colorscales.
+
 Each entry accepts:
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `xAxis` | string | Quantity kind for the x-axis color scale to override |
-| `yAxis` | string | Quantity kind for the y-axis color scale to override |
-| `colorscale` | string | Named colorscale string (see [Colorscales](../user-api/Colorscales.md)) |
+| `xAxis` | string | Quantity kind for the x-axis color scale (required for 2D, optional for 1D) |
+| `yAxis` | string | Quantity kind for the y-axis color scale (required for 2D, optional for 1D) |
+| `colorscale` | string | Named colorscale string (1D or 2D). Use `"none"` to hide the colorbar. See [Colorscales](../user-api/Colorscales.md) |
 
 Top-level colorbar entries override colorscales set in `config.axes` or the quantity kind registry.
 
