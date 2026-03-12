@@ -1,6 +1,6 @@
 # Writing Layer Types
 
-This page covers how to define and register custom `LayerType` instances. For using layer types in a plot see [Configuring Plots](../configuration/PlotConfiguration.md). For an overview of the data model see the [main API doc](../API.md).
+This page covers how to define and register custom `LayerType` instances. For using layer types in a plot see [Configuring Plots](../configuration/PlotConfiguration.md). For an overview of the data model see the [main API doc](../README.md).
 
 ---
 

@@ -74,7 +74,7 @@ gladly/
 ├── package.json
 └── docs/
     ├── Quickstart.md                          # Installation and minimal example
-    ├── API.md                                 # User-facing API overview
+    ├── README.md                             # Documentation index
     ├── configuration/                         # Plot configuration docs
     ├── user-api/                              # Programmatic API docs
     ├── extension-api/                         # Extension API docs

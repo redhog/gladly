@@ -2,7 +2,7 @@
 
 A headless GPU compute pipeline for running data transforms without any visual output. It creates its own offscreen WebGL context — no DOM container or `<canvas>` element is needed.
 
-`ComputePipeline` uses the same [transform system](../API.md#transforms) as `Plot` (`config.transforms`), including filter axes. Use it to run computations server-side, in workers, or any time you need GPU-accelerated results as CPU arrays.
+`ComputePipeline` uses the same transform system as `Plot` (`config.transforms`), including filter axes. Use it to run computations server-side, in workers, or any time you need GPU-accelerated results as CPU arrays.
 
 ---
 
@@ -46,7 +46,7 @@ Runs the given transforms over `data` and returns a [`ComputeOutput`](#computeou
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `data` | object | Input data — any plain object that `normalizeData()` can convert (see [Data Format](../API.md#data-format)). Omit to reuse the data from the previous `update()` call. |
+| `data` | object | Input data — any plain object that `normalizeData()` can convert (see [Data Format](../README.md#data-format)). Omit to reuse the data from the previous `update()` call. |
 | `transforms` | array | Array of `{ name, transform: { ClassName: params } }` objects, in the same format as `config.transforms` in `Plot`. Default: `[]`. |
 | `axes` | object | Filter axis range overrides: `{ [quantityKind]: { min, max } }`. Either bound may be omitted for an open interval. Default: `{}`. |
 

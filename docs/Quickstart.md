@@ -74,6 +74,6 @@ plot.update({
 
 ## Next steps
 
-- **[Configuring Plots](api/PlotConfiguration.md)** — axes config, auto-range, multi-layer, interaction
-- **[Writing Layer Types](api/LayerTypes.md)** — custom shaders, color axes, filter axes
-- **[API Reference](api/Reference.md)** — full reference for `Plot`, `linkAxes`, `registerLayerType`, and more
+- **[Configuring Plots](configuration/PlotConfiguration.md)** — axes config, auto-range, multi-layer, interaction
+- **[Writing Layer Types](extension-api/LayerTypes.md)** — custom shaders, color axes, filter axes
+- **[User API](user-api/Plot.md)** — full reference for `Plot`, `linkAxes`, `Data`, and more

@@ -1,6 +1,6 @@
 # Module Responsibilities
 
-Detailed breakdown of each source module, organised by subdirectory. For the high-level picture see [ARCHITECTURE.md](../ARCHITECTURE.md). For data flow between modules see [DataFlow.md](DataFlow.md).
+Detailed breakdown of each source module, organised by subdirectory. For the high-level picture see [Architecture Overview](index.md). For data flow between modules see [DataFlow.md](DataFlow.md).
 
 ---
 
@@ -73,7 +73,7 @@ Gladly requires WebGL 2.0 (GLSL ES 3.00) because the compute shaders use integer
 
 Both shims compare extension names case-insensitively because regl normalises to lowercase before calling `getExtension`.
 
-See architectural decision #7 in [ARCHITECTURE.md](../ARCHITECTURE.md) for the full rationale.
+See architectural decision #7 in [Architecture Overview](index.md) for the full rationale.
 
 **`_processLayers(layersConfig, data)`**
 1. For each `{ typeName: parameters }`, looks up the `LayerType`
@@ -514,4 +514,4 @@ Each file defines one or more `TextureComputation` subclasses and registers them
 | `compute/fft.js` | `fft1d`, `fftConvolution` | GPU Cooley–Tukey FFT of a real signal; FFT-based convolution |
 | `compute/conv.js` | `convolution` | Adaptive convolution: single-pass GPU (kernel ≤ 1024), chunked GPU (≤ 8192), or FFT fallback |
 
-See [Computed Attributes](../api/ComputedAttributes.md) for usage, parameter schemas, and extension examples.
+See [Computations](../extension-api/Computations.md) for usage, parameter schemas, and extension examples.
