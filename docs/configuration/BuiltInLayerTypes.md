@@ -1,6 +1,6 @@
 # Built-in Layer Types
 
-Gladly ships five pre-registered layer types. For writing custom layer types see [Writing Layer Types](LayerTypes.md).
+Gladly ships five pre-registered layer types. For writing custom layer types see [Writing Layer Types](../extension-api/LayerTypes.md).
 
 ---
 
@@ -23,7 +23,7 @@ A scatter plot that renders individual points coloured by a per-point value mapp
 
 **Behavior:**
 - Point size: 4.0 px
-- Uses [`Data.wrap`](Reference.md#data) internally, so it accepts flat `{ col: Float32Array }` objects, per-column rich objects, and the columnar format — any of the three formats described in the `Data` reference
+- Uses [`Data.wrap`](../user-api/Data.md#datawrapdata) internally, so it accepts flat `{ col: Float32Array }` objects, per-column rich objects, and the columnar format — any of the three formats described in the `Data` reference
 - Spatial quantity kinds: taken from the data's `quantity_kind` metadata for the named column if present; otherwise the column name itself
 - Color axis quantity kind: same resolution for `vData`; the key in `config.axes` must match the resolved quantity kind
 - Colorscale: from `config.axes[quantityKind].colorscale`, or the quantity kind registry
@@ -170,7 +170,7 @@ A geographic map underlay that fetches and renders raster tiles from XYZ, WMS, o
 - Tile textures are cached (up to 50 tiles for XYZ/WMTS; WMS keeps only the current and previous image)
 - A new tile load is triggered when the visible domain shifts or zooms by more than ~2%
 - EPSG quantity kinds (`epsg_CODE_x` / `epsg_CODE_y`) are registered automatically using `projnames` labels when a new CRS code is first encountered, so axis labels are populated without any user setup
-- proj4 definitions for EPSG:4326 (WGS84) and EPSG:3857 (Web Mercator) are built-in; all others are fetched from `https://epsg.io/{code}.proj4` on first use. For offline use, pre-register with [`registerEpsgDef`](Reference.md#registerepsgdef)
+- proj4 definitions for EPSG:4326 (WGS84) and EPSG:3857 (Web Mercator) are built-in; all others are fetched from `https://epsg.io/{code}.proj4` on first use. For offline use, pre-register with [`registerEpsgDef`](../user-api/Registries.md#registerepsgdefepsgcode-proj4string)
 - The tile layer contributes no domain data — axis bounds must come from other layers or explicit `axes.min`/`max` config
 - Alpha blending is enabled; use `opacity` for transparent overlays
 
@@ -249,7 +249,7 @@ plot.update({
 
 ## `colorbar`
 
-A layer type that fills the entire plot canvas with a color gradient. Used internally by [`Colorbar`](ColorbarsAndFilterbars.md#colorbar), but can also be used directly in custom plot setups.
+A layer type that fills the entire plot canvas with a color gradient. Used internally by [`Colorbar`](../user-api/Widgets.md#colorbar), but can also be used directly in custom plot setups.
 
 **Auto-registered** on import. `colorbarLayerType` is also exported if you need the `LayerType` object directly.
 
@@ -266,13 +266,13 @@ A layer type that fills the entire plot canvas with a color gradient. Used inter
 - The spatial axis of the plot (x for horizontal, y for vertical) is bound to the color axis quantity kind, so the axis tick labels show actual data values
 - The color axis range and colorscale are sourced from the owning plot's color axis registry
 
-**Typical use:** Create a standalone `Plot` with one `colorbar` layer, link its spatial axis to the color axis of a data plot. The [`Colorbar`](ColorbarsAndFilterbars.md#colorbar) class does exactly this.
+**Typical use:** Create a standalone `Plot` with one `colorbar` layer, link its spatial axis to the color axis of a data plot. The [`Colorbar`](../user-api/Widgets.md#colorbar) class does exactly this.
 
 ---
 
 ## `filterbar`
 
-A layer type that registers a filter axis for axis-display purposes without rendering any geometry. Used internally by [`Filterbar`](ColorbarsAndFilterbars.md#filterbar), but can also be used directly in custom plot setups.
+A layer type that registers a filter axis for axis-display purposes without rendering any geometry. Used internally by [`Filterbar`](../user-api/Widgets.md#filterbar), but can also be used directly in custom plot setups.
 
 **Auto-registered** on import. `filterbarLayerType` is also exported if you need the `LayerType` object directly.
 
@@ -288,4 +288,4 @@ A layer type that registers a filter axis for axis-display purposes without rend
 - Renders no geometry (`vertexCount: 0`)
 - Binds the spatial axis (x for horizontal, y for vertical) to the filter axis quantity kind, so tick labels show the filter range
 
-The [`Filterbar`](ColorbarsAndFilterbars.md#filterbar) class wraps a plot using this layer type and adds interactive UI (∞ checkboxes for open bounds, zoom/pan to adjust the filter range).
+The [`Filterbar`](../user-api/Widgets.md#filterbar) class wraps a plot using this layer type and adds interactive UI (∞ checkboxes for open bounds, zoom/pan to adjust the filter range).

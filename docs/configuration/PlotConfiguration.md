@@ -1,6 +1,6 @@
 # Configuring Plots
 
-This page covers everything needed to create and configure plots. For writing custom layer types see [Writing Layer Types](LayerTypes.md). For an overview of the data model see the [main API doc](../API.md).
+This page covers everything needed to create and configure plots. For writing custom layer types see [Writing Layer Types](../extension-api/LayerTypes.md). For an overview of the data model see the [main API doc](../API.md).
 
 ---
 
@@ -110,7 +110,7 @@ The key is the **quantity kind** string declared by the layer type (for the buil
 |----------|-------------|
 | `min` | Lower bound of the color range (auto-calculated if omitted) |
 | `max` | Upper bound of the color range (auto-calculated if omitted) |
-| `colorscale` | Named colorscale string (see [colorscales reference](LayerTypes.md#colorscales)) |
+| `colorscale` | Named colorscale string (see [colorscales reference](../extension-api/LayerTypes.md#colorscales)) |
 | `scale` | `"linear"` (default) or `"log"` — logarithmic mapping; range values must be > 0 |
 | `label` | Axis label text (overrides the quantity kind registry default) |
 | `colorbar` | `"none"` (default), `"horizontal"`, or `"vertical"` — auto-creates a floating colorbar widget |
@@ -149,7 +149,7 @@ axes: {
 
 The widget is destroyed and recreated whenever `update()` is called with a changed value. Setting the property back to `"none"` removes it.
 
-For manual widget placement in a separate container, see [Colorbars and Filterbars](ColorbarsAndFilterbars.md).
+For manual widget placement in a separate container, see [ColorbarsFilterbars](ColorbarsFilterbars.md).
 
 ---
 
@@ -236,7 +236,7 @@ plot.on('mouseup', (e) => {
 
 `configLayerIndex` is the index into `config.layers` you passed to `update()`. For instanced layers (e.g. `rects`), `dataIndex` is the instance index; filter out per-vertex attributes using `layer.attributeDivisors`.
 
-See [`plot.pick()`](Reference.md#pickx-y) and [`plot.on()`](Reference.md#oneventtype-callback) for the full API reference.
+See [`plot.pick()`](../user-api/Plot.md#pickx-y) and [`plot.on()`](../user-api/Plot.md#oneventtype-callback) for the full API reference.
 
 ### Zoom and Pan
 

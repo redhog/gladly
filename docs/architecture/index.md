@@ -16,8 +16,8 @@ Gladly is a GPU-accelerated multi-axis plotting library built on WebGL (via regl
 
 ## Sub-topics
 
-- **[Module Responsibilities](architecture/Modules.md)** — per-module purpose, patterns, key properties and methods
-- **[Data Flow & Rendering](architecture/DataFlow.md)** — declarative setup, render cycle, zoom/pan interaction
+- **[Modules](Modules.md)** — per-module purpose, patterns, key properties and methods
+- **[Data Flow & Rendering](DataFlow.md)** — declarative setup, render cycle, zoom/pan interaction
 
 ---
 
@@ -73,18 +73,12 @@ gladly/
 │   └── index.html                             # Demo page
 ├── package.json
 └── docs/
-    ├── API.md                                 # User-facing API overview
-    ├── ARCHITECTURE.md                        # This file
     ├── Quickstart.md                          # Installation and minimal example
-    ├── api/
-    │   ├── PlotConfiguration.md               # How to configure plots
-    │   ├── LayerTypes.md                      # How to write layer types
-    │   ├── BuiltInLayerTypes.md               # points, lines, tile, colorbar, filterbar layer types
-    │   ├── ColorbarsAndFilterbars.md          # Colorbar, Colorbar2d, Filterbar, Float
-    │   └── Reference.md                       # Full public API reference
-    └── architecture/
-        ├── Modules.md                         # Detailed module responsibilities
-        └── DataFlow.md                        # Data flow and rendering pipeline
+    ├── API.md                                 # User-facing API overview
+    ├── configuration/                         # Plot configuration docs
+    ├── user-api/                              # Programmatic API docs
+    ├── extension-api/                         # Extension API docs
+    └── architecture/                          # Architecture docs
 ```
 
 ---
