@@ -1,6 +1,6 @@
 # Configuring Plots
 
-This page covers everything needed to create and configure plots. For writing custom layer types see [Writing Layer Types](LayerTypes.md). For an overview of the data model see the [main API doc](../API.md).
+This page covers everything needed to create and configure plots. For writing custom layer types see [Writing Layer Types](../extension-api/LayerTypes.md). For an overview of the data model see the [main API doc](../user-api/index.md).
 
 ---
 
@@ -26,6 +26,22 @@ plot.update({
       xaxis_bottom: { min: 0, max: 60 },
       yaxis_left:   { min: 0, max: 50 }
     }
+  }
+})
+```
+
+---
+
+## config Structure
+
+```javascript
+plot.update({
+  data: { /* data object */ },
+  config: {
+    layers: [ /* layer specifications */ ],
+    axes: { /* axis configuration */ },
+    transforms: [ /* data transforms */ ],
+    colorbars: [ /* colorbar overrides */ ]
   }
 })
 ```
@@ -93,27 +109,27 @@ Four positions are available:
 
 Each accepts:
 
-| Property | Description |
-|----------|-------------|
-| `min` | Lower bound of the axis range (auto-calculated if omitted) |
-| `max` | Upper bound of the axis range (auto-calculated if omitted) |
-| `scale` | `"linear"` (default) or `"log"` — logarithmic scale; all data values must be > 0 |
-| `label` | Axis label text (overrides the quantity kind registry default) |
+| Property | Type | Description |
+|----------|------|-------------|
+| `min` | number | Lower bound of the axis range (auto-calculated if omitted) |
+| `max` | number | Upper bound of the axis range (auto-calculated if omitted) |
+| `scale` | string | `"linear"` (default) or `"log"` — logarithmic scale; all data values must be > 0 |
+| `label` | string | Axis label text (overrides the quantity kind registry default) |
 
 Omit an axis entirely to have its range auto-calculated from the data.
 
 ### Color Axes
 
-The key is the **quantity kind** string declared by the layer type (for the built-in `points` and `lines` types this is the value of `vData`, e.g. `"v"`). Each entry accepts:
+The key is the **quantity kind** string declared by the layer type. Each entry accepts:
 
-| Property | Description |
-|----------|-------------|
-| `min` | Lower bound of the color range (auto-calculated if omitted) |
-| `max` | Upper bound of the color range (auto-calculated if omitted) |
-| `colorscale` | Named colorscale string (see [colorscales reference](LayerTypes.md#colorscales)) |
-| `scale` | `"linear"` (default) or `"log"` — logarithmic mapping; range values must be > 0 |
-| `label` | Axis label text (overrides the quantity kind registry default) |
-| `colorbar` | `"none"` (default), `"horizontal"`, or `"vertical"` — auto-creates a floating colorbar widget |
+| Property | Type | Description |
+|----------|------|-------------|
+| `min` | number | Lower bound of the color range (auto-calculated if omitted) |
+| `max` | number | Upper bound of the color range (auto-calculated if omitted) |
+| `colorscale` | string | Named colorscale string (see [Colorscales](Colorscales.md)) |
+| `scale` | string | `"linear"` (default) or `"log"` — logarithmic mapping; range values must be > 0 |
+| `label` | string | Axis label text (overrides the quantity kind registry default) |
+| `colorbar` | string | `"none"` (default), `"horizontal"`, or `"vertical"` — auto-creates a floating colorbar widget |
 
 Multiple layers sharing the same quantity kind automatically share a common range and colorscale.
 
@@ -121,13 +137,13 @@ Multiple layers sharing the same quantity kind automatically share a common rang
 
 The key is the **quantity kind** string declared by the layer type. Each entry accepts:
 
-| Property | Description |
-|----------|-------------|
-| `min` | Lower bound — points with value < min are discarded |
-| `max` | Upper bound — points with value > max are discarded |
-| `scale` | `"linear"` (default) or `"log"` — logarithmic scale for the filterbar display; data values must be > 0 |
-| `label` | Axis label text (overrides the quantity kind registry default) |
-| `filterbar` | `"none"` (default), `"horizontal"`, or `"vertical"` — auto-creates a floating filterbar widget |
+| Property | Type | Description |
+|----------|------|-------------|
+| `min` | number | Lower bound — points with value < min are discarded |
+| `max` | number | Upper bound — points with value > max are discarded |
+| `scale` | string | `"linear"` (default) or `"log"` — logarithmic scale for the filterbar display; data values must be > 0 |
+| `label` | string | Axis label text (overrides the quantity kind registry default) |
+| `filterbar` | string | `"none"` (default), `"horizontal"`, or `"vertical"` — auto-creates a floating filterbar widget |
 
 Both `min` and `max` are independently optional. Omitting both (or not listing the filter axis at all) means no filtering: all points are shown.
 
@@ -149,7 +165,80 @@ axes: {
 
 The widget is destroyed and recreated whenever `update()` is called with a changed value. Setting the property back to `"none"` removes it.
 
-For manual widget placement in a separate container, see [Colorbars and Filterbars](ColorbarsAndFilterbars.md).
+For manual widget placement in a separate container, see [ColorbarsFilterbars](../user-api/ColorbarsFilterbars.md).
+
+---
+
+## Transforms
+
+The `config.transforms` array applies data transformations before layers render. Each transform computes new data from existing data and auto-creates filter axes for any quantities it filters on.
+
+```javascript
+config: {
+  transforms: [
+    {
+      name: "histogram",
+      HistogramData: {
+        input: "temperature",
+        bins: 50,
+        filter: "depth"
+      }
+    }
+  ]
+}
+```
+
+Each entry is an object with:
+- `name`: key to access the transformed data (e.g., `data.histogram.counts`)
+- `transformType`: the computation type (e.g., `HistogramData`, `FftData`, `ElementwiseData`)
+- `params`: computation-specific parameters
+
+See [Computations](Computations.md) for the full list of available transforms and their parameters.
+
+Transforms auto-create filter axes for any `filter` parameter. Configure these in `config.axes` just like any other filter axis.
+
+---
+
+## Colorbars
+
+The `config.colorbars` array creates floating colorbar widgets and overrides colorscale settings for specific axes. This is useful for explicitly controlling colorscales outside of the axis configuration.
+
+### 1D Colorbars
+
+Specify a single axis to create a 1D colorbar:
+
+```javascript
+config: {
+  colorbars: [
+    { xAxis: "temperature", colorscale: "viridis" },
+    { yAxis: "pressure", colorscale: "plasma" }
+  ]
+}
+```
+
+### 2D Colorbars
+
+Specify both `xAxis` and `yAxis` with a 2D colorscale to create a 2D (bivariate) colorbar:
+
+```javascript
+config: {
+  colorbars: [
+    { xAxis: "temperature", yAxis: "humidity", colorscale: "coolwarm" }
+  ]
+}
+```
+
+2D colorscales map a 2D position to a color and are useful for visualizing relationships between two quantities. Available 2D colorscales include `"coolwarm"`, `"BuPu"`, and others registered as bivariate colorscales.
+
+Each entry accepts:
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `xAxis` | string | Quantity kind for the x-axis color scale (required for 2D, optional for 1D) |
+| `yAxis` | string | Quantity kind for the y-axis color scale (required for 2D, optional for 1D) |
+| `colorscale` | string | Named colorscale string (1D or 2D). Use `"none"` to hide the colorbar. See [Colorscales](Colorscales.md) |
+
+Top-level colorbar entries override colorscales set in `config.axes` or the quantity kind registry.
 
 ---
 
@@ -194,51 +283,7 @@ plot.update({
 
 ---
 
-## Interaction
-
-### Event Handling
-
-`plot.on(eventType, callback)` registers a listener for events originating within the plot container. The callback receives the raw DOM event and the data coordinates at the cursor position:
-
-```javascript
-plot.on('mousemove', (e, coords) => {
-  // coords: { xaxis_bottom: 42.3, distance_m: 42.3, yaxis_left: 1.7, ... }
-  console.log('x =', coords.xaxis_bottom, 'y =', coords.yaxis_left)
-})
-```
-
-Returns `{ remove() }` to unregister.
-
-Listeners fire for all mouse buttons including the primary (left) button, even during pan gestures.
-
-For raw pixel-to-data conversion without an event, use `plot.lookup(x, y)` with container-relative pixel coordinates.
-
-### GPU Picking
-
-`plot.pick(x, y)` identifies which data point is at a given pixel using a GPU offscreen render pass. Returns `null` for background, or `{ configLayerIndex, layerIndex, dataIndex, layer }` on a hit:
-
-```javascript
-plot.on('mouseup', (e) => {
-  const rect = plot.container.getBoundingClientRect()
-  const result = plot.pick(e.clientX - rect.left, e.clientY - rect.top)
-  if (!result) return
-
-  const { configLayerIndex, dataIndex, layer } = result
-  const isInstanced = layer.instanceCount !== null
-  const row = Object.fromEntries(
-    Object.entries(layer.attributes)
-      .filter(([k]) => !isInstanced || (layer.attributeDivisors[k] ?? 0) === 1)
-      .map(([k, v]) => [k, v[dataIndex]])
-  )
-  console.log(`layer=${configLayerIndex} index=${dataIndex}`, row)
-})
-```
-
-`configLayerIndex` is the index into `config.layers` you passed to `update()`. For instanced layers (e.g. `rects`), `dataIndex` is the instance index; filter out per-vertex attributes using `layer.attributeDivisors`.
-
-See [`plot.pick()`](Reference.md#pickx-y) and [`plot.on()`](Reference.md#oneventtype-callback) for the full API reference.
-
-### Zoom and Pan
+## Zoom and Pan
 
 Gladly supports interactive zoom and pan out of the box:
 

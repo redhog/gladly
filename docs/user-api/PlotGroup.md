@@ -1,12 +1,12 @@
 # PlotGroup
 
-`PlotGroup` coordinates a set of named [`Plot`](Reference.md#plot) instances, providing two capabilities:
+`PlotGroup` coordinates a set of named [`Plot`](Plot.md) instances, providing two capabilities:
 
 1. **Atomic updates** — `plotGroup.update()` normalises data once so every plot shares the same `DataGroup` instance, then updates all plots before re-establishing any links. This means an axis QK mismatch caused by one plot being in an intermediate state never reaches `linkAxes()`.
 
 2. **Auto-linking** — when `autoLink: true` is passed to the constructor, any two axes across any two member plots that share the same quantity kind are automatically linked. When a subsequent `update()` changes QKs so that two axes no longer match, the link is silently removed instead of throwing.
 
-When `autoLink` is `false`, you can still link axes manually with [`linkAxes()`](Reference.md#linkaxesaxis1-axis2) using axes from any of the member plots. Those links survive `PlotGroup.update()` calls without firing and without throwing, for two reasons:
+When `autoLink` is `false`, you can still link axes manually with [`linkAxes()`](Axis.md#linkaxesaxis1-axis2) using axes from any of the member plots. Those links survive `PlotGroup.update()` calls without firing and without throwing, for two reasons:
 
 - `Axis` instances are stable across `plot.update()` — the same object is returned from `plot.axes[name]` before and after an update, so subscriptions are never disturbed.
 - `plot._initialize()` never calls `axis.setDomain()`. Domains are set directly on the underlying D3 scale object (`scale.domain([min, max])`), bypassing the `Axis` pub/sub mechanism entirely. The `ZoomController` only calls `axis.setDomain()` on user interaction, not during construction. So linked axes are never notified during an update.
@@ -42,7 +42,7 @@ Updates any combination of data and per-plot configs, then reconciles auto-links
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `data` | any | Raw data passed to **all** plots. Normalised once via `normalizeData()`, so every plot receives the same `DataGroup` instance. Omit to leave existing data unchanged on all plots. |
-| `plots` | `{ [name]: config }` | Per-plot config updates. Each entry is the `config` object accepted by [`plot.update({ config })`](Reference.md#updateconfig-data). Plots not mentioned keep their current config. |
+| `plots` | `{ [name]: config }` | Per-plot config updates. Each entry is the `config` object accepted by [`plot.update({ config })`](Plot.md#updateconfig-data). Plots not mentioned keep their current config. |
 
 **Ordering guarantee:** All `plot.update()` calls complete before `_updateAutoLinks()` runs. This means `linkAxes()` always sees the final, stable QKs of every plot, never an intermediate state.
 

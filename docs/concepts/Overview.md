@@ -1,4 +1,8 @@
-# Gladly API Documentation
+# Gladly Concepts
+
+This page provides a conceptual overview of Gladly's data model and core concepts. Understanding these makes all other documentation easier to follow.
+
+---
 
 ## Overview
 
@@ -9,8 +13,6 @@ The library features a **declarative API** where you register layer types once a
 ---
 
 ## Data Model
-
-Understanding the core data model makes all other concepts fall into place.
 
 ```mermaid
 flowchart LR
@@ -32,40 +34,59 @@ flowchart LR
     CA -- has --> CS
 ```
 
-### Axes
+---
+
+## Axes
 
 All axes — spatial, color, and filter — share two concepts:
 
 - A **quantity kind**: a string that identifies what the axis measures. Layers that use the same quantity kind on the same axis position automatically share that axis and its range.
-- A **range** [min, max]: the interval of values displayed or filtered on that axis.
+- A **range** `[min, max]`: the interval of values displayed or filtered on that axis.
+
+### Spatial Axes
 
 A plot has up to four **spatial axes** (`xaxis_bottom`, `xaxis_top`, `yaxis_left`, `yaxis_right`). For spatial axes the quantity kind is any string; it determines the axis label and, for the special value `"log10"`, switches to a logarithmic scale.
 
-In addition to spatial axes, each layer can declare:
+### Color Axes
 
-- **Color axes** — map a per-point numeric value to a color via a colorscale. Layers sharing the same quantity kind share a common range and colorscale.
-- **Filter axes** — discard points outside a range. Bounds are independently optional (open interval): `{ min: 10 }` discards values below 10 with no upper limit.
+In addition to spatial axes, each layer can declare **color axes** — map a per-point numeric value to a color via a colorscale. Layers sharing the same quantity kind share a common range and colorscale.
+
+### Filter Axes
+
+**Filter axes** discard points outside a range. Bounds are independently optional (open interval):
+
+```javascript
+{ min: 10 }        // discards values below 10, no upper limit
+{ max: 500 }       // discards values above 500, no lower limit
+{ min: 10, max: 500 }  // closed interval
+```
 
 All axes can have their ranges overridden in `config.axes`.
 
-### Colorscale
+---
+
+## Colorscale
 
 A **colorscale** maps a normalized value in [0, 1] to an RGBA color. Every color axis has a colorscale, referenced by name (e.g. `"viridis"`, `"plasma"`). The layer type sets a default; it can be overridden per quantity kind in `config.axes`.
 
-All standard matplotlib colorscales are available without any setup. Custom colorscales can be registered with `registerColorscale()`. See the [colorscales reference](api/LayerTypes.md#colorscales).
+All standard matplotlib colorscales are available without any setup. Custom colorscales can be registered with `registerColorscale()`. See the [Colorscales](../configuration/Colorscales.md) reference.
 
-### LayerType
+---
+
+## LayerType
 
 A **LayerType** defines a visualization strategy. It specifies:
 
 - Spatial axis **quantity kinds** (`x`, `y`) — for compatibility checking between layers sharing an axis
-- Color axis **quantity kinds** — named slots (e.g. slot `"v"`) mapping to a shared color axis
-- Filter axis **quantity kinds** — named slots (e.g. slot `"z"`) mapping to a shared filter axis
+- Color axis **quantity kinds** — named slots (e.g. slot `''`) mapping to a shared color axis
+- Filter axis **quantity kinds** — named slots mapping to a shared filter axis
 - **GLSL vertex and fragment shaders**
 - A **JSON Schema** describing its configuration parameters
 - A **`createLayer` factory** that extracts data arrays and returns a layer config object
 
-### Layers in Config
+---
+
+## Layers in Config
 
 Each entry in `config.layers` is a JSON object `{ layerTypeName: parameters }`. The plot creates a rendered layer for each entry by calling the layer type's `createLayer` factory with those parameters and the current data object.
 
@@ -73,11 +94,13 @@ A layer's parameters typically include:
 - **Data references** — property names in the `data` object (e.g. `xData: "x"`)
 - **Axis assignments** — which spatial axes to use (`xAxis`, `yAxis`)
 
-See [Configuring Plots](api/PlotConfiguration.md) for the full config format.
+See [Configuring Plots](../configuration/PlotConfiguration.md) for the full config format.
 
-### Data Format
+---
 
-All data in Gladly is represented as a **tree of `DataGroup` nodes with `Data` leaves**, where every column in a `Data` leaf is a [`ColumnData`](api/ComputedAttributes.md#columndata--the-unified-column-type) instance.
+## Data Format
+
+All data in Gladly is represented as a **tree of `DataGroup` nodes with `Data` leaves**, where every column in a `Data` leaf is a `ColumnData` instance.
 
 When you call `plot.update({ data, config })`, the framework automatically converts the plain `data` object into this tree via `normalizeData()`:
 
@@ -87,7 +110,7 @@ When you call `plot.update({ data, config })`, the framework automatically conve
 
 After normalisation, columns in a `Data` leaf are always accessed as `ColumnData` instances via `getData()`. Column names in a `DataGroup` use **dot notation** (`"survey1.x"`, `"input.y"`, etc.).
 
-The normalised `DataGroup` is what `createLayer` and `getAxisConfig` receive as their `data` argument. Layer types call `Data.wrap(data)` on it (a no-op when already normalised) and then use `d.getData(colName)` to retrieve columns as `ColumnData`.
+The normalised `DataGroup` is what `createLayer` receives as its `data` argument. Layer types call `Data.wrap(data)` on it (a no-op when already normalised) and then use `d.getData(colName)` to retrieve columns as `ColumnData`.
 
 Each value in the `attributes` map returned from `createLayer` must be one of:
 
@@ -123,24 +146,13 @@ attributes: {
   x: 'survey1.x',                              // column name → resolved to ColumnData at draw time
   count: { histogram: { input: 'input.v', bins: 50 } }  // computed expression
 }
-
-// Incorrect — plain JS arrays will throw
-const bad = { x: [1, 2, 3], y: [4, 5, 6] }
 ```
 
-See [Computed Attributes](api/ComputedAttributes.md) for the full expression syntax, built-in computations, and how to write custom ones.
+See [Computations](../configuration/Computations.md) for the full expression syntax and built-in computations.
 
-#### The `Data` and `DataGroup` classes
+---
 
-**`Data`** normalises a flat plain-object dataset into a consistent columnar interface. It supports three equivalent input shapes (simple `Float32Array` values, per-column rich objects with metadata, and a columnar format with parallel sub-objects) and exposes `columns()` / `getData()` / `getQuantityKind()` / `getDomain()`. `getData()` always returns a `ColumnData` instance (`ArrayColumn` for plain arrays).
-
-**`DataGroup`** wraps a nested object where the top-level values are themselves datasets or sub-groups. It exposes the same four methods using **dot-notation column names** and adds `listData()` / `subgroups()` for navigating the hierarchy. `getData()` delegates to the appropriate child, always returning `ColumnData`.
-
-`Data.wrap()` is the single entry point: it inspects a plain object and returns either a `Data` or `DataGroup` automatically. Passing an object that already has `columns()` and `getData()` is a no-op — the object is returned unchanged. The framework calls `normalizeData()` (which uses `Data.wrap()` internally) on the `data` argument to `plot.update()` before passing it to layer types.
-
-See [`Data`](api/Reference.md#data) and [`DataGroup`](api/Reference.md#datagroup) in the API reference for the full interface, all supported formats, and the detection rules.
-
-### Config Structure
+## Config Structure
 
 ```javascript
 plot.update({
@@ -165,13 +177,11 @@ plot.update({
 
 ---
 
-## Sub-topics
+## Next Steps
 
-- **[Quick Start](Quickstart.md)** — installation and minimal working example
-- **[Configuring Plots](api/PlotConfiguration.md)** — `plot.update()`, axes config, auto-range, multi-layer, interaction, examples
-- **[PlotGroup](api/PlotGroup.md)** — coordinating multiple plots: shared data, atomic updates, auto-linking axes by quantity kind
-- **[Colorbars and Filterbars](api/ColorbarsAndFilterbars.md)** — floating color/filter widgets, auto-creation via config, manual placement
-- **[Writing Layer Types](api/LayerTypes.md)** — `LayerType` constructor, shaders, color axes, filter axes, GLSL helpers, constants
-- **[Computed Attributes](api/ComputedAttributes.md)** — GPU texture and GLSL computations in layer attributes; `TextureComputation` / `GlslComputation` base classes; `EXPRESSION_REF`; `computationSchema`; built-in computations
-- **[Built-in Layer Types](api/BuiltInLayerTypes.md)** — `points`, `lines`, `colorbar`, `filterbar` layer type reference
-- **[API Reference](api/Reference.md)** — `Plot`, `ComputePipeline`, `registerLayerType`, `getLayerType`, `Data`, `DataGroup` and other public API entries
+- **[Quick Start](../Quickstart.md)** — installation and minimal working example
+- **[Configuring Plots](../configuration/PlotConfiguration.md)** — plot.update(), axes config, auto-range, multi-layer, interaction
+- **[Built-in Layer Types](../configuration/BuiltInLayerTypes.md)** — points, lines, bars, histogram, tile, colorbar, filterbar
+- **[Computations](../configuration/Computations.md)** — transforms and computed attributes
+- **[PlotGroup](../user-api/PlotGroup.md)** — coordinating multiple plots with shared data and auto-linking
+- **[Writing Layer Types](../extension-api/LayerTypes.md)** — custom layer types with shaders, color axes, filter axes

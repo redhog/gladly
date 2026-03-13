@@ -72,8 +72,14 @@ plot.update({
 })
 ```
 
+## Understanding the Concepts
+
+Before diving into configuration, read the **[Concepts](concepts/Overview.md)** guide for a conceptual overview of Gladly's data model — axes, quantity kinds, colorscales, layer types, and the data format.
+
 ## Next steps
 
-- **[Configuring Plots](api/PlotConfiguration.md)** — axes config, auto-range, multi-layer, interaction
-- **[Writing Layer Types](api/LayerTypes.md)** — custom shaders, color axes, filter axes
-- **[API Reference](api/Reference.md)** — full reference for `Plot`, `linkAxes`, `registerLayerType`, and more
+- **[Configuring Plots](configuration/PlotConfiguration.md)** — axes config, auto-range, multi-layer, interaction
+- **[Built-in Layer Types](configuration/BuiltInLayerTypes.md)** — points, lines, bars, histogram, tile, colorbar, filterbar
+- **[Computations](configuration/Computations.md)** — transforms and computed attributes
+- **[Writing Layer Types](extension-api/LayerTypes.md)** — custom shaders, color axes, filter axes
+- **[User API](user-api/index.md)** — full reference for `Plot`, `linkAxes`, `Data`, and more

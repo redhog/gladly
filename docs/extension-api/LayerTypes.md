@@ -1,6 +1,6 @@
 # Writing Layer Types
 
-This page covers how to define and register custom `LayerType` instances. For using layer types in a plot see [Configuring Plots](PlotConfiguration.md). For an overview of the data model see the [main API doc](../API.md).
+This page covers how to define and register custom `LayerType` instances. For using layer types in a plot see [Configuring Plots](../configuration/PlotConfiguration.md). For an overview of the data model see the [main API doc](../user-api/index.md).
 
 ---
 
@@ -675,7 +675,7 @@ const rectLayerType = new LayerType({
       primitive: "triangles",
       vertexCount: 6,
       instanceCount: n,
-    }]
+    }],
   },
 })
 ```
@@ -875,7 +875,7 @@ Each element in the array:
   //   - Computed expression { computationName: params }: resolved to ColumnData.
   // Non-Float32Array values become GPU texture samples injected into the vertex shader as:
   //   float attrName = sampleColumn(u_col_attrName, a_pickId);
-  // See docs/api/ComputedAttributes.md for details.
+  // See docs/extension-api/Computations.md for details.
   attributes: {
     x: 'xData',                                   // column name string
     y: Float32Array,                               // plain vertex buffer
@@ -938,13 +938,7 @@ Each element in the array:
 }
 ```
 
-Values in `attributes` are normally `Float32Array`. They may also be **computed attribute expressions** — single-key objects `{ computationName: params }` that the framework resolves into a GPU-sampled texture or injected GLSL expression. See [Computed Attributes](ComputedAttributes.md) for the full API and built-in computations.
-
----
-
-### Built-in layer types
-
-The built-in `points`, `lines`, `colorbar`, and `filterbar` layer types are documented in [Built-in Layer Types](BuiltInLayerTypes.md).
+Values in `attributes` are normally `Float32Array`. They may also be **computed attribute expressions** — single-key objects `{ computationName: params }` that the framework resolves into a GPU-sampled texture or injected GLSL expression. See [Computed Attributes](Computations.md) for the full API and built-in computations.
 
 ---
 
@@ -994,30 +988,3 @@ Returns the GLSL `filter_in_range` helper string. Injected automatically by `cre
 ```javascript
 ["xaxis_bottom", "xaxis_top", "yaxis_left", "yaxis_right"]
 ```
-
-### Colorscales
-
-All [matplotlib colorscales](https://matplotlib.org/stable/gallery/color/colormap_reference.html) are registered by default on import.
-
-**Perceptually uniform sequential:**
-`viridis`, `plasma`, `inferno`, `magma`, `cividis`
-
-**Sequential (single-hue):**
-`Blues`, `Greens`, `Reds`, `Oranges`, `Purples`, `Greys`
-
-**Sequential (multi-hue):**
-`YlOrBr`, `YlOrRd`, `OrRd`, `PuRd`, `RdPu`, `BuPu`, `GnBu`, `PuBu`, `YlGnBu`, `PuBuGn`, `BuGn`, `YlGn`
-
-**Diverging:**
-`PiYG`, `PRGn`, `BrBG`, `PuOr`, `RdGy`, `RdBu`, `RdYlBu`, `RdYlGn`, `Spectral`, `coolwarm`, `bwr`, `seismic`
-
-**Cyclic:**
-`twilight`, `twilight_shifted`, `hsv`
-
-**Sequential (misc):**
-`hot`, `afmhot`, `gist_heat`, `copper`, `bone`, `pink`, `spring`, `summer`, `autumn`, `winter`, `cool`, `Wistia`, `gray`
-
-**Miscellaneous:**
-`jet`, `turbo`, `rainbow`, `gnuplot`, `gnuplot2`, `CMRmap`, `cubehelix`, `nipy_spectral`, `gist_rainbow`, `gist_earth`, `terrain`, `ocean`, `brg`
-
-Use `registerColorscale(name, glslFn)` to add custom colorscales.

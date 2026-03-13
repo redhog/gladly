@@ -1,6 +1,6 @@
 # Data Flow & Rendering
 
-This page describes how data moves through Gladly at runtime: the declarative setup phase, the per-frame render cycle, and the zoom/pan interaction cycle. For module internals see [Modules.md](Modules.md). For the high-level picture see [ARCHITECTURE.md](../ARCHITECTURE.md).
+This page describes how data moves through Gladly at runtime: the declarative setup phase, the per-frame render cycle, and the zoom/pan interaction cycle. For module internals see [Modules.md](Modules.md). For the high-level picture see [Architecture Overview](index.md).
 
 ---
 
