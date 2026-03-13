@@ -20,15 +20,14 @@ Gladly is a lightweight, high-performance plotting library that combines WebGL (
 For detailed information about using and understanding Gladly:
 
 - **[Quick Start](docs/Quickstart.md)**: Installation and minimal working example
-- **[API Documentation](docs/API.md)**: User-facing API reference overview and data model
-  - **[Configuring Plots](docs/api/PlotConfiguration.md)**: `plot.update()`, axes config, auto-range, multi-layer, interaction, examples
-  - **[Writing Layer Types](docs/api/LayerTypes.md)**: `LayerType` constructor, shaders, color/filter axes, GLSL helpers, constants
-  - **[Computed Attributes](docs/api/ComputedAttributes.md)**: GPU texture and GLSL computations in layer attributes; `TextureComputation` / `GlslComputation` base classes; `EXPRESSION_REF`; `computationSchema`; built-in computations
-  - **[API Reference](docs/api/Reference.md)**: `Plot`, `registerLayerType`, `getLayerType` and other public API entries
-
-- **[Architecture Documentation](docs/ARCHITECTURE.md)**: Developer-facing architecture overview
-  - **[Module Responsibilities](docs/architecture/Modules.md)**: Per-module purpose, patterns, key properties and methods
-  - **[Data Flow & Rendering](docs/architecture/DataFlow.md)**: Setup phase, render cycle, zoom/pan interaction
+- **[Concepts](docs/concepts/Overview.md)**: Data model overview — axes, quantity kinds, colorscales, layer types, data format
+- **[Configuring Plots](docs/configuration/PlotConfiguration.md)**: `plot.update()`, axes config, auto-range, multi-layer, interaction, examples
+- **[Built-in Layer Types](docs/configuration/BuiltInLayerTypes.md)**: points, lines, bars, histogram, tile, colorbar, filterbar
+- **[Computations](docs/configuration/Computations.md)**: Transforms and computed attributes
+- **[User API](docs/user-api/overview.md)**: `Plot`, `Axis`, `PlotGroup`, `Data`, `ComputePipeline`, `Widgets`
+- **[Writing Layer Types](docs/extension-api/LayerTypes.md)**: `LayerType` constructor, shaders, color/filter axes, GLSL helpers, constants
+- **[Extension API — Computations](docs/extension-api/Computations.md)**: Writing custom `TextureComputation` and `GlslComputation`
+- **[Architecture](docs/architecture/overview.md)**: Developer-facing architecture overview
 
 ## Technology Stack
 
