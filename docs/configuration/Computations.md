@@ -232,7 +232,7 @@ Each column mapping has:
 | Property | Type | Description |
 |----------|------|-------------|
 | `dst` | string | Output column name |
-| `src` | expression | Input expression |
+| `src` | computed attribute expression | Input expression — see [Computed Attribute expressions](#computed-attributes) below |
 
 **Output columns:**
 - Defined by `columns` parameter
