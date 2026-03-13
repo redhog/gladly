@@ -7,18 +7,31 @@ import { SAMPLE_COLUMN_GLSL } from "../data/ColumnData.js"
 function buildSpatialGlsl() {
   return `uniform vec2 xDomain;
 uniform vec2 yDomain;
+uniform vec2 zDomain;
 uniform float xScaleType;
 uniform float yScaleType;
+uniform float zScaleType;
+uniform float u_is3D;
+uniform mat4 u_mvp;
 float normalize_axis(float v, vec2 domain, float scaleType) {
   float vt = scaleType > 0.5 ? log(v) : v;
   float d0 = scaleType > 0.5 ? log(domain.x) : domain.x;
   float d1 = scaleType > 0.5 ? log(domain.y) : domain.y;
   return (vt - d0) / (d1 - d0);
 }
+vec4 plot_pos_3d(vec3 pos) {
+  float nx = normalize_axis(pos.x, xDomain, xScaleType);
+  float ny = normalize_axis(pos.y, yDomain, yScaleType);
+  float nz = normalize_axis(pos.z, zDomain, zScaleType);
+  return u_mvp * vec4(nx*2.0-1.0, ny*2.0-1.0, nz*2.0-1.0, 1.0);
+}
 vec4 plot_pos(vec2 pos) {
   float nx = normalize_axis(pos.x, xDomain, xScaleType);
   float ny = normalize_axis(pos.y, yDomain, yScaleType);
-  return vec4(nx*2.0-1.0, ny*2.0-1.0, 0.0, 1.0);
+  if (u_is3D > 0.5) {
+    return plot_pos_3d(vec3(pos, zDomain.x));
+  }
+  return u_mvp * vec4(nx*2.0-1.0, ny*2.0-1.0, 0.0, 1.0);
 }`
 }
 
@@ -87,6 +100,7 @@ export class LayerType {
     name,
     xAxis, xAxisQuantityKind,
     yAxis, yAxisQuantityKind,
+    zAxis, zAxisQuantityKind,
     colorAxisQuantityKinds,
     colorAxis2dQuantityKinds,
     filterAxisQuantityKinds,
@@ -98,6 +112,8 @@ export class LayerType {
     this.xAxisQuantityKind = xAxisQuantityKind
     this.yAxis = yAxis
     this.yAxisQuantityKind = yAxisQuantityKind
+    this.zAxis = zAxis ?? null
+    this.zAxisQuantityKind = zAxisQuantityKind ?? null
     this.colorAxisQuantityKinds = colorAxisQuantityKinds ?? {}
     this.colorAxis2dQuantityKinds = colorAxis2dQuantityKinds ?? {}
     this.filterAxisQuantityKinds = filterAxisQuantityKinds ?? {}
@@ -176,11 +192,15 @@ export class LayerType {
 
     // Build uniforms
     const uniforms = {
-      xDomain: regl.prop("xDomain"),
-      yDomain: regl.prop("yDomain"),
+      xDomain:    regl.prop("xDomain"),
+      yDomain:    regl.prop("yDomain"),
+      zDomain:    regl.prop("zDomain"),
       xScaleType: regl.prop("xScaleType"),
       yScaleType: regl.prop("yScaleType"),
-      u_pickingMode: regl.prop('u_pickingMode'),
+      zScaleType: regl.prop("zScaleType"),
+      u_is3D:     regl.prop("u_is3D"),
+      u_mvp:      regl.prop("u_mvp"),
+      u_pickingMode:    regl.prop('u_pickingMode'),
       u_pickLayerIndex: regl.prop('u_pickLayerIndex'),
       ...layer.uniforms,
       ...Object.fromEntries(Object.entries(allTextures).map(([k, fn]) => [k, fn]))
@@ -201,8 +221,12 @@ export class LayerType {
     // Strip spatial uniforms from vert (re-declared in buildSpatialGlsl)
     vertSrc = removeUniformDecl(vertSrc, 'xDomain')
     vertSrc = removeUniformDecl(vertSrc, 'yDomain')
+    vertSrc = removeUniformDecl(vertSrc, 'zDomain')
     vertSrc = removeUniformDecl(vertSrc, 'xScaleType')
     vertSrc = removeUniformDecl(vertSrc, 'yScaleType')
+    vertSrc = removeUniformDecl(vertSrc, 'zScaleType')
+    vertSrc = removeUniformDecl(vertSrc, 'u_is3D')
+    vertSrc = removeUniformDecl(vertSrc, 'u_mvp')
 
     const spatialGlsl = buildSpatialGlsl()
     const colorGlsl = (Object.keys(layer.colorAxes).length > 0 || Object.keys(layer.colorAxes2d).length > 0) ? buildColorGlsl() : ''
@@ -298,6 +322,8 @@ export class LayerType {
       xAxisQuantityKind: this.xAxisQuantityKind,
       yAxis: this.yAxis,
       yAxisQuantityKind: this.yAxisQuantityKind,
+      zAxis: this.zAxis,
+      zAxisQuantityKind: this.zAxisQuantityKind,
       colorAxisQuantityKinds: { ...this.colorAxisQuantityKinds },
       colorAxis2dQuantityKinds: { ...this.colorAxis2dQuantityKinds },
       filterAxisQuantityKinds: { ...this.filterAxisQuantityKinds },
@@ -305,13 +331,15 @@ export class LayerType {
 
     if (this._getAxisConfig) {
       const dynamic = this._getAxisConfig.call(this, parameters, data)
-      if (dynamic.xAxis !== undefined)                   resolved.xAxis = dynamic.xAxis
-      if (dynamic.xAxisQuantityKind !== undefined)       resolved.xAxisQuantityKind = dynamic.xAxisQuantityKind
-      if (dynamic.yAxis !== undefined)                   resolved.yAxis = dynamic.yAxis
-      if (dynamic.yAxisQuantityKind !== undefined)       resolved.yAxisQuantityKind = dynamic.yAxisQuantityKind
-      if (dynamic.colorAxisQuantityKinds !== undefined)  resolved.colorAxisQuantityKinds = dynamic.colorAxisQuantityKinds
+      if (dynamic.xAxis !== undefined)                    resolved.xAxis = dynamic.xAxis
+      if (dynamic.xAxisQuantityKind !== undefined)        resolved.xAxisQuantityKind = dynamic.xAxisQuantityKind
+      if (dynamic.yAxis !== undefined)                    resolved.yAxis = dynamic.yAxis
+      if (dynamic.yAxisQuantityKind !== undefined)        resolved.yAxisQuantityKind = dynamic.yAxisQuantityKind
+      if (dynamic.zAxis !== undefined)                    resolved.zAxis = dynamic.zAxis
+      if (dynamic.zAxisQuantityKind !== undefined)        resolved.zAxisQuantityKind = dynamic.zAxisQuantityKind
+      if (dynamic.colorAxisQuantityKinds !== undefined)   resolved.colorAxisQuantityKinds = dynamic.colorAxisQuantityKinds
       if (dynamic.colorAxis2dQuantityKinds !== undefined) resolved.colorAxis2dQuantityKinds = dynamic.colorAxis2dQuantityKinds
-      if (dynamic.filterAxisQuantityKinds !== undefined) resolved.filterAxisQuantityKinds = dynamic.filterAxisQuantityKinds
+      if (dynamic.filterAxisQuantityKinds !== undefined)  resolved.filterAxisQuantityKinds = dynamic.filterAxisQuantityKinds
     }
 
     return resolved
@@ -337,8 +365,10 @@ export class LayerType {
       blend: gpuConfig.blend ?? null,
       xAxis: axisConfig.xAxis,
       yAxis: axisConfig.yAxis,
+      zAxis: axisConfig.zAxis,
       xAxisQuantityKind: axisConfig.xAxisQuantityKind,
       yAxisQuantityKind: axisConfig.yAxisQuantityKind,
+      zAxisQuantityKind: axisConfig.zAxisQuantityKind,
       colorAxes: axisConfig.colorAxisQuantityKinds,
       colorAxes2d: axisConfig.colorAxis2dQuantityKinds,
       filterAxes: axisConfig.filterAxisQuantityKinds,

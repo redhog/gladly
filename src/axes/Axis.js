@@ -1,13 +1,8 @@
-import { axisBottom, axisTop, axisLeft, axisRight } from "d3-axis"
-import { AXES } from "./AxisRegistry.js"
+import { AXIS_GEOMETRY, axisEndpoints, axisPosAtN } from "./AxisRegistry.js"
 import { getAxisQuantityKind } from "./AxisQuantityKindRegistry.js"
+import { projectToScreen } from "../math/mat4.js"
 
-const AXIS_CONSTRUCTORS = {
-  xaxis_bottom: axisBottom,
-  xaxis_top:    axisTop,
-  yaxis_left:   axisLeft,
-  yaxis_right:  axisRight,
-}
+// ─── Tick formatting (same logic as before) ───────────────────────────────────
 
 function formatTick(v) {
   if (v === 0) return "0"
@@ -16,26 +11,15 @@ function formatTick(v) {
     return v.toExponential(2).replace(/\.?0+(e)/, '$1')
   }
   const s = v.toPrecision(4)
-  if (s.includes('.') && !s.includes('e')) {
-    return s.replace(/\.?0+$/, '')
-  }
+  if (s.includes('.') && !s.includes('e')) return s.replace(/\.?0+$/, '')
   return s
 }
 
-// Returns tick values for a log scale using the 1-2-5 sequence (1×, 2×, 5× per decade),
-// which gives evenly-spaced marks in log space across any domain size.
-// Falls back to powers-of-10 (subsampled if needed) when the domain is too wide for
-// 1-2-5 ticks to fit within pixelCount. Returns null for very narrow domains where
-// no "nice" values land inside, so the caller can fall back to D3's default logic.
-function logTickValues(scale, pixelCount) {
+function logTickValues(scale, count) {
   const [dMin, dMax] = scale.domain()
   if (dMin <= 0 || dMax <= 0) return null
-
-  const logMin = Math.log10(dMin)
-  const logMax = Math.log10(dMax)
-  const startExp = Math.floor(logMin)
-  const endExp = Math.ceil(logMax)
-
+  const logMin = Math.log10(dMin), logMax = Math.log10(dMax)
+  const startExp = Math.floor(logMin), endExp = Math.ceil(logMax)
   const candidate = []
   for (let e = startExp; e < endExp; e++) {
     const base = Math.pow(10, e)
@@ -46,60 +30,53 @@ function logTickValues(scale, pixelCount) {
   }
   const upperPow = Math.pow(10, endExp)
   if (upperPow >= dMin * (1 - 1e-10) && upperPow <= dMax * (1 + 1e-10)) candidate.push(upperPow)
-
-  if (candidate.length >= 2 && candidate.length <= pixelCount) {
-    return candidate
-  }
-
-  const firstExp = Math.ceil(logMin)
-  const lastExp = Math.floor(logMax)
-  if (firstExp > lastExp) {
-    return candidate.length >= 2 ? candidate : null
-  }
+  if (candidate.length >= 2 && candidate.length <= count) return candidate
+  const firstExp = Math.ceil(logMin), lastExp = Math.floor(logMax)
+  if (firstExp > lastExp) return candidate.length >= 2 ? candidate : null
   const numPowers = lastExp - firstExp + 1
-  const step = numPowers > pixelCount ? Math.ceil(numPowers / pixelCount) : 1
+  const step = numPowers > count ? Math.ceil(numPowers / count) : 1
   const powers = []
-  for (let e = firstExp; e <= lastExp; e += step) {
-    powers.push(Math.pow(10, e))
-  }
+  for (let e = firstExp; e <= lastExp; e += step) powers.push(Math.pow(10, e))
   return powers.length >= 2 ? powers : null
 }
 
+// Normalise a data value to [0,1] within its domain (matches GLSL normalize_axis).
+function normaliseValue(v, domain, isLog) {
+  const vt = isLog ? Math.log(v)        : v
+  const d0 = isLog ? Math.log(domain[0]) : domain[0]
+  const d1 = isLog ? Math.log(domain[1]) : domain[1]
+  return (vt - d0) / (d1 - d0)
+}
+
+// ─── Tick mark / label geometry constants (model-space units) ─────────────────
+const TICK_LEN   = 0.05   // tick line length along outward direction
+const LABEL_DIST = 0.12   // label anchor distance from axis surface
+
 /**
- * An Axis represents a single data axis on a plot. Axis instances are stable across
- * plot.update() calls and can be linked together with linkAxes().
+ * An Axis represents a single data axis on a plot.
  *
- * Public interface (duck-typing compatible):
- *   - axis.quantityKind   — string | null
- *   - axis.isSpatial      — boolean; true for xaxis_bottom/xaxis_top/yaxis_left/yaxis_right
- *   - axis.getDomain()    — [min, max] | null
- *   - axis.setDomain(domain) — update domain, schedule render, notify subscribers
- *   - axis.subscribe(callback)   — callback([min, max]) called on domain changes
- *   - axis.unsubscribe(callback) — remove a previously added callback
+ * Public interface (unchanged from before):
+ *   axis.quantityKind, axis.isSpatial, axis.getDomain(), axis.setDomain(),
+ *   axis.subscribe(), axis.unsubscribe()
+ *
+ * Rendering is now entirely WebGL-based. Call axis.render() from Plot.render().
  */
 export class Axis {
   constructor(plot, name) {
-    this._plot = plot
-    this._name = name
-    this._listeners = new Set()
-    this._linkedAxes = new Set()
+    this._plot        = plot
+    this._name        = name
+    this._listeners   = new Set()
+    this._linkedAxes  = new Set()
     this._propagating = false
   }
 
-  /** The quantity kind for this axis, or null if the plot hasn't been initialized yet. */
   get quantityKind() { return this._plot.getAxisQuantityKind(this._name) }
 
-  /** True if this is a spatial (D3-rendered) axis; false for color/filter axes. */
-  get isSpatial() { return AXES.includes(this._name) }
+  // True for all 12 spatial axes; false for colour/filter axes.
+  get isSpatial() { return Object.prototype.hasOwnProperty.call(AXIS_GEOMETRY, this._name) }
 
-  /** Returns [min, max], or null if the axis has no domain yet. */
   getDomain() { return this._plot.getAxisDomain(this._name) }
 
-  /**
-   * Sets the axis domain, schedules a render on the owning plot, and notifies all
-   * subscribers (e.g. linked axes). A _propagating guard prevents infinite loops
-   * when axes are linked bidirectionally.
-   */
   setDomain(domain) {
     if (this._propagating) return
     this._propagating = true
@@ -112,143 +89,241 @@ export class Axis {
     }
   }
 
-  /** Add a subscriber. callback([min, max]) is called after every setDomain(). */
-  subscribe(callback) { this._listeners.add(callback) }
-
-  /** Remove a previously added subscriber. */
+  subscribe(callback)   { this._listeners.add(callback) }
   unsubscribe(callback) { this._listeners.delete(callback) }
 
-  // ─── Spatial axis rendering ───────────────────────────────────────────────
+  // ─── WebGL rendering ───────────────────────────────────────────────────────
 
-  _tickCount(rotate = false) {
-    const { plotWidth, plotHeight } = this._plot
-    if (this._name.includes("y")) {
-      return Math.max(2, Math.floor(plotHeight / 27))
-    }
-    const pixelsPerTick = rotate ? 28 : 40
-    return Math.max(2, Math.floor(plotWidth / pixelsPerTick))
+  // Compute the approximate projected screen length of this axis (for tick density).
+  _projectedLength(axisMvp, cw, ch) {
+    const { start, end } = axisEndpoints(this._name)
+    const s = projectToScreen(start, axisMvp, cw, ch)
+    const e = projectToScreen(end,   axisMvp, cw, ch)
+    if (!s || !e) return 0
+    const dx = e[0] - s[0], dy = e[1] - s[1]
+    return Math.sqrt(dx * dx + dy * dy)
   }
 
-  _makeD3Axis(scale, { rotate = false } = {}) {
+  // Returns tick values as an array of numbers.
+  _computeTicks(scale, count) {
     const isLog = typeof scale.base === 'function'
-    const count = this._tickCount(rotate)
-    const gen = AXIS_CONSTRUCTORS[this._name](scale).tickFormat(formatTick)
     if (isLog) {
       const tv = logTickValues(scale, count)
-      if (tv !== null) {
-        gen.tickValues(tv)
-      } else {
-        gen.ticks(count)
-      }
-    } else if (count <= 2) {
-      gen.tickValues(scale.domain())
-    } else {
-      gen.ticks(count)
+      if (tv !== null) return tv
     }
-    return gen
+    if (count <= 2) return scale.domain()
+    return scale.ticks(count)
   }
 
-  _renderLabel(axisGroup, availableMargin) {
-    const { axisRegistry, currentConfig, plotWidth, plotHeight } = this._plot
-    const axisQuantityKind = axisRegistry.axisQuantityKinds[this._name]
-    if (!axisQuantityKind) return
+  // Returns the outward screen-space unit direction [dx, dy] (HTML coords, y down).
+  _outwardScreenDir(axisMvp, cw, ch) {
+    const { start, end } = axisEndpoints(this._name)
+    const mid3D  = [(start[0]+end[0])/2, (start[1]+end[1])/2, (start[2]+end[2])/2]
+    const ow = AXIS_GEOMETRY[this._name].outward
+    const tip3D  = [mid3D[0] + ow[0]*0.2, mid3D[1] + ow[1]*0.2, mid3D[2] + ow[2]*0.2]
+    const midS = projectToScreen(mid3D, axisMvp, cw, ch)
+    const tipS = projectToScreen(tip3D, axisMvp, cw, ch)
+    if (!midS || !tipS) return [0, 1]
+    const dx = tipS[0] - midS[0], dy = tipS[1] - midS[1]
+    const len = Math.sqrt(dx*dx + dy*dy)
+    return len > 0.5 ? [dx/len, dy/len] : [0, 1]
+  }
 
-    const unitLabel = currentConfig?.axes?.[axisQuantityKind]?.label
-      ?? getAxisQuantityKind(axisQuantityKind).label
-    const isVertical = this._name.includes("y")
-    const centerPos = isVertical ? -plotHeight / 2 : plotWidth / 2
-
-    axisGroup.select(".axis-label").remove()
-
-    const text = axisGroup.append("text")
-      .attr("class", "axis-label")
-      .attr("fill", "#000")
-      .style("text-anchor", "middle")
-      .style("font-size", "14px")
-      .style("font-weight", "bold")
-
-    const lines = unitLabel.split('\n')
-    if (lines.length > 1) {
-      lines.forEach((line, i) => {
-        text.append("tspan")
-          .attr("x", 0)
-          .attr("dy", i === 0 ? "0em" : "1.2em")
-          .text(line)
-      })
-    } else {
-      text.text(unitLabel)
+  // Greedy screen-space overlap rejection. Returns an array of indices into `ticks`
+  // that can be rendered without their label boxes overlapping.
+  _visibleTickIndices(ticks, screenPositions, tickLabelAtlas) {
+    const accepted = [], boxes = []
+    for (let i = 0; i < ticks.length; i++) {
+      const sp = screenPositions[i]
+      if (!sp) continue
+      const label = formatTick(ticks[i])
+      const entry = tickLabelAtlas.getEntry(label)
+      const pw = entry ? entry.pw : 48, ph = entry ? entry.ph : 16
+      const box = [sp[0] - pw/2, sp[1] - ph/2, sp[0] + pw/2, sp[1] + ph/2]
+      if (boxes.some(b => box[0] < b[2] && box[2] > b[0] && box[1] < b[3] && box[3] > b[1])) continue
+      accepted.push(i)
+      boxes.push(box)
     }
-
-    if (isVertical) text.attr("transform", "rotate(-90)")
-    text.attr("x", centerPos).attr("y", 0)
-
-    const bbox = text.node().getBBox()
-    const tickSpace = 25
-    let yOffset
-
-    if (this._name === "xaxis_bottom") {
-      yOffset = (tickSpace + (availableMargin - tickSpace) / 2) - (bbox.y + bbox.height / 2)
-    } else if (this._name === "xaxis_top") {
-      yOffset = -(tickSpace + (availableMargin - tickSpace) / 2) - (bbox.y + bbox.height / 2)
-    } else if (this._name === "yaxis_left") {
-      yOffset = -(tickSpace + (availableMargin - tickSpace) / 2) - (bbox.y + bbox.height / 2)
-    } else if (this._name === "yaxis_right") {
-      yOffset = (tickSpace + (availableMargin - tickSpace) / 2) - (bbox.y + bbox.height / 2)
-    }
-
-    text.attr("y", yOffset)
+    return accepted
   }
 
   /**
-   * Renders this axis into the plot's SVG. No-op for non-spatial axes (color/filter).
-   * Called by Plot.render() after each WebGL frame.
+   * Render this axis using the shared WebGL draw commands supplied by Plot.
+   *
+   * @param {object} regl          - regl instance
+   * @param {Float32Array} axisMvp - MVP that maps model space to full-canvas NDC
+   * @param {number} cw            - canvas width in pixels
+   * @param {number} ch            - canvas height in pixels
+   * @param {boolean} is3D         - enables depth testing (3D) vs always-on-top (2D)
+   * @param {TickLabelAtlas} atlas - shared label atlas
+   * @param {Function} lineCmd     - compiled regl command for axis/tick lines
+   * @param {Function} billboardCmd- compiled regl command for label billboards
    */
-  render() {
+  render(regl, axisMvp, cw, ch, is3D, atlas, lineCmd, billboardCmd) {
     if (!this.isSpatial) return
-    const { svg, margin, plotWidth, plotHeight, axisRegistry, currentConfig } = this._plot
+    const { axisRegistry, currentConfig } = this._plot
     const scale = axisRegistry.getScale(this._name)
     if (!scale) return
 
+    const geom   = AXIS_GEOMETRY[this._name]
+    const isLog  = typeof scale.base === 'function'
+    const domain = scale.domain()
+    const { start, end } = axisEndpoints(this._name)
+    const ow = geom.outward   // [ox, oy, oz]
+
+    // ── 1. Tick count based on projected screen length ──────────────────────
+    const screenLen   = this._projectedLength(axisMvp, cw, ch)
+    const pxPerTick   = geom.dir === 'y' ? 27 : 40
+    const tickCount   = Math.max(2, Math.floor(screenLen / pxPerTick))
+    const ticks       = this._computeTicks(scale, tickCount)
+
+    // ── 2. Build axis line + tick-mark geometry ─────────────────────────────
+    // Each pair of consecutive floats = one endpoint of a line segment (primitive: 'lines').
+    const lineVerts = []
+
+    // Main axis line
+    lineVerts.push(...start, ...end)
+
+    // Tick marks
+    for (const t of ticks) {
+      const n = normaliseValue(t, domain, isLog)
+      if (!isFinite(n)) continue
+      const pos = axisPosAtN(this._name, n)
+      lineVerts.push(
+        pos[0],              pos[1],              pos[2],
+        pos[0] + ow[0]*TICK_LEN, pos[1] + ow[1]*TICK_LEN, pos[2] + ow[2]*TICK_LEN,
+      )
+    }
+
+    const fullViewport = { x: 0, y: 0, width: cw, height: ch }
+
+    lineCmd({
+      positions: new Float32Array(lineVerts),
+      mvp:       axisMvp,
+      color:     [0, 0, 0, 1],
+      viewport:  fullViewport,
+      count:     lineVerts.length / 3,
+      depthEnable: is3D,
+    })
+
+    // ── 3. Tick labels ──────────────────────────────────────────────────────
+    const labels = ticks.map(t => formatTick(t))
+    atlas.markLabels(labels)
+    atlas.flush()
+
+    if (!atlas.texture) return
+
+    // Compute label anchor positions in model space and project to screen.
+    const anchors3D = ticks.map((t) => {
+      const n = normaliseValue(t, domain, isLog)
+      if (!isFinite(n)) return null
+      const pos = axisPosAtN(this._name, n)
+      return [pos[0] + ow[0]*LABEL_DIST, pos[1] + ow[1]*LABEL_DIST, pos[2] + ow[2]*LABEL_DIST]
+    })
+    const screenPositions = anchors3D.map(a => a ? projectToScreen(a, axisMvp, cw, ch) : null)
+
+    const visIdx = this._visibleTickIndices(ticks, screenPositions, atlas)
+
+    // Build billboard vertex arrays.
+    const aAnchor = [], aOffsetPx = [], aUV = []
+
+    for (const i of visIdx) {
+      const anchor3D = anchors3D[i]
+      if (!anchor3D) continue
+      const entry = atlas.getEntry(labels[i])
+      if (!entry) continue
+      const { pw, ph, u, v, uw, vh } = entry
+      const hw = pw / 2, hh = ph / 2
+      // 6 vertices (2 triangles): TL TR BL   TR BR BL
+      const corners = [
+        [-hw, -hh, u,    v   ],
+        [+hw, -hh, u+uw, v   ],
+        [-hw, +hh, u,    v+vh],
+        [+hw, -hh, u+uw, v   ],
+        [+hw, +hh, u+uw, v+vh],
+        [-hw, +hh, u,    v+vh],
+      ]
+      for (const [ox, oy, tu, tv] of corners) {
+        aAnchor.push(...anchor3D)
+        aOffsetPx.push(ox, oy)
+        aUV.push(tu, tv)
+      }
+    }
+
+    if (aAnchor.length > 0) {
+      billboardCmd({
+        anchors:    new Float32Array(aAnchor),
+        offsetsPx:  new Float32Array(aOffsetPx),
+        uvs:        new Float32Array(aUV),
+        mvp:        axisMvp,
+        canvasSize: [cw, ch],
+        atlas:      atlas.texture,
+        viewport:   fullViewport,
+        count:      aAnchor.length / 3,
+        depthEnable: is3D,
+      })
+    }
+
+    // ── 4. Axis title ───────────────────────────────────────────────────────
+    const qk        = axisRegistry.axisQuantityKinds[this._name]
+    if (!qk) return
     const axisConfig = currentConfig?.axes?.[this._name] ?? {}
-    const rotate = axisConfig.rotate ?? false
+    const unitLabel  = axisConfig.label ?? getAxisQuantityKind(qk).label
+    if (!unitLabel) return
 
-    let transform, availableMargin
-    if (this._name === "xaxis_bottom") {
-      transform = `translate(${margin.left},${margin.top + plotHeight})`
-      availableMargin = margin.bottom
-    } else if (this._name === "xaxis_top") {
-      transform = `translate(${margin.left},${margin.top})`
-      availableMargin = margin.top
-    } else if (this._name === "yaxis_left") {
-      transform = `translate(${margin.left},${margin.top})`
-      availableMargin = margin.left
-    } else if (this._name === "yaxis_right") {
-      transform = `translate(${margin.left + plotWidth},${margin.top})`
-      availableMargin = margin.right
+    const titleLines = String(unitLabel).split('\n')
+    for (const line of titleLines) atlas.markLabels([line])
+    atlas.flush()
+
+    // Place title at axis midpoint + larger outward offset
+    const mid3D = [(start[0]+end[0])/2, (start[1]+end[1])/2, (start[2]+end[2])/2]
+    const titleAnchorBase = [
+      mid3D[0] + ow[0] * (LABEL_DIST + 0.14),
+      mid3D[1] + ow[1] * (LABEL_DIST + 0.14),
+      mid3D[2] + ow[2] * (LABEL_DIST + 0.14),
+    ]
+
+    const titleAnchor = [], titleOffsets = [], titleUVs = []
+    let lineOffset = 0
+    for (const line of titleLines) {
+      const entry = atlas.getEntry(line)
+      if (!entry) continue
+      const { pw, ph, u, v, uw, vh } = entry
+      const hw = pw / 2, hh = ph / 2
+      // Shift successive lines along the outward screen direction
+      const anchor3D = [
+        titleAnchorBase[0] + ow[0]*lineOffset,
+        titleAnchorBase[1] + ow[1]*lineOffset,
+        titleAnchorBase[2] + ow[2]*lineOffset,
+      ]
+      const corners = [
+        [-hw, -hh, u,    v   ],
+        [+hw, -hh, u+uw, v   ],
+        [-hw, +hh, u,    v+vh],
+        [+hw, -hh, u+uw, v   ],
+        [+hw, +hh, u+uw, v+vh],
+        [-hw, +hh, u,    v+vh],
+      ]
+      for (const [ox, oy, tu, tv] of corners) {
+        titleAnchor.push(...anchor3D)
+        titleOffsets.push(ox, oy)
+        titleUVs.push(tu, tv)
+      }
+      lineOffset += 0.05  // shift next line further out in model space
     }
 
-    const g = svg.select(`.${this._name}`)
-      .attr("transform", transform)
-      .call(this._makeD3Axis(scale, { rotate }))
-
-    g.select(".domain").attr("stroke", "#000").attr("stroke-width", 2)
-    g.selectAll(".tick line").attr("stroke", "#000")
-    g.selectAll(".tick text").attr("fill", "#000").style("font-size", "12px")
-
-    if (rotate && this._name === "xaxis_bottom") {
-      g.selectAll(".tick text")
-        .style("text-anchor", "end")
-        .attr("dx", "-0.8em")
-        .attr("dy", "0.15em")
-        .attr("transform", "rotate(-45)")
-    } else if (rotate && this._name === "xaxis_top") {
-      g.selectAll(".tick text")
-        .style("text-anchor", "start")
-        .attr("dx", "0.8em")
-        .attr("dy", "-0.35em")
-        .attr("transform", "rotate(45)")
+    if (titleAnchor.length > 0) {
+      billboardCmd({
+        anchors:    new Float32Array(titleAnchor),
+        offsetsPx:  new Float32Array(titleOffsets),
+        uvs:        new Float32Array(titleUVs),
+        mvp:        axisMvp,
+        canvasSize: [cw, ch],
+        atlas:      atlas.texture,
+        viewport:   fullViewport,
+        count:      titleAnchor.length / 3,
+        depthEnable: is3D,
+      })
     }
-
-    this._renderLabel(g, availableMargin)
   }
 }

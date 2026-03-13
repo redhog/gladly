@@ -1,5 +1,8 @@
 import * as d3 from "d3-selection"
-import { AXES, AxisRegistry } from "../axes/AxisRegistry.js"
+import { AXES, AXIS_GEOMETRY, AxisRegistry } from "../axes/AxisRegistry.js"
+import { Camera } from "../axes/Camera.js"
+import { TickLabelAtlas } from "../axes/TickLabelAtlas.js"
+import { mat4Identity, mat4Multiply } from "../math/mat4.js"
 import { ColorAxisRegistry } from "../axes/ColorAxisRegistry.js"
 import { FilterAxisRegistry } from "../axes/FilterAxisRegistry.js"
 import { ZoomController } from "../axes/ZoomController.js"
@@ -215,6 +218,11 @@ export class Plot extends GlBase {
     this._zoomEndCallbacks = new Set()
     this._dirty = false
     this._rafId = null
+    this._is3D = false
+    this._camera = null
+    this._tickLabelAtlas = null
+    this._axisLineCmd = null
+    this._axisBillboardCmd = null
 
     // Compiled regl draw commands keyed by vert+frag shader source.
     // Persists across update() calls so shader recompilation is avoided.
@@ -308,7 +316,7 @@ export class Plot extends GlBase {
         const scale = this.axisRegistry.getScale(axisId)
         if (scale) {
           const [min, max] = scale.domain()
-          const qk = this.axisRegistry.axisQuantityKinds[axisId]
+          const qk    = this.axisRegistry.axisQuantityKinds[axisId]
           const qkDef = qk ? getAxisQuantityKind(qk) : {}
           axes[axisId] = { ...qkDef, ...(axes[axisId] ?? {}), min, max }
         }
@@ -377,8 +385,6 @@ export class Plot extends GlBase {
       this.currentData = fresh
     }
 
-    AXES.forEach(a => this.svg.append("g").attr("class", a))
-
     this.axisRegistry = new AxisRegistry(this.plotWidth, this.plotHeight)
     this.colorAxisRegistry = new ColorAxisRegistry()
     this.filterAxisRegistry = new FilterAxisRegistry()
@@ -386,6 +392,23 @@ export class Plot extends GlBase {
     this._processTransforms(transforms)
     this._processLayers(layers, this.currentData)
     this._setDomains(axes)
+
+    // Detect 3D mode: any registered z-axis has a scale.
+    this._is3D = AXES.some(a => AXIS_GEOMETRY[a].dir === 'z' && this.axisRegistry.getScale(a) !== null)
+
+    // Camera (recreated each _initialize so aspect ratio and 3D flag stay in sync).
+    this._camera = new Camera(this._is3D)
+    this._camera.resize(this.plotWidth, this.plotHeight)
+    if (this._is3D) {
+      this._camera.attachMouseEvents(this.canvas, () => this.scheduleRender())
+    }
+
+    // Shared atlas for tick and title labels.
+    if (this._tickLabelAtlas) this._tickLabelAtlas.destroy()
+    this._tickLabelAtlas = new TickLabelAtlas(this.regl)
+
+    // Compile shared axis draw commands (once per regl context; cached on Plot).
+    if (!this._axisLineCmd) this._initAxisCommands()
 
     // Apply colorscale overrides from top-level colorbars entries. These override any
     // per-axis colorscale from config.axes or quantity kind registry. Applying after
@@ -401,6 +424,92 @@ export class Plot extends GlBase {
 
     new ZoomController(this)
     this.render()
+  }
+
+  // Compile the two regl commands shared across all axis rendering.
+  // Called once after the first regl context is created.
+  _initAxisCommands() {
+    const regl = this.regl
+
+    // Axis lines and tick marks (simple 3D line segments).
+    this._axisLineCmd = regl({
+      vert: `#version 300 es
+precision highp float;
+in vec3 a_position;
+uniform mat4 u_mvp;
+void main() { gl_Position = u_mvp * vec4(a_position, 1.0); }`,
+      frag: `#version 300 es
+precision highp float;
+uniform vec4 u_color;
+out vec4 fragColor;
+void main() { fragColor = u_color; }`,
+      attributes: { a_position: regl.prop('positions') },
+      uniforms: {
+        u_mvp:   regl.prop('mvp'),
+        u_color: regl.prop('color'),
+      },
+      primitive: 'lines',
+      count:     regl.prop('count'),
+      viewport:  regl.prop('viewport'),
+      depth: {
+        enable: regl.prop('depthEnable'),
+        mask:   true,
+      },
+    })
+
+    // Billboard quads for tick labels and axis titles.
+    // a_anchor:    vec3 — label centre in model space
+    // a_offset_px: vec2 — corner offset in HTML pixels (x right, y down)
+    // a_uv:        vec2 — atlas UV (v=0 = canvas top)
+    this._axisBillboardCmd = regl({
+      vert: `#version 300 es
+precision highp float;
+in vec3 a_anchor;
+in vec2 a_offset_px;
+in vec2 a_uv;
+uniform mat4 u_mvp;
+uniform vec2 u_canvas_size;
+out vec2 v_uv;
+void main() {
+  vec4 clip = u_mvp * vec4(a_anchor, 1.0);
+  // Add screen-space pixel offset while preserving clip.w for correct depth.
+  // x: HTML right = NDC right; y: HTML down = NDC up (negate).
+  vec2 ndc_off = vec2(a_offset_px.x / u_canvas_size.x,
+                     -a_offset_px.y / u_canvas_size.y) * 2.0;
+  gl_Position = vec4(clip.xy + ndc_off * clip.w, clip.z, clip.w);
+  v_uv = a_uv;
+}`,
+      frag: `#version 300 es
+precision highp float;
+uniform sampler2D u_atlas;
+in vec2 v_uv;
+out vec4 fragColor;
+void main() {
+  fragColor = texture(u_atlas, v_uv);
+  if (fragColor.a < 0.05) discard;
+}`,
+      attributes: {
+        a_anchor:    regl.prop('anchors'),
+        a_offset_px: regl.prop('offsetsPx'),
+        a_uv:        regl.prop('uvs'),
+      },
+      uniforms: {
+        u_mvp:         regl.prop('mvp'),
+        u_canvas_size: regl.prop('canvasSize'),
+        u_atlas:       regl.prop('atlas'),
+      },
+      primitive: 'triangles',
+      count:     regl.prop('count'),
+      viewport:  regl.prop('viewport'),
+      depth: {
+        enable: regl.prop('depthEnable'),
+        mask:   false,   // depth test but don't write — labels don't occlude each other
+      },
+      blend: {
+        enable: true,
+        func: { srcRGB: 'src alpha', dstRGB: 'one minus src alpha', srcAlpha: 1, dstAlpha: 0 },
+      },
+    })
   }
 
   _setupResizeObserver() {
@@ -433,7 +542,7 @@ export class Plot extends GlBase {
   // Returns the quantity kind for any axis ID (spatial or color axis).
   // For color axes, the axis ID IS the quantity kind.
   getAxisQuantityKind(axisId) {
-    if (AXES.includes(axisId)) {
+    if (Object.prototype.hasOwnProperty.call(AXIS_GEOMETRY, axisId)) {
       return this.axisRegistry ? this.axisRegistry.axisQuantityKinds[axisId] : null
     }
     return axisId
@@ -441,7 +550,7 @@ export class Plot extends GlBase {
 
   // Unified domain getter for spatial, color, and filter axes.
   getAxisDomain(axisId) {
-    if (AXES.includes(axisId)) {
+    if (Object.prototype.hasOwnProperty.call(AXIS_GEOMETRY, axisId)) {
       const scale = this.axisRegistry?.getScale(axisId)
       return scale ? scale.domain() : null
     }
@@ -455,7 +564,7 @@ export class Plot extends GlBase {
 
   // Unified domain setter for spatial, color, and filter axes.
   setAxisDomain(axisId, domain) {
-    if (AXES.includes(axisId)) {
+    if (Object.prototype.hasOwnProperty.call(AXIS_GEOMETRY, axisId)) {
       const scale = this.axisRegistry?.getScale(axisId)
       if (scale) scale.domain(domain)
     } else if (this.colorAxisRegistry?.hasAxis(axisId)) {
@@ -560,6 +669,11 @@ export class Plot extends GlBase {
       this._rafId = null
     }
 
+    if (this._tickLabelAtlas) {
+      this._tickLabelAtlas.destroy()
+      this._tickLabelAtlas = null
+    }
+
     this._shaderCache.clear()
 
     if (this.regl) {
@@ -592,6 +706,7 @@ export class Plot extends GlBase {
       // Pass any scale override from config (e.g. "log") so the D3 scale is created correctly.
       if (ac.xAxis) this.axisRegistry.ensureAxis(ac.xAxis, ac.xAxisQuantityKind, axesConfig[ac.xAxis]?.scale ?? axesConfig[ac.xAxisQuantityKind]?.scale)
       if (ac.yAxis) this.axisRegistry.ensureAxis(ac.yAxis, ac.yAxisQuantityKind, axesConfig[ac.yAxis]?.scale ?? axesConfig[ac.yAxisQuantityKind]?.scale)
+      if (ac.zAxis) this.axisRegistry.ensureAxis(ac.zAxis, ac.zAxisQuantityKind, axesConfig[ac.zAxis]?.scale ?? axesConfig[ac.zAxisQuantityKind]?.scale)
 
       // Register color axes (colorscale comes from config or quantity kind registry, not from here)
       for (const quantityKind of Object.values(ac.colorAxisQuantityKinds)) {
@@ -760,6 +875,27 @@ export class Plot extends GlBase {
     }
     const axesConfig = this.currentConfig?.axes
 
+    // Camera MVP for data layers (maps unit cube to NDC within the plot-area viewport).
+    const cameraMvp = this._camera ? this._camera.getMVP() : mat4Identity()
+
+    // Axis MVP maps the unit cube to full-canvas NDC so axis lines and labels
+    // can extend into the margin area outside the plot viewport.
+    //   sx = plotWidth/width,  sy = plotHeight/height
+    //   cx = (marginLeft - marginRight) / width  (NDC centre offset x)
+    //   cy = (marginBottom - marginTop)  / height
+    const sx = this.plotWidth  / this.width
+    const sy = this.plotHeight / this.height
+    const cx = (this.margin.left   - this.margin.right)  / this.width
+    const cy = (this.margin.bottom - this.margin.top)    / this.height
+    // Column-major viewport scale+translate matrix
+    const Mvp = new Float32Array([
+      sx, 0, 0, 0,
+      0, sy, 0, 0,
+      0,  0, 1, 0,
+      cx, cy, 0, 1,
+    ])
+    const axisMvp = mat4Multiply(Mvp, cameraMvp)
+
     // Refresh transform nodes before drawing (recomputes if tracked axis domains changed)
     for (const node of this._dataTransformNodes) {
       try {
@@ -774,11 +910,18 @@ export class Plot extends GlBase {
 
       const xIsLog = layer.xAxis ? this.axisRegistry.isLogScale(layer.xAxis) : false
       const yIsLog = layer.yAxis ? this.axisRegistry.isLogScale(layer.yAxis) : false
+      const zIsLog = layer.zAxis ? this.axisRegistry.isLogScale(layer.zAxis) : false
+      const zScale = layer.zAxis ? this.axisRegistry.getScale(layer.zAxis) : null
+      const zDomain = zScale ? zScale.domain() : [0, 1]
       const props = {
         xDomain: layer.xAxis ? (this.axisRegistry.getScale(layer.xAxis)?.domain() ?? [0, 1]) : [0, 1],
         yDomain: layer.yAxis ? (this.axisRegistry.getScale(layer.yAxis)?.domain() ?? [0, 1]) : [0, 1],
+        zDomain,
         xScaleType: xIsLog ? 1.0 : 0.0,
         yScaleType: yIsLog ? 1.0 : 0.0,
+        zScaleType: zIsLog ? 1.0 : 0.0,
+        u_is3D:    this._is3D ? 1.0 : 0.0,
+        u_mvp:     cameraMvp,
         viewport: viewport,
         count: layer.vertexCount ?? Object.values(layer.attributes).find(v => v instanceof Float32Array)?.length ?? 0,
         u_pickingMode: 0.0,
@@ -817,7 +960,17 @@ export class Plot extends GlBase {
       layer.draw(props)
     }
 
-    for (const axisId of AXES) this._getAxis(axisId).render()
+    // Render all registered spatial axes via WebGL (axis lines + tick marks + labels).
+    if (this._axisLineCmd && this._axisBillboardCmd && this._tickLabelAtlas) {
+      for (const axisId of AXES) {
+        if (!this.axisRegistry.getScale(axisId)) continue
+        this._getAxis(axisId).render(
+          this.regl, axisMvp, this.width, this.height,
+          this._is3D, this._tickLabelAtlas,
+          this._axisLineCmd, this._axisBillboardCmd,
+        )
+      }
+    }
     for (const cb of this._renderCallbacks) cb()
   }
 
@@ -888,11 +1041,18 @@ export class Plot extends GlBase {
 
         const xIsLog = layer.xAxis ? this.axisRegistry.isLogScale(layer.xAxis) : false
         const yIsLog = layer.yAxis ? this.axisRegistry.isLogScale(layer.yAxis) : false
+        const zIsLog = layer.zAxis ? this.axisRegistry.isLogScale(layer.zAxis) : false
+        const zScale = layer.zAxis ? this.axisRegistry.getScale(layer.zAxis) : null
+        const camMvp = this._camera ? this._camera.getMVP() : mat4Identity()
         const props = {
           xDomain: layer.xAxis ? (this.axisRegistry.getScale(layer.xAxis)?.domain() ?? [0, 1]) : [0, 1],
           yDomain: layer.yAxis ? (this.axisRegistry.getScale(layer.yAxis)?.domain() ?? [0, 1]) : [0, 1],
+          zDomain: zScale ? zScale.domain() : [0, 1],
           xScaleType: xIsLog ? 1.0 : 0.0,
           yScaleType: yIsLog ? 1.0 : 0.0,
+          zScaleType: zIsLog ? 1.0 : 0.0,
+          u_is3D:    this._is3D ? 1.0 : 0.0,
+          u_mvp:     camMvp,
           viewport,
           count: layer.vertexCount ?? Object.values(layer.attributes).find(v => v instanceof Float32Array)?.length ?? 0,
           u_pickingMode: 1.0,

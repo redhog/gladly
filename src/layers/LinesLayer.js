@@ -11,12 +11,13 @@ import { Data } from "../data/Data.js"
 import { registerLayerType } from "../core/LayerTypeRegistry.js"
 import { EXPRESSION_REF_OPT, resolveQuantityKind, resolveExprToColumn } from "../compute/ComputationRegistry.js"
 
-function makeLinesVert(hasFilter, hasSegIds, hasV, hasV2) {
+function makeLinesVert(hasFilter, hasSegIds, hasV, hasV2, hasZ) {
   return `#version 300 es
   precision mediump float;
   in float a_endPoint;
   in float a_x0;
   in float a_y0;
+  ${hasZ ? 'in float a_z0;\n  in float a_z1;' : ''}
   in float a_x1;
   in float a_y1;
   ${hasV  ? 'in float a_v0;\n  in float a_v1;'   : ''}
@@ -38,7 +39,8 @@ function makeLinesVert(hasFilter, hasSegIds, hasV, hasV2) {
     float t = same_seg * a_endPoint;
     float x = mix(a_x0, a_x1, t);
     float y = mix(a_y0, a_y1, t);
-    gl_Position = plot_pos(vec2(x, y));
+    ${hasZ ? 'float z = mix(a_z0, a_z1, t);\n    gl_Position = plot_pos_3d(vec3(x, y, z));'
+           : 'gl_Position = plot_pos(vec2(x, y));'}
     v_color_start  = ${hasV  ? 'a_v0'  : '0.0'};
     v_color_end    = ${hasV  ? 'a_v1'  : '0.0'};
     v_color2_start = ${hasV2 ? 'a_v20' : '0.0'};
@@ -108,18 +110,21 @@ class LinesLayerType extends ScatterLayerTypeBase {
     const d = Data.wrap(data)
     const { lineSegmentIdData: lineSegmentIdDataRaw, lineColorMode = "gradient", lineWidth = 1.0 } = parameters
     const lineSegmentIdData = (lineSegmentIdDataRaw == null || lineSegmentIdDataRaw === "none") ? null : lineSegmentIdDataRaw
-    const { xData, yData, vData: vDataOrig, vData2: vData2Orig, fData: fDataOrig } = parameters
+    const { xData, yData, zData: zDataOrig, vData: vDataOrig, vData2: vData2Orig, fData: fDataOrig } = parameters
+    const zData  = (zDataOrig  == null || zDataOrig  === "none") ? null : zDataOrig
     const vData  = (vDataOrig  == null || vDataOrig  === "none") ? null : vDataOrig
     const vData2 = (vData2Orig == null || vData2Orig === "none") ? null : vData2Orig
     const fData  = (fDataOrig  == null || fDataOrig  === "none") ? null : fDataOrig
 
     const xQK = resolveQuantityKind(xData, d) ?? xData
     const yQK = resolveQuantityKind(yData, d) ?? yData
+    const zQK  = zData  ? (resolveQuantityKind(zData,  d) ?? zData)  : null
     const vQK  = vData  ? (resolveQuantityKind(vData,  d) ?? vData)  : null
     const vQK2 = vData2 ? (resolveQuantityKind(vData2, d) ?? vData2) : null
 
     const colX   = resolveExprToColumn(xData, d, regl, plot)
     const colY   = resolveExprToColumn(yData, d, regl, plot)
+    const colZ   = zData  ? resolveExprToColumn(zData,  d, regl, plot) : null
     const colV   = vData  ? resolveExprToColumn(vData,  d, regl, plot) : null
     const colV2  = vData2 ? resolveExprToColumn(vData2, d, regl, plot) : null
     const colF   = fData  ? resolveExprToColumn(fData,  d, regl, plot) : null
@@ -129,7 +134,7 @@ class LinesLayerType extends ScatterLayerTypeBase {
     if (!colY) throw new Error(`Data column '${yData}' not found`)
 
     const N = colX.length
-    const domains = this._buildDomains(d, xData, yData, vData, vData2, xQK, yQK, vQK, vQK2)
+    const domains = this._buildDomains(d, xData, yData, zData, vData, vData2, xQK, yQK, zQK, vQK, vQK2)
 
     // For vData: if a string column, offset-sample start/end; if a computed expression,
     // pass through as-is (both endpoints get the same value, matching old behaviour).
@@ -145,6 +150,7 @@ class LinesLayerType extends ScatterLayerTypeBase {
         a_x1: colX.withOffset('1.0'),
         a_y0: colY.withOffset('0.0'),
         a_y1: colY.withOffset('1.0'),
+        ...(colZ   ? { a_z0: colZ.withOffset('0.0'),   a_z1: colZ.withOffset('1.0')   } : {}),
         ...(vAttr0  !== null ? { a_v0:  vAttr0,  a_v1:  vAttr1  } : {}),
         ...(vAttr20 !== null ? { a_v20: vAttr20, a_v21: vAttr21 } : {}),
         ...(colSeg ? { a_seg0: colSeg.withOffset('0.0'), a_seg1: colSeg.withOffset('1.0') } : {}),
@@ -168,7 +174,8 @@ class LinesLayerType extends ScatterLayerTypeBase {
     const hasSegIds  = 'a_seg0' in layer.attributes
     const hasV       = 'a_v0'   in layer.attributes
     const hasV2      = 'a_v20'  in layer.attributes
-    this.vert = makeLinesVert(hasFilter, hasSegIds, hasV, hasV2)
+    const hasZ       = 'a_z0'   in layer.attributes
+    this.vert = makeLinesVert(hasFilter, hasSegIds, hasV, hasV2, hasZ)
     this.frag = makeLinesFrag(hasFirst, hasSecond)
     return super.createDrawCommand(regl, layer, plot)
   }
