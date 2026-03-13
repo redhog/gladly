@@ -1,16 +1,17 @@
 # Computations
 
-Gladly provides two types of computations:
-1. **Computed Attributes** — used within layer parameters to transform data on the GPU
-2. **Computed Data (Transforms)** — used in `config.transforms` to pre-compute data for layers
+Gladly provides two types of computations for transforming data:
 
-Both are referenced by name in expression objects.
+1. **Computed attributes** — transform a single column into a new column of the same length
+2. **Transforms** — transform an entire dataset into a new dataset (possibly with different length and columns)
 
 ---
 
 ## Computed Attributes
 
-Computed attributes transform data columns within layer parameters. They run on the GPU and can be used wherever an expression is accepted.
+A computed attribute transforms a single column into a new column with the **same length** but different values. It runs on the GPU and can be used wherever an expression is accepted in layer parameters.
+
+**Use case:** Applying a mathematical function to every value in a column, e.g., computing a histogram, smoothing with a kernel, normalizing, etc.
 
 ### Usage
 
@@ -18,7 +19,7 @@ Computed attributes transform data columns within layer parameters. They run on 
 { points: { xData: { histogram: { input: "raw_data", bins: 50 } } } }
 ```
 
-### Available Computations
+### Available Computed Attributes
 
 #### histogram
 
@@ -161,9 +162,22 @@ Generates random values.
 
 ---
 
-## Computed Data (Transforms)
+## Transforms
 
-Transforms pre-compute data before layers render. They are specified in `config.transforms` and produce new data columns accessible via `data.transformName.columnName`.
+A transform transforms an entire dataset into a new dataset. The output can have a **different length** and **different columns** than the input. Transforms are specified in `config.transforms` and produce new data columns accessible via `data.transformName.columnName`.
+
+**Use case:** Computing aggregations (histograms, FFTs), creating derived datasets, pre-processing before visualization.
+
+### How Transforms Differ from Computed Attributes
+
+| Aspect | Computed Attribute | Transform |
+|--------|-------------------|-----------|
+| Output | Single column, same length as input | Entire dataset, possibly different length and columns |
+| Specification | Inline in layer parameters | In `config.transforms` array |
+| Access | Used directly in layer params | Access via `data.transformName.columnName` |
+| Example | `vData: { histogram: { input: "x", bins: 50 } }` | `transforms: [{ name: "hist", HistogramData: {...} }]` |
+
+A transform can consist of **multiple computed attributes** if the transform type is elementwise — see `ElementwiseData` below.
 
 ### Usage
 
@@ -221,7 +235,7 @@ Computes Fast Fourier Transform with real and imaginary outputs.
 
 #### ElementwiseData
 
-Performs element-wise operations on multiple columns.
+Performs element-wise operations on multiple columns. A transform that consists of multiple computed attributes — each output column is computed independently from input columns using the same length.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -232,7 +246,7 @@ Each column mapping has:
 | Property | Type | Description |
 |----------|------|-------------|
 | `dst` | string | Output column name |
-| `src` | computed attribute expression | Input expression — see [Computed Attribute expressions](#computed-attributes) below |
+| `src` | computed attribute expression | Input expression — see computed attributes above |
 
 **Output columns:**
 - Defined by `columns` parameter
@@ -253,7 +267,7 @@ Expressions can be:
    xData: { histogram: { input: "raw", bins: 50 } }
    ```
 
-3. **Computed data** (transform output):
+3. **Computed data (transform output)**:
    ```javascript
    xData: "histogram.binCenters"  // after transform named "histogram"
    ```
@@ -267,3 +281,5 @@ Expressions can be:
    }
    // Results in data.myHist.binCenters and data.myHist.counts
    ```
+
+For writing custom computations see [Computations](../extension-api/Computations.md).
