@@ -18,4 +18,4 @@ Programmatic APIs for working with plots, axes, data, and computations.
 
 - [BuiltInLayerTypes](BuiltInLayerTypes.md) — `points`, `lines`, `tile`, `colorbar`, `filterbar` layer types
 - [BuiltInComputations](BuiltInComputations.md) — built-in computations: histogram, kde, filter, fft, convolution, etc.
-- [Colorscales](Colorscales.md) — colorscale names list
+- [Colorscales](../configuration/Colorscales.md) — colorscale names list

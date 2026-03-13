@@ -126,7 +126,7 @@ The key is the **quantity kind** string declared by the layer type. Each entry a
 |----------|------|-------------|
 | `min` | number | Lower bound of the color range (auto-calculated if omitted) |
 | `max` | number | Upper bound of the color range (auto-calculated if omitted) |
-| `colorscale` | string | Named colorscale string (see [Colorscales](../user-api/Colorscales.md)) |
+| `colorscale` | string | Named colorscale string (see [Colorscales](Colorscales.md)) |
 | `scale` | string | `"linear"` (default) or `"log"` — logarithmic mapping; range values must be > 0 |
 | `label` | string | Axis label text (overrides the quantity kind registry default) |
 | `colorbar` | string | `"none"` (default), `"horizontal"`, or `"vertical"` — auto-creates a floating colorbar widget |
@@ -165,7 +165,7 @@ axes: {
 
 The widget is destroyed and recreated whenever `update()` is called with a changed value. Setting the property back to `"none"` removes it.
 
-For manual widget placement in a separate container, see [ColorbarsFilterbars](ColorbarsFilterbars.md).
+For manual widget placement in a separate container, see [ColorbarsFilterbars](../user-api/ColorbarsFilterbars.md).
 
 ---
 
@@ -236,7 +236,7 @@ Each entry accepts:
 |----------|------|-------------|
 | `xAxis` | string | Quantity kind for the x-axis color scale (required for 2D, optional for 1D) |
 | `yAxis` | string | Quantity kind for the y-axis color scale (required for 2D, optional for 1D) |
-| `colorscale` | string | Named colorscale string (1D or 2D). Use `"none"` to hide the colorbar. See [Colorscales](../user-api/Colorscales.md) |
+| `colorscale` | string | Named colorscale string (1D or 2D). Use `"none"` to hide the colorbar. See [Colorscales](Colorscales.md) |
 
 Top-level colorbar entries override colorscales set in `config.axes` or the quantity kind registry.
 
