@@ -1,2 +1,18 @@
 * Remove computed attributes from layer types - only dataset columns now
-* Add PlotGroup concept
+
+* Add Plot3d:
+
+Generate a JavaScript module using regl and D3 to render 3D axes with tick labels in a fully interactive 3D scene. Requirements:
+
+1. Axes are rendered as 3D lines in regl.  
+2. Tick labels are generated using D3 scales and formatting.  
+3. Tick labels are drawn to small offscreen canvases (one canvas per label or an atlas) and rendered as WebGL billboard quads, always facing the camera.  
+4. The camera can rotate freely around the axes.  
+5. Tick labels should **never overlap each other**, even when the axis is projected nearly perpendicular to the screen. Compute visible ticks based on their projected screen-space positions and label size.  
+6. Labels behind the data should be occluded using depth testing, but labels on the same axis should never overlay each other.  
+7. Tick positions and labels must update dynamically as the data range changes (for example, if zooming the data inside the axes changes the tick scale).  
+8. Optionally include axis titles and minor ticks, also billboarded.  
+9. Include helper functions for projecting 3D points to screen coordinates and computing projected axis length for dynamic tick density.  
+10. Code should integrate D3 scales and formatting but render entirely in regl/WebGL, not DOM.
+
+The output should be a self-contained module that can render 3D axes with readable, dynamically selected tick labels, fully compatible with camera rotation and depth-aware occlusion.
