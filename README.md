@@ -22,6 +22,7 @@ Gladly combines WebGL rendering (via regl) with D3.js for interactive axes and z
 ## Documentation
 
 - **[Quick Start](docs/Quickstart.md)** - Installation and minimal working example
+- **[Concepts](docs/concepts/Overview.md)** - Data model overview: axes, quantity kinds, colorscales, layer types, data format
 - **[Configuration](docs/configuration/index.md)** - Plot configuration, layers, axes, colorscales, built-in computations
 - **[User API](docs/user-api/index.md)** - Programmatic APIs for plots, axes, data, and computations
 - **[Extension API](docs/extension-api/index.md)** - Writing custom layer types and computations

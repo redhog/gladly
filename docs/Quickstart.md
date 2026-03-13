@@ -72,6 +72,10 @@ plot.update({
 })
 ```
 
+## Understanding the Concepts
+
+Before diving into configuration, read the **[Concepts](concepts/Overview.md)** guide for a conceptual overview of Gladly's data model — axes, quantity kinds, colorscales, layer types, and the data format.
+
 ## Next steps
 
 - **[Configuring Plots](configuration/PlotConfiguration.md)** — axes config, auto-range, multi-layer, interaction
