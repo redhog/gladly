@@ -46,7 +46,7 @@ Updates the plot with new configuration and/or data.
 | `config` | object | `{ layers, axes }` — see [Configuring Plots](../configuration/PlotConfiguration.md) |
 | `config.layers` | array | Layer specifications: `[{ typeName: params }, ...]` |
 | `config.axes` | object | Range overrides for spatial, color, and filter axes |
-| `data` | object | Any plain object that `normalizeData()` can convert to a `DataGroup` tree (see [Data Format](../README.md#data-format)) |
+| `data` | object | Any plain object that `normalizeData()` can convert to a `DataGroup` tree (see [Data Format](Data.md)) |
 
 **Behaviour:**
 - Config-only: stores config, waits for data before rendering

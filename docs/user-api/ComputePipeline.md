@@ -46,7 +46,7 @@ Runs the given transforms over `data` and returns a [`ComputeOutput`](#computeou
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `data` | object | Input data — any plain object that `normalizeData()` can convert (see [Data Format](../README.md#data-format)). Omit to reuse the data from the previous `update()` call. |
+| `data` | object | Input data — any plain object that `normalizeData()` can convert (see [Data Format](Data.md)). Omit to reuse the data from the previous `update()` call. |
 | `transforms` | array | Array of `{ name, transform: { ClassName: params } }` objects, in the same format as `config.transforms` in `Plot`. Default: `[]`. |
 | `axes` | object | Filter axis range overrides: `{ [quantityKind]: { min, max } }`. Either bound may be omitted for an open interval. Default: `{}`. |
 
