@@ -5,11 +5,11 @@ baseurl: /gladly/docs
 theme: minima
 
 plugins:
-  - jekyll-relative-links
   - jekyll-optional-front-matter
 
+# relative_links disabled - causes issues with GitHub Pages URL rewriting
 relative_links:
-  enabled: true
+  enabled: false
   collections: false
 
 exclude:
@@ -36,10 +36,6 @@ defaults:
       path: "docs"
     values:
       permalink: /:basename/
-  - scope:
-      path: "docs/api"
-    values:
-      permalink: /api/:basename/
   - scope:
       path: "docs/architecture"
     values:
