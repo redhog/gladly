@@ -1,6 +1,6 @@
 # Configuring Plots
 
-This page covers everything needed to create and configure plots. For writing custom layer types see [Writing Layer Types](../extension-api/LayerTypes.md). For an overview of the data model see the [main API doc](../user-api/index.md).
+This page covers everything needed to create and configure plots. For writing custom layer types see [Writing Layer Types](../extension-api/LayerTypes.md). For an overview of the data model see the [main API doc](../user-api/overview.md).
 
 ---
 

@@ -82,4 +82,4 @@ Before diving into configuration, read the **[Concepts](concepts/Overview.md)** 
 - **[Built-in Layer Types](configuration/BuiltInLayerTypes.md)** — points, lines, bars, histogram, tile, colorbar, filterbar
 - **[Computations](configuration/Computations.md)** — transforms and computed attributes
 - **[Writing Layer Types](extension-api/LayerTypes.md)** — custom shaders, color axes, filter axes
-- **[User API](user-api/index.md)** — full reference for `Plot`, `linkAxes`, `Data`, and more
+- **[User API](user-api/overview.md)** — full reference for `Plot`, `linkAxes`, `Data`, and more
