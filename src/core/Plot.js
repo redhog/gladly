@@ -472,11 +472,23 @@ uniform vec2 u_canvas_size;
 out vec2 v_uv;
 void main() {
   vec4 clip = u_mvp * vec4(a_anchor, 1.0);
-  // Add screen-space pixel offset while preserving clip.w for correct depth.
-  // x: HTML right = NDC right; y: HTML down = NDC up (negate).
-  vec2 ndc_off = vec2(a_offset_px.x / u_canvas_size.x,
-                     -a_offset_px.y / u_canvas_size.y) * 2.0;
-  gl_Position = vec4(clip.xy + ndc_off * clip.w, clip.z, clip.w);
+  // Project anchor from NDC to HTML-pixel space (x right, y down).
+  vec2 ndc_anchor = clip.xy / clip.w;
+  vec2 anchor_px  = vec2(
+     ndc_anchor.x * 0.5 + 0.5,
+    -ndc_anchor.y * 0.5 + 0.5) * u_canvas_size;
+  // a_offset_px is in HTML pixels (x right, y down).
+  // abs(a_offset_px) = (hw, hh) for every corner; top-left = anchor - (hw, hh).
+  // Snap the top-left corner to an integer pixel, keep pw/ph unchanged,
+  // so each corner = tl + (0 or pw, 0 or ph).
+  vec2 hw_vec  = abs(a_offset_px);
+  vec2 tl_px   = round(anchor_px - hw_vec);   // snap top-left
+  vec2 vert_px = tl_px + hw_vec + a_offset_px; // reconstruct this corner
+  // Convert HTML pixels back to NDC.
+  vec2 ndc = vec2(
+     vert_px.x / u_canvas_size.x * 2.0 - 1.0,
+    -(vert_px.y / u_canvas_size.y * 2.0 - 1.0));
+  gl_Position = vec4(ndc, clip.z / clip.w, 1.0);
   v_uv = a_uv;
 }`,
       frag: `#version 300 es

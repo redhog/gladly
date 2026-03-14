@@ -79,7 +79,7 @@ export class TickLabelAtlas {
     this._texture = this._regl.texture({
       data:   this._canvas,
       format: 'rgba',
-      mag:    'linear',
+      mag:    'nearest',
       min:    'linear',
       flipY:  false,
     })
