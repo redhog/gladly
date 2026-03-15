@@ -13,12 +13,13 @@ export class ScatterLayerTypeBase extends LayerType {
     const {
       xData, yData, zData: zDataRaw,
       vData: vDataRaw, vData2: vData2Raw, fData: fDataRaw,
-      xAxis = "xaxis_bottom", yAxis = "yaxis_left", zAxis = null,
+      xAxis = "xaxis_bottom", yAxis = "yaxis_left", zAxis = "none",
     } = parameters
     const vDataIn  = (vDataRaw  == null || vDataRaw  === "none") ? null : vDataRaw
     const vData2In = (vData2Raw == null || vData2Raw === "none") ? null : vData2Raw
     const fData    = (fDataRaw  == null || fDataRaw  === "none") ? null : fDataRaw
     const zData    = (zDataRaw  == null || zDataRaw  === "none") ? null : zDataRaw
+    const zAxisResolved = (zAxis == null || zAxis === "none") ? null : zAxis
     const vData  = vDataIn
     const vData2 = vData2In
     const colorAxisQuantityKinds = {}
@@ -33,7 +34,7 @@ export class ScatterLayerTypeBase extends LayerType {
       xAxisQuantityKind: resolveQuantityKind(xData, d) ?? undefined,
       yAxis,
       yAxisQuantityKind: resolveQuantityKind(yData, d) ?? undefined,
-      zAxis: zData ? (zAxis ?? null) : null,
+      zAxis: zData ? (zAxisResolved ?? "zaxis_bottom_left") : null,
       zAxisQuantityKind: zData ? (resolveQuantityKind(zData, d) ?? undefined) : undefined,
       colorAxisQuantityKinds,
       colorAxis2dQuantityKinds,
@@ -63,7 +64,8 @@ export class ScatterLayerTypeBase extends LayerType {
       },
       zAxis: {
         type: "string",
-        enum: Z_AXES,
+        enum: ["none", ...Z_AXES],
+        default: "none",
         description: "Which z-axis to use for this layer (enables 3D mode)",
       },
     }

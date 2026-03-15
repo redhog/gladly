@@ -55,7 +55,7 @@ class PointsLayerType extends ScatterLayerTypeBase {
     return {
       type: "object",
       properties: this._commonSchemaProperties(d),
-      required: ["xData", "yData"]
+      required: ["xData", "yData", "zData", "zAxis"]
     }
   }
 

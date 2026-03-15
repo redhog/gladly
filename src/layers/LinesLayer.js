@@ -102,7 +102,7 @@ class LinesLayerType extends ScatterLayerTypeBase {
           description: "Line width in pixels (note: browsers may clamp values above 1)"
         }
       },
-      required: ["xData", "yData"]
+      required: ["xData", "yData", "zData", "zAxis"]
     }
   }
 
