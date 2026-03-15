@@ -6,22 +6,18 @@ import {
 /**
  * Camera manages the MVP matrix for the plot.
  *
- * In 2D mode (is3D=false): getMVP() returns the identity matrix; no mouse interaction.
- * In 3D mode (is3D=true):  orbit camera (y-up) with perspective projection;
- *                           left-drag on the canvas rotates the view.
+ * In 2D mode (is3D=false): getMVP() returns the identity matrix.
+ * In 3D mode (is3D=true):  orbit camera (y-up) with perspective projection.
+ * Mouse interaction is handled by ZoomController.
  */
 export class Camera {
   constructor(is3D) {
-    this._is3D  = is3D
-    this._theta = Math.PI / 4     // azimuth (rotation around y-axis)
-    this._phi   = Math.PI / 6     // elevation (angle from equator, clamped away from poles)
+    this._is3D   = is3D
+    this._theta  = Math.PI / 4   // azimuth (rotation around y-axis)
+    this._phi    = Math.PI / 6   // elevation (clamped away from poles)
     this._radius = 3.0
-    this._fov   = Math.PI / 4     // vertical field-of-view (45°)
-    this._aspect = 1.0            // width / height, updated by resize()
-    this._dragging = false
-    this._lastX = 0
-    this._lastY = 0
-    this._onChange = null
+    this._fov    = Math.PI / 4   // vertical field-of-view (45°)
+    this._aspect = 1.0           // width / height, updated by resize()
   }
 
   resize(width, height) {
@@ -47,34 +43,5 @@ export class Camera {
     const right = vec3Normalize(vec3Cross(fwd, [0, 1, 0]))
     const up    = vec3Normalize(vec3Cross(right, fwd))
     return { right, up }
-  }
-
-  // Attach left-drag orbit interaction to a canvas element.
-  // onChangeFn() is called after each drag event so the plot can schedule a re-render.
-  attachMouseEvents(canvas, onChangeFn) {
-    if (!this._is3D) return
-    this._onChange = onChangeFn
-
-    canvas.addEventListener('mousedown', (e) => {
-      if (e.button !== 0) return
-      this._dragging = true
-      this._lastX = e.clientX
-      this._lastY = e.clientY
-    })
-
-    canvas.addEventListener('mousemove', (e) => {
-      if (!this._dragging) return
-      const dx = e.clientX - this._lastX
-      const dy = e.clientY - this._lastY
-      this._lastX = e.clientX
-      this._lastY = e.clientY
-      this._theta -= dx * 0.008
-      this._phi = Math.max(-Math.PI / 2 + 0.02, Math.min(Math.PI / 2 - 0.02, this._phi + dy * 0.008))
-      if (this._onChange) this._onChange()
-    })
-
-    const stopDrag = () => { this._dragging = false }
-    canvas.addEventListener('mouseup',    stopDrag)
-    canvas.addEventListener('mouseleave', stopDrag)
   }
 }

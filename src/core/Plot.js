@@ -1,4 +1,3 @@
-import * as d3 from "d3-selection"
 import { AXES, AXES_2D, AXIS_GEOMETRY, AxisRegistry } from "../axes/AxisRegistry.js"
 import { Camera } from "../axes/Camera.js"
 import { TickLabelAtlas } from "../axes/TickLabelAtlas.js"
@@ -198,17 +197,7 @@ export class Plot extends GlBase {
     this.canvas.style.position = 'absolute'
     this.canvas.style.top = '0'
     this.canvas.style.left = '0'
-    this.canvas.style.zIndex = '1'
     container.appendChild(this.canvas)
-
-    // Create SVG element
-    this.svg = d3.select(container)
-      .append('svg')
-      .style('position', 'absolute')
-      .style('top', '0')
-      .style('left', '0')
-      .style('z-index', '2')
-      .style('user-select', 'none')
 
     this.currentConfig = null
     this.layers = []
@@ -258,14 +247,11 @@ export class Plot extends GlBase {
 
     this.canvas.width = width
     this.canvas.height = height
-    this.svg.attr('width', width).attr('height', height)
 
     this.width = width
     this.height = height
     this.plotWidth = plotWidth
     this.plotHeight = plotHeight
-
-    this.svg.selectAll('*').remove()
 
     this._warnedMissingDomains = false
     this._initialize()
@@ -399,9 +385,6 @@ export class Plot extends GlBase {
     // Camera (recreated each _initialize so aspect ratio and 3D flag stay in sync).
     this._camera = new Camera(this._is3D)
     this._camera.resize(this.plotWidth, this.plotHeight)
-    if (this._is3D) {
-      this._camera.attachMouseEvents(this.canvas, () => this.scheduleRender())
-    }
 
     // Shared atlas for tick and title labels.
     if (this._tickLabelAtlas) this._tickLabelAtlas.destroy()
@@ -697,7 +680,6 @@ void main() {
 
     this._renderCallbacks.clear()
     this.canvas.remove()
-    this.svg.remove()
   }
 
   _processLayers(layersConfig, data) {
