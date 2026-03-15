@@ -1,5 +1,5 @@
 import * as d3 from "d3-selection"
-import { AXES, AXIS_GEOMETRY, AxisRegistry } from "../axes/AxisRegistry.js"
+import { AXES, AXES_2D, AXIS_GEOMETRY, AxisRegistry } from "../axes/AxisRegistry.js"
 import { Camera } from "../axes/Camera.js"
 import { TickLabelAtlas } from "../axes/TickLabelAtlas.js"
 import { mat4Identity, mat4Multiply } from "../math/mat4.js"
@@ -393,8 +393,8 @@ export class Plot extends GlBase {
     this._processLayers(layers, this.currentData)
     this._setDomains(axes)
 
-    // Detect 3D mode: any registered z-axis has a scale.
-    this._is3D = AXES.some(a => AXIS_GEOMETRY[a].dir === 'z' && this.axisRegistry.getScale(a) !== null)
+    // Detect 3D mode: any axis outside the 4 standard 2D positions has a scale.
+    this._is3D = AXES.some(a => !AXES_2D.includes(a) && this.axisRegistry.getScale(a) !== null)
 
     // Camera (recreated each _initialize so aspect ratio and 3D flag stay in sync).
     this._camera = new Camera(this._is3D)
