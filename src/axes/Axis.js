@@ -296,7 +296,7 @@ export class Axis {
         titleAnchorBase[1] + ow[1]*lineOffset,
         titleAnchorBase[2] + ow[2]*lineOffset,
       ]
-      const corners = [
+      const rawCorners = [
         [-hw, -hh, u,    v   ],
         [+hw, -hh, u+uw, v   ],
         [-hw, +hh, u,    v+vh],
@@ -304,6 +304,16 @@ export class Axis {
         [+hw, +hh, u+uw, v+vh],
         [-hw, +hh, u,    v+vh],
       ]
+      // Rotate the title 90° CW when the axis is more vertical than horizontal
+      // in screen space (works for 2D and 3D).  Rotation: (ox, oy) → (oy, -ox)
+      const sStart = projectToScreen(start, axisMvp, cw, ch)
+      const sEnd   = projectToScreen(end,   axisMvp, cw, ch)
+      const axisDx = sEnd ? sEnd[0] - sStart[0] : 0
+      const axisDy = sEnd ? sEnd[1] - sStart[1] : 0
+      const isVertical = Math.abs(axisDy) > Math.abs(axisDx)
+      const corners = isVertical
+        ? rawCorners.map(([ox, oy, tu, tv]) => [oy, -ox, tu, tv])
+        : rawCorners
       for (const [ox, oy, tu, tv] of corners) {
         titleAnchor.push(...anchor3D)
         titleOffsets.push(ox, oy)
