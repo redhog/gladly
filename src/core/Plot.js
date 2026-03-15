@@ -479,10 +479,11 @@ void main() {
     -ndc_anchor.y * 0.5 + 0.5) * u_canvas_size;
   // a_offset_px is in HTML pixels (x right, y down).
   // abs(a_offset_px) = (hw, hh) for every corner; top-left = anchor - (hw, hh).
-  // Snap the top-left corner to an integer pixel, keep pw/ph unchanged,
-  // so each corner = tl + (0 or pw, 0 or ph).
+  // Snap the top-left corner to an integer pixel with floor() so that
+  // each pixel maps to exactly one atlas texel and the label is never
+  // shifted right by the round-half-up behaviour of round().
   vec2 hw_vec  = abs(a_offset_px);
-  vec2 tl_px   = round(anchor_px - hw_vec);   // snap top-left
+  vec2 tl_px   = floor(anchor_px - hw_vec);    // snap top-left (always left)
   vec2 vert_px = tl_px + hw_vec + a_offset_px; // reconstruct this corner
   // Convert HTML pixels back to NDC.
   vec2 ndc = vec2(
@@ -497,7 +498,8 @@ uniform sampler2D u_atlas;
 in vec2 v_uv;
 out vec4 fragColor;
 void main() {
-  fragColor = texture(u_atlas, v_uv);
+  ivec2 tc = ivec2(v_uv * vec2(textureSize(u_atlas, 0)));
+  fragColor = texelFetch(u_atlas, tc, 0);
   if (fragColor.a < 0.05) discard;
 }`,
       attributes: {
@@ -519,7 +521,7 @@ void main() {
       },
       blend: {
         enable: true,
-        func: { srcRGB: 'src alpha', dstRGB: 'one minus src alpha', srcAlpha: 1, dstAlpha: 0 },
+        func: { srcRGB: 'src alpha', dstRGB: 'one minus src alpha', srcAlpha: 0, dstAlpha: 1 },
       },
     })
   }

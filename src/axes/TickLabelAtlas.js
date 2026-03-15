@@ -80,7 +80,7 @@ export class TickLabelAtlas {
       data:   this._canvas,
       format: 'rgba',
       mag:    'nearest',
-      min:    'linear',
+      min:    'nearest',
       flipY:  false,
     })
   }
