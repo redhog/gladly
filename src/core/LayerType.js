@@ -13,6 +13,7 @@ uniform float yScaleType;
 uniform float zScaleType;
 uniform float u_is3D;
 uniform mat4 u_mvp;
+out vec3 v_clip_pos;
 float normalize_axis(float v, vec2 domain, float scaleType) {
   float vt = scaleType > 0.5 ? log(v) : v;
   float d0 = scaleType > 0.5 ? log(domain.x) : domain.x;
@@ -23,6 +24,7 @@ vec4 plot_pos_3d(vec3 pos) {
   float nx = normalize_axis(pos.x, xDomain, xScaleType);
   float ny = normalize_axis(pos.y, yDomain, yScaleType);
   float nz = normalize_axis(pos.z, zDomain, zScaleType);
+  v_clip_pos = vec3(nx, ny, nz);
   return u_mvp * vec4(nx*2.0-1.0, ny*2.0-1.0, nz*2.0-1.0, 1.0);
 }
 vec4 plot_pos(vec2 pos) {
@@ -31,8 +33,14 @@ vec4 plot_pos(vec2 pos) {
   if (u_is3D > 0.5) {
     return plot_pos_3d(vec3(pos, zDomain.x));
   }
+  v_clip_pos = vec3(nx, ny, 0.5);
   return u_mvp * vec4(nx*2.0-1.0, ny*2.0-1.0, 0.0, 1.0);
 }`
+}
+
+function buildClipFragGlsl() {
+  return `in vec3 v_clip_pos;
+uniform float u_is3D;`
 }
 
 function buildApplyColorGlsl() {
@@ -290,9 +298,10 @@ export class LayerType {
     }
     const filterHelpers = filterHelperLines.join('\n')
 
+    const clipFragDiscard = `if (u_is3D > 0.5 && (v_clip_pos.x < 0.0 || v_clip_pos.x > 1.0 || v_clip_pos.y < 0.0 || v_clip_pos.y > 1.0 || v_clip_pos.z < 0.0 || v_clip_pos.z > 1.0)) discard;`
     const drawConfig = {
       vert: injectPickIdAssignment(injectInto(vertSrc, [spatialGlsl, filterGlsl, filterHelpers, columnHelpers, pickVertDecls])),
-      frag: injectInto(fragSrc, [buildApplyColorGlsl(), colorGlsl, colorHelpers, color2dHelpers, filterGlsl, filterHelpers]),
+      frag: injectIntoMainStart(injectInto(fragSrc, [buildApplyColorGlsl(), buildClipFragGlsl(), colorGlsl, colorHelpers, color2dHelpers, filterGlsl, filterHelpers]), clipFragDiscard),
       attributes,
       uniforms,
       viewport: regl.prop("viewport"),
