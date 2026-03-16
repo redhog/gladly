@@ -113,9 +113,11 @@ export class LayerType {
     colorAxis2dQuantityKinds,
     filterAxisQuantityKinds,
     getAxisConfig,
-    vert, frag, schema, createLayer, createDrawCommand
+    vert, frag, schema, createLayer, createDrawCommand,
+    suppressWarnings = false
   }) {
     this.name = name
+    this.suppressWarnings = suppressWarnings
     this.xAxis = xAxis
     this.xAxisQuantityKind = xAxisQuantityKind
     this.yAxis = yAxis
@@ -161,9 +163,11 @@ export class LayerType {
     }
 
     // Validate buffer attributes
-    for (const [key, buf] of Object.entries(bufferAttrs)) {
-      if (buf instanceof Float32Array && buf.length === 0) {
-        console.warn(`[gladly] Layer '${this.name}': buffer attribute '${key}' is an empty Float32Array — this layer may draw nothing`)
+    if (!this.suppressWarnings) {
+      for (const [key, buf] of Object.entries(bufferAttrs)) {
+        if (buf instanceof Float32Array && buf.length === 0) {
+          console.warn(`[gladly] Layer '${this.name}': buffer attribute '${key}' is an empty Float32Array — this layer may draw nothing`)
+        }
       }
     }
 
@@ -172,7 +176,7 @@ export class LayerType {
     const pickCount = isInstanced ? layer.instanceCount :
       (layer.vertexCount ??
         Object.values(bufferAttrs).find(v => v instanceof Float32Array)?.length ?? 0)
-    if (pickCount === 0) {
+    if (pickCount === 0 && !this.suppressWarnings) {
       console.warn(
         `[gladly] Layer '${this.name}': ` +
         `${isInstanced ? 'instanceCount' : 'vertex count'} resolved to 0 — ` +

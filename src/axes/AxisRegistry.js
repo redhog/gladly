@@ -117,7 +117,7 @@ export class AxisRegistry {
           const [dMin, dMax] = layer.domains[qk]
           if (dMin < min) min = dMin
           if (dMax > max) max = dMax
-        } else if (qk) {
+        } else if (qk && !layer.type?.suppressWarnings) {
           console.warn(
             `[gladly] Layer type '${layer.type?.name ?? 'unknown'}' has no domain for ` +
             `quantity kind '${qk}' on axis '${axis}'. ` +

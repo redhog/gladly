@@ -929,7 +929,7 @@ void main() {
       }
 
       // Warn once if this draw call will produce no geometry
-      if (!layer._warnedZeroCount) {
+      if (!layer._warnedZeroCount && !layer.type?.suppressWarnings) {
         const drawCount = props.instances ?? props.count
         if (drawCount === 0) {
           console.warn(
