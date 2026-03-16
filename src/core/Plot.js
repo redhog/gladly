@@ -405,7 +405,7 @@ export class Plot extends GlBase {
       if (entry.yAxis) this.colorAxisRegistry.ensureColorAxis(entry.yAxis, entry.colorscale)
     }
 
-    new ZoomController(this)
+    if (!this._zoomController) this._zoomController = new ZoomController(this)
     this.render()
   }
 
