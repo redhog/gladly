@@ -48,9 +48,18 @@ function normaliseValue(v, domain, isLog) {
   return (vt - d0) / (d1 - d0)
 }
 
-// ─── Tick mark / label geometry constants (model-space units) ─────────────────
-const TICK_LEN   = 0.05   // tick line length along outward direction
-const LABEL_DIST = 0.12   // label anchor distance from axis surface
+// ─── Tick mark / label geometry constants ─────────────────────────────────────
+// 3D: fixed model-space offsets (legacy behaviour)
+const TICK_LEN_3D   = 0.05
+const LABEL_DIST_3D = 0.12
+const TITLE_EXTRA_3D = 0.14   // extra outward offset for axis title beyond LABEL_DIST_3D
+const TITLE_LINE_STEP_3D = 0.05  // multi-line title step in model space
+
+// 2D: fractions of the pixel distance from the axis to the nearest canvas edge
+const TICK_LEN_FRAC          = 0.12
+const TICK_LABEL_FRAC        = 0.40
+const AXIS_TITLE_FRAC        = 0.75
+const TITLE_LINE_SPACING_FRAC = 0.12
 
 /**
  * An Axis represents a single data axis on a plot.
@@ -171,6 +180,40 @@ export class Axis {
     const { start, end } = axisEndpoints(this._name)
     const ow = geom.outward   // [ox, oy, oz]
 
+    // ── 0. Outward screen direction + model-space offset resolution ──────────
+    const mid3D = [(start[0]+end[0])/2, (start[1]+end[1])/2, (start[2]+end[2])/2]
+    const tip3D = [mid3D[0]+ow[0]*0.2, mid3D[1]+ow[1]*0.2, mid3D[2]+ow[2]*0.2]
+    const midS  = projectToScreen(mid3D, axisMvp, cw, ch)
+    const tipS  = projectToScreen(tip3D, axisMvp, cw, ch)
+    const outDirVec = (midS && tipS) ? [tipS[0]-midS[0], tipS[1]-midS[1]] : [0, 1]
+    const outDirLen = Math.sqrt(outDirVec[0]**2 + outDirVec[1]**2)
+    const outDir    = outDirLen > 0.5 ? [outDirVec[0]/outDirLen, outDirVec[1]/outDirLen] : [0, 1]
+    const pxPerModelUnit = outDirLen / 0.2
+
+    let tickModelLen, labelModelDist, titleModelDist, titleLineStep
+    if (!is3D && midS && pxPerModelUnit > 0) {
+      // In 2D: make all offsets proportional to the pixel distance from the axis
+      // to the nearest canvas edge (i.e. the margin width in pixels).
+      const tx = outDir[0] > 1e-6 ? (cw - midS[0]) / outDir[0]
+               : outDir[0] < -1e-6 ? -midS[0]        / outDir[0]
+               : Infinity
+      const ty = outDir[1] > 1e-6 ? (ch - midS[1]) / outDir[1]
+               : outDir[1] < -1e-6 ? -midS[1]        / outDir[1]
+               : Infinity
+      const distToEdge = Math.max(4, Math.min(tx, ty))
+      const scale2d    = distToEdge / pxPerModelUnit
+      tickModelLen   = TICK_LEN_FRAC          * scale2d
+      labelModelDist = TICK_LABEL_FRAC        * scale2d
+      titleModelDist = AXIS_TITLE_FRAC        * scale2d
+      titleLineStep  = TITLE_LINE_SPACING_FRAC * scale2d
+    } else {
+      // In 3D: fixed model-space offsets (original behaviour).
+      tickModelLen   = TICK_LEN_3D
+      labelModelDist = LABEL_DIST_3D
+      titleModelDist = LABEL_DIST_3D + TITLE_EXTRA_3D
+      titleLineStep  = TITLE_LINE_STEP_3D
+    }
+
     // ── 1. Tick count based on projected screen length ──────────────────────
     const screenLen   = this._projectedLength(axisMvp, cw, ch)
     const pxPerTick   = geom.dir === 'y' ? 27 : 40
@@ -190,8 +233,8 @@ export class Axis {
       if (!isFinite(n)) continue
       const pos = axisPosAtN(this._name, n)
       lineVerts.push(
-        pos[0],              pos[1],              pos[2],
-        pos[0] + ow[0]*TICK_LEN, pos[1] + ow[1]*TICK_LEN, pos[2] + ow[2]*TICK_LEN,
+        pos[0],                    pos[1],                    pos[2],
+        pos[0] + ow[0]*tickModelLen, pos[1] + ow[1]*tickModelLen, pos[2] + ow[2]*tickModelLen,
       )
     }
 
@@ -218,7 +261,7 @@ export class Axis {
       const n = normaliseValue(t, domain, isLog)
       if (!isFinite(n)) return null
       const pos = axisPosAtN(this._name, n)
-      return [pos[0] + ow[0]*LABEL_DIST, pos[1] + ow[1]*LABEL_DIST, pos[2] + ow[2]*LABEL_DIST]
+      return [pos[0] + ow[0]*labelModelDist, pos[1] + ow[1]*labelModelDist, pos[2] + ow[2]*labelModelDist]
     })
     const screenPositions = anchors3D.map(a => a ? projectToScreen(a, axisMvp, cw, ch) : null)
 
@@ -276,11 +319,10 @@ export class Axis {
     atlas.flush()
 
     // Place title at axis midpoint + larger outward offset
-    const mid3D = [(start[0]+end[0])/2, (start[1]+end[1])/2, (start[2]+end[2])/2]
     const titleAnchorBase = [
-      mid3D[0] + ow[0] * (LABEL_DIST + 0.14),
-      mid3D[1] + ow[1] * (LABEL_DIST + 0.14),
-      mid3D[2] + ow[2] * (LABEL_DIST + 0.14),
+      mid3D[0] + ow[0] * titleModelDist,
+      mid3D[1] + ow[1] * titleModelDist,
+      mid3D[2] + ow[2] * titleModelDist,
     ]
 
     const titleAnchor = [], titleOffsets = [], titleUVs = []
@@ -319,7 +361,7 @@ export class Axis {
         titleOffsets.push(ox, oy)
         titleUVs.push(tu, tv)
       }
-      lineOffset += 0.05  // shift next line further out in model space
+      lineOffset += titleLineStep  // shift next line further out in model space
     }
 
     if (titleAnchor.length > 0) {
