@@ -866,6 +866,13 @@ void main() {
           }
           const dt = performance.now() - t0
           if (dt > 10) console.warn(`[gladly] render ${dt.toFixed(0)}ms`)
+          // After submitting GPU work, hold _rafId so no new render can be queued
+          // until the compositor is ready for the next frame (browser waits for GPU).
+          // Any state changes that arrive during GPU execution are captured then.
+          this._rafId = requestAnimationFrame(() => {
+            this._rafId = null
+            if (this._dirty) this.scheduleRender()
+          })
         }
       })
     }

@@ -16,12 +16,13 @@ function makePointsVert(hasFilter, hasZ) {
   uniform vec2 yDomain;
   uniform float xScaleType;
   uniform float yScaleType;
+  uniform float u_pointSize;
   out float value;
   out float value2;
   void main() {
     ${hasFilter ? 'if (!filter_(filter_data)) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }' : ''}
     ${hasZ ? 'gl_Position = plot_pos_3d(vec3(x, y, z));' : 'gl_Position = plot_pos(vec2(x, y));'}
-    gl_PointSize = 4.0;
+    gl_PointSize = u_pointSize;
     value = color_data;
     value2 = color_data2;
   }
@@ -54,7 +55,10 @@ class PointsLayerType extends ScatterLayerTypeBase {
     const d = Data.wrap(data)
     return {
       type: "object",
-      properties: this._commonSchemaProperties(d),
+      properties: {
+        ...this._commonSchemaProperties(d),
+        pointSize: { type: "integer", default: 4, minimum: 1 },
+      },
       required: ["xData", "yData", "zData", "zAxis"]
     }
   }
@@ -93,7 +97,7 @@ class PointsLayerType extends ScatterLayerTypeBase {
         color_data2: vData2 !== null ? vData2 : new Float32Array(vertexCount ?? 0).fill(NaN),
         ...(fData != null ? { filter_data: fData } : {}),
       },
-      uniforms: {},
+      uniforms: { u_pointSize: () => parameters.pointSize ?? 4 },
       domains,
       vertexCount,
     }]
