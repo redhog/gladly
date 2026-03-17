@@ -7,6 +7,7 @@ const quadCy = new Float32Array([-1, -1, 1, 1])
 
 export const colorbar2dLayerType = new LayerType({
   name: "colorbar2d",
+  suppressWarnings: true,
 
   getAxisConfig: function(parameters) {
     const { xAxis, yAxis } = parameters

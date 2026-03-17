@@ -7,6 +7,7 @@ const quadCy = new Float32Array([-1, -1, 1, 1])
 
 export const colorbarLayerType = new LayerType({
   name: "colorbar",
+  suppressWarnings: true,
 
   getAxisConfig: function(parameters) {
     const { colorAxis, orientation = "horizontal" } = parameters

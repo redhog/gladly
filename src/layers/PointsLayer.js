@@ -3,11 +3,12 @@ import { Data } from "../data/Data.js"
 import { registerLayerType } from "../core/LayerTypeRegistry.js"
 import { resolveQuantityKind } from "../compute/ComputationRegistry.js"
 
-function makePointsVert(hasFilter) {
+function makePointsVert(hasFilter, hasZ) {
   return `#version 300 es
   precision mediump float;
   in float x;
   in float y;
+  ${hasZ ? 'in float z;' : ''}
   in float color_data;
   in float color_data2;
   ${hasFilter ? 'in float filter_data;' : ''}
@@ -15,12 +16,13 @@ function makePointsVert(hasFilter) {
   uniform vec2 yDomain;
   uniform float xScaleType;
   uniform float yScaleType;
+  uniform float u_pointSize;
   out float value;
   out float value2;
   void main() {
     ${hasFilter ? 'if (!filter_(filter_data)) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }' : ''}
-    gl_Position = plot_pos(vec2(x, y));
-    gl_PointSize = 4.0;
+    ${hasZ ? 'gl_Position = plot_pos_3d(vec3(x, y, z));' : 'gl_Position = plot_pos(vec2(x, y));'}
+    gl_PointSize = u_pointSize;
     value = color_data;
     value2 = color_data2;
   }
@@ -53,26 +55,31 @@ class PointsLayerType extends ScatterLayerTypeBase {
     const d = Data.wrap(data)
     return {
       type: "object",
-      properties: this._commonSchemaProperties(d),
-      required: ["xData", "yData"]
+      properties: {
+        ...this._commonSchemaProperties(d),
+        pointSize: { type: "integer", default: 4, minimum: 1 },
+      },
+      required: ["xData", "yData", "zData", "zAxis", "pointSize"]
     }
   }
 
   _createLayer(regl, parameters, data, plot) {
     const d = Data.wrap(data)
-    const { vData: vDataRaw, vData2: vData2Raw, fData: fDataRaw } = parameters
+    const { vData: vDataRaw, vData2: vData2Raw, fData: fDataRaw, zData: zDataRaw } = parameters
     const vDataIn  = (vDataRaw  == null || vDataRaw  === "none") ? null : vDataRaw
     const vData2In = (vData2Raw == null || vData2Raw === "none") ? null : vData2Raw
     const fData    = (fDataRaw  == null || fDataRaw  === "none") ? null : fDataRaw
+    const zData    = (zDataRaw  == null || zDataRaw  === "none") ? null : zDataRaw
     const vData  = vDataIn
     const vData2 = vData2In
 
     const xQK  = resolveQuantityKind(parameters.xData, d) ?? undefined
     const yQK  = resolveQuantityKind(parameters.yData, d) ?? undefined
+    const zQK  = zData  ? (resolveQuantityKind(zData,  d) ?? undefined) : undefined
     const vQK  = vData  ? resolveQuantityKind(vData,  d) : null
     const vQK2 = vData2 ? resolveQuantityKind(vData2, d) : null
 
-    const domains = this._buildDomains(d, parameters.xData, parameters.yData, vData, vData2, xQK, yQK, vQK, vQK2)
+    const domains = this._buildDomains(d, parameters.xData, parameters.yData, zData, vData, vData2, xQK, yQK, zQK, vQK, vQK2)
 
     // Vertex count: read from data when xData is a plain column name so that
     // Plot.render() can determine how many vertices to draw even when other
@@ -85,11 +92,12 @@ class PointsLayerType extends ScatterLayerTypeBase {
       attributes: {
         x: parameters.xData,
         y: parameters.yData,
+        ...(zData !== null ? { z: zData } : {}),
         color_data:  vData  !== null ? vData  : new Float32Array(vertexCount ?? 0).fill(NaN),
         color_data2: vData2 !== null ? vData2 : new Float32Array(vertexCount ?? 0).fill(NaN),
         ...(fData != null ? { filter_data: fData } : {}),
       },
-      uniforms: {},
+      uniforms: { u_pointSize: () => parameters.pointSize ?? 4 },
       domains,
       vertexCount,
     }]
@@ -97,9 +105,10 @@ class PointsLayerType extends ScatterLayerTypeBase {
 
   createDrawCommand(regl, layer, plot) {
     const hasFilter = Object.keys(layer.filterAxes).length > 0
-    const hasFirst = '' in layer.colorAxes
+    const hasFirst  = '' in layer.colorAxes
     const hasSecond = '2' in layer.colorAxes
-    this.vert = makePointsVert(hasFilter)
+    const hasZ      = 'z' in layer.attributes
+    this.vert = makePointsVert(hasFilter, hasZ)
     this.frag = makePointsFrag(hasFirst, hasSecond)
     return super.createDrawCommand(regl, layer, plot)
   }

@@ -1,5 +1,5 @@
 export class Layer {
-  constructor({ type, attributes, uniforms, domains = {}, lineWidth = 1, primitive = "points", xAxis = "xaxis_bottom", yAxis = "yaxis_left", xAxisQuantityKind, yAxisQuantityKind, colorAxes = {}, colorAxes2d = {}, filterAxes = {}, vertexCount = null, instanceCount = null, attributeDivisors = {}, blend = null }) {
+  constructor({ type, attributes, uniforms, domains = {}, lineWidth = 1, primitive = "points", xAxis = "xaxis_bottom", yAxis = "yaxis_left", zAxis = null, xAxisQuantityKind, yAxisQuantityKind, zAxisQuantityKind, colorAxes = {}, colorAxes2d = {}, filterAxes = {}, vertexCount = null, instanceCount = null, attributeDivisors = {}, blend = null }) {
     // Validate that all attributes are non-null/undefined
     // (Float32Array, regl textures, numbers, and expression objects are all valid)
     for (const [key, value] of Object.entries(attributes)) {
@@ -22,11 +22,13 @@ export class Layer {
       }
     }
 
-    if (vertexCount !== null && vertexCount === 0) {
-      console.warn(`[gladly] Layer '${type?.name ?? 'unknown'}': vertexCount is 0 — this layer will draw nothing`)
-    }
-    if (instanceCount !== null && instanceCount === 0) {
-      console.warn(`[gladly] Layer '${type?.name ?? 'unknown'}': instanceCount is 0 — this layer will draw nothing`)
+    if (!type?.suppressWarnings) {
+      if (vertexCount !== null && vertexCount === 0) {
+        console.warn(`[gladly] Layer '${type?.name ?? 'unknown'}': vertexCount is 0 — this layer will draw nothing`)
+      }
+      if (instanceCount !== null && instanceCount === 0) {
+        console.warn(`[gladly] Layer '${type?.name ?? 'unknown'}': instanceCount is 0 — this layer will draw nothing`)
+      }
     }
 
     this.type = type
@@ -37,8 +39,10 @@ export class Layer {
     this.primitive = primitive
     this.xAxis = xAxis
     this.yAxis = yAxis
+    this.zAxis = zAxis
     this.xAxisQuantityKind = xAxisQuantityKind
     this.yAxisQuantityKind = yAxisQuantityKind
+    this.zAxisQuantityKind = zAxisQuantityKind
     // colorAxes: Record<suffix, qk> — maps GLSL name suffix to quantity kind for each color axis
     // e.g. { '': 'temperature_K' } or { '': 'temp_K', '2': 'pressure_Pa' }
     this.colorAxes = colorAxes

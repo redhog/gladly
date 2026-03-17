@@ -142,4 +142,6 @@ npm start
    - Update all code to use new patterns immediately
    - Backwards compatibility is irrelevant at this stage
 
+6. **Debugging**: If there are multiple layers to a problem the user is describing, implement a fix at the top layer first and only then dive deeper.
+
 This ensures all changes are deliberate and aligned with project goals.
