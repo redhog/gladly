@@ -253,11 +253,13 @@ export class ZoomController {
     // Touch support
     let touchDragging   = false
     let touchZooming    = false
+    let touchRotating   = false
     let touchDragRegion = null
     let touchStartWorld = null
     let touchStartDomains = {}
     let touchLastDist   = null
     let touchZoomRegion = null
+    let touchLastPos    = null
     let touchRect       = null
 
     const getTouchMid = (touches) => [
@@ -288,11 +290,24 @@ export class ZoomController {
       touchRect = canvas.getBoundingClientRect()
 
       if (e.touches.length === 1) {
-        touchZooming = false
+        touchZooming  = false
+        touchRotating = false
         touchZoomRegion = null
         touchLastDist = null
-        const t = e.touches[0]
-        startTouchPan(t.clientX - touchRect.left, t.clientY - touchRect.top)
+        const t  = e.touches[0]
+        const mx = t.clientX - touchRect.left
+        const my = t.clientY - touchRect.top
+        // In 3D mode, touches within 20px of any canvas edge rotate the plot.
+        if (plot._is3D) {
+          const EDGE = 20
+          const { width, height } = canvas.getBoundingClientRect()
+          if (mx < EDGE || my < EDGE || mx > width - EDGE || my > height - EDGE) {
+            touchRotating = true
+            touchLastPos  = [mx, my]
+            return
+          }
+        }
+        startTouchPan(mx, my)
       } else if (e.touches.length === 2) {
         touchDragging = false
         touchZooming  = true
@@ -308,7 +323,21 @@ export class ZoomController {
       e.preventDefault()
       if (!touchRect) return
 
-      if (touchDragging && e.touches.length === 1) {
+      if (touchRotating && e.touches.length === 1) {
+        const t  = e.touches[0]
+        const mx = t.clientX - touchRect.left
+        const my = t.clientY - touchRect.top
+        const [lx, ly] = touchLastPos
+        const dx = mx - lx
+        const dy = my - ly
+        plot._camera._theta -= dx * 0.008
+        plot._camera._phi = Math.max(
+          -Math.PI / 2 + 0.02,
+          Math.min(Math.PI / 2 - 0.02, plot._camera._phi + dy * 0.008)
+        )
+        touchLastPos = [mx, my]
+        plot.scheduleRender()
+      } else if (touchDragging && e.touches.length === 1) {
         const t = e.touches[0]
         const mx = t.clientX - touchRect.left
         const my = t.clientY - touchRect.top
@@ -363,18 +392,31 @@ export class ZoomController {
 
     const onTouchEnd = (e) => {
       e.preventDefault()
-      if (touchDragging || touchZooming) plot._zoomEndCallbacks.forEach(cb => cb())
+      if (touchDragging || touchZooming || touchRotating) plot._zoomEndCallbacks.forEach(cb => cb())
       touchDragging   = false
       touchZooming    = false
+      touchRotating   = false
       touchDragRegion = null
       touchStartWorld = null
       touchStartDomains = {}
       touchLastDist   = null
       touchZoomRegion = null
-      // If one finger remains after a pinch, restart pan from current position
+      touchLastPos    = null
+      // If one finger remains after a pinch, restart pan/rotate from current position
       if (e.touches.length === 1 && touchRect) {
-        const t = e.touches[0]
-        startTouchPan(t.clientX - touchRect.left, t.clientY - touchRect.top)
+        const t  = e.touches[0]
+        const mx = t.clientX - touchRect.left
+        const my = t.clientY - touchRect.top
+        if (plot._is3D) {
+          const EDGE = 20
+          const { width, height } = canvas.getBoundingClientRect()
+          if (mx < EDGE || my < EDGE || mx > width - EDGE || my > height - EDGE) {
+            touchRotating = true
+            touchLastPos  = [mx, my]
+            return
+          }
+        }
+        startTouchPan(mx, my)
       } else {
         touchRect = null
       }
