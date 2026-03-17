@@ -59,7 +59,7 @@ class PointsLayerType extends ScatterLayerTypeBase {
         ...this._commonSchemaProperties(d),
         pointSize: { type: "integer", default: 4, minimum: 1 },
       },
-      required: ["xData", "yData", "zData", "zAxis"]
+      required: ["xData", "yData", "zData", "zAxis", "pointSize"]
     }
   }
 
