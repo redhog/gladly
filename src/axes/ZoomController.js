@@ -250,6 +250,138 @@ export class ZoomController {
       window.addEventListener('mouseup',   onMouseUp)
     })
 
+    // Touch support
+    let touchDragging   = false
+    let touchZooming    = false
+    let touchDragRegion = null
+    let touchStartWorld = null
+    let touchStartDomains = {}
+    let touchLastDist   = null
+    let touchZoomRegion = null
+    let touchRect       = null
+
+    const getTouchMid = (touches) => [
+      (touches[0].clientX + touches[1].clientX) / 2,
+      (touches[0].clientY + touches[1].clientY) / 2,
+    ]
+    const getTouchDist = (touches) => {
+      const dx = touches[1].clientX - touches[0].clientX
+      const dy = touches[1].clientY - touches[0].clientY
+      return Math.sqrt(dx*dx + dy*dy)
+    }
+
+    const startTouchPan = (mx, my) => {
+      const region = this._getRegion(mx, my)
+      if (!region) return
+      touchDragging   = true
+      touchDragRegion = region
+      touchStartWorld = this._unproject(mx, my)
+      touchStartDomains = {}
+      for (const axisId of region.axes) {
+        const scale = plot.axisRegistry.getScale(axisId)
+        if (scale) touchStartDomains[axisId] = scale.domain().slice()
+      }
+    }
+
+    canvas.addEventListener('touchstart', (e) => {
+      e.preventDefault()
+      touchRect = canvas.getBoundingClientRect()
+
+      if (e.touches.length === 1) {
+        touchZooming = false
+        touchZoomRegion = null
+        touchLastDist = null
+        const t = e.touches[0]
+        startTouchPan(t.clientX - touchRect.left, t.clientY - touchRect.top)
+      } else if (e.touches.length === 2) {
+        touchDragging = false
+        touchZooming  = true
+        touchLastDist = getTouchDist(e.touches)
+        const [midX, midY] = getTouchMid(e.touches)
+        const mx = midX - touchRect.left
+        const my = midY - touchRect.top
+        touchZoomRegion = this._getRegion(mx, my)
+      }
+    }, { passive: false })
+
+    canvas.addEventListener('touchmove', (e) => {
+      e.preventDefault()
+      if (!touchRect) return
+
+      if (touchDragging && e.touches.length === 1) {
+        const t = e.touches[0]
+        const mx = t.clientX - touchRect.left
+        const my = t.clientY - touchRect.top
+        const currentWorld = this._unproject(mx, my)
+        const dw = [
+          touchStartWorld[0] - currentWorld[0],
+          touchStartWorld[1] - currentWorld[1],
+          touchStartWorld[2] - currentWorld[2],
+        ]
+        for (const axisId of touchDragRegion.axes) {
+          const startDomain = touchStartDomains[axisId]
+          if (!startDomain) continue
+          if (!plot.axisRegistry.getScale(axisId)) continue
+          const { dir } = AXIS_GEOMETRY[axisId]
+          const dirIdx  = dir === 'x' ? 0 : dir === 'y' ? 1 : 2
+          const isLog   = plot.axisRegistry.isLogScale(axisId)
+          const t0      = isLog ? Math.log(startDomain[0]) : startDomain[0]
+          const t1      = isLog ? Math.log(startDomain[1]) : startDomain[1]
+          const deltaT  = dw[dirIdx] * (t1 - t0) / 2
+          plot._getAxis(axisId).setDomain(isLog
+            ? [Math.exp(t0 + deltaT), Math.exp(t1 + deltaT)]
+            : [t0 + deltaT, t1 + deltaT])
+        }
+        plot.scheduleRender()
+      } else if (touchZooming && e.touches.length === 2) {
+        const newDist = getTouchDist(e.touches)
+        const factor  = touchLastDist / newDist   // pinch out → zoom in (factor < 1)
+        touchLastDist = newDist
+        if (!touchZoomRegion) return
+        const [midX, midY] = getTouchMid(e.touches)
+        const mx = midX - touchRect.left
+        const my = midY - touchRect.top
+        const worldCursor = this._unproject(mx, my)
+        for (const axisId of touchZoomRegion.axes) {
+          const scale = plot.axisRegistry.getScale(axisId)
+          if (!scale) continue
+          const { dir } = AXIS_GEOMETRY[axisId]
+          const dirIdx   = dir === 'x' ? 0 : dir === 'y' ? 1 : 2
+          const [d0, d1] = scale.domain()
+          const isLog    = plot.axisRegistry.isLogScale(axisId)
+          const t0       = isLog ? Math.log(d0) : d0
+          const t1       = isLog ? Math.log(d1) : d1
+          const tCursor  = (worldCursor[dirIdx] + 1) / 2 * (t1 - t0) + t0
+          const newT0    = tCursor + (t0 - tCursor) * factor
+          const newT1    = tCursor + (t1 - tCursor) * factor
+          plot._getAxis(axisId).setDomain(isLog ? [Math.exp(newT0), Math.exp(newT1)] : [newT0, newT1])
+        }
+        plot.scheduleRender()
+        plot._zoomEndCallbacks.forEach(cb => cb())
+      }
+    }, { passive: false })
+
+    const onTouchEnd = (e) => {
+      e.preventDefault()
+      if (touchDragging || touchZooming) plot._zoomEndCallbacks.forEach(cb => cb())
+      touchDragging   = false
+      touchZooming    = false
+      touchDragRegion = null
+      touchStartWorld = null
+      touchStartDomains = {}
+      touchLastDist   = null
+      touchZoomRegion = null
+      // If one finger remains after a pinch, restart pan from current position
+      if (e.touches.length === 1 && touchRect) {
+        const t = e.touches[0]
+        startTouchPan(t.clientX - touchRect.left, t.clientY - touchRect.top)
+      } else {
+        touchRect = null
+      }
+    }
+    canvas.addEventListener('touchend',    onTouchEnd, { passive: false })
+    canvas.addEventListener('touchcancel', onTouchEnd, { passive: false })
+
     // Scroll wheel: zoom toward cursor position
     canvas.addEventListener('wheel', (e) => {
       e.preventDefault()

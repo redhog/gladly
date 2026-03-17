@@ -128,11 +128,67 @@ export class Float {
     document.addEventListener('mousemove', onMouseMove)
     document.addEventListener('mouseup',   onMouseUp)
 
+    // Touch support
+    const onDragBarTouchStart = (e) => {
+      if (e.touches.length !== 1) return
+      e.preventDefault()
+      const t = e.touches[0]
+      mode      = 'drag'
+      startX    = t.clientX
+      startY    = t.clientY
+      startLeft = parseInt(this._el.style.left, 10)
+      startTop  = parseInt(this._el.style.top,  10)
+      this._dragBar.style.cursor = 'grabbing'
+    }
+
+    const onResizeTouchStart = (e) => {
+      if (e.touches.length !== 1) return
+      e.preventDefault()
+      e.stopPropagation()
+      const t = e.touches[0]
+      mode   = 'resize'
+      startX = t.clientX
+      startY = t.clientY
+      startW = this._el.offsetWidth
+      startH = this._el.offsetHeight
+    }
+
+    const onTouchMove = (e) => {
+      if (!mode || e.touches.length !== 1) return
+      e.preventDefault()
+      const t  = e.touches[0]
+      const dx = t.clientX - startX
+      const dy = t.clientY - startY
+      if (mode === 'drag') {
+        this._el.style.left = (startLeft + dx) + 'px'
+        this._el.style.top  = (startTop  + dy) + 'px'
+      } else {
+        this._el.style.width  = Math.max(MIN_WIDTH,  startW + dx) + 'px'
+        this._el.style.height = Math.max(MIN_HEIGHT, startH + dy) + 'px'
+      }
+    }
+
+    const onTouchEnd = () => {
+      if (mode === 'drag') this._dragBar.style.cursor = 'grab'
+      mode = null
+    }
+
+    this._dragBar.addEventListener('touchstart',     onDragBarTouchStart, { passive: false })
+    this._resizeHandle.addEventListener('touchstart', onResizeTouchStart,  { passive: false })
+    document.addEventListener('touchmove',   onTouchMove, { passive: false })
+    document.addEventListener('touchend',    onTouchEnd)
+    document.addEventListener('touchcancel', onTouchEnd)
+
     this._cleanupInteraction = () => {
       this._dragBar.removeEventListener('mousedown', onDragBarMouseDown)
       this._resizeHandle.removeEventListener('mousedown', onResizeMouseDown)
       document.removeEventListener('mousemove', onMouseMove)
       document.removeEventListener('mouseup',   onMouseUp)
+      this._dragBar.removeEventListener('touchstart',     onDragBarTouchStart)
+      this._resizeHandle.removeEventListener('touchstart', onResizeTouchStart)
+      document.removeEventListener('touchmove',   onTouchMove)
+      document.removeEventListener('touchend',    onTouchEnd)
+      document.removeEventListener('touchcancel', onTouchEnd)
     }
   }
 
