@@ -152,6 +152,7 @@ export class ZoomController {
     let lastMouse    = null  // [x,y] for rotation delta
     let dragRect     = null  // cached at mousedown; canvas position doesn't change during a drag
     const onMouseMove = (e) => {
+      const _t0 = performance.now()
       const mx = e.clientX - dragRect.left
       const my = e.clientY - dragRect.top
 
@@ -166,6 +167,8 @@ export class ZoomController {
         )
         lastMouse = [mx, my]
         plot.scheduleRender()
+        const _dt = performance.now() - _t0
+        if (_dt > 2) console.warn(`[gladly] onMouseMove(rotate) ${_dt.toFixed(1)}ms`)
         return
       }
 
@@ -197,6 +200,8 @@ export class ZoomController {
       }
 
       plot.scheduleRender()
+      const _dt = performance.now() - _t0
+      if (_dt > 2) console.warn(`[gladly] onMouseMove(pan) ${_dt.toFixed(1)}ms`)
     }
 
     const onMouseUp = (e) => {

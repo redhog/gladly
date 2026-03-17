@@ -845,10 +845,17 @@ void main() {
     this._dirty = true
     if (this._rafId === null) {
       const schedTime = performance.now()
+      const _st0 = schedTime
+      setTimeout(() => {
+        const _stLag = performance.now() - _st0
+        if (_stLag > 20) console.warn(`[gladly] setTimeout(0) lag ${_stLag.toFixed(0)}ms`)
+      }, 0)
       this._rafId = requestAnimationFrame((rafTime) => {
         this._rafId = null
-        const lag = performance.now() - schedTime
-        if (lag > 50) console.warn(`[gladly] RAF lag ${lag.toFixed(0)}ms`)
+        const now = performance.now()
+        const lag = now - schedTime
+        const postVsync = now - rafTime  // time from vsync to our callback executing
+        if (lag > 50) console.warn(`[gladly] RAF lag ${lag.toFixed(0)}ms  (vsync-to-callback: ${postVsync.toFixed(1)}ms)`)
         if (this._dirty) {
           this._dirty = false
           const t0 = performance.now()
