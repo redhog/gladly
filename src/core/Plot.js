@@ -200,6 +200,7 @@ export class Plot extends GlBase {
     container.appendChild(this.canvas)
 
     this.currentConfig = null
+    this._lastRawDataArg = undefined
     this.layers = []
     this.axisRegistry = null
     this.colorAxisRegistry = null
@@ -278,6 +279,18 @@ export class Plot extends GlBase {
   }
 
   update({ config, data } = {}) {
+    // Skip expensive _initialize() if nothing actually changed.
+    if (config !== undefined || data !== undefined) {
+      const configSame = config === undefined || JSON.stringify(config) === JSON.stringify(this.currentConfig)
+      const dataSame   = data  === undefined || data === this._lastRawDataArg
+      if (configSame && dataSame) {
+        this.scheduleRender()
+        return
+      }
+    }
+
+    if (data !== undefined) this._lastRawDataArg = data
+
     const previousConfig = this.currentConfig
     const previousRawData = this._rawData
     try {
@@ -563,7 +576,14 @@ void main() {
   setAxisDomain(axisId, domain) {
     if (Object.prototype.hasOwnProperty.call(AXIS_GEOMETRY, axisId)) {
       const scale = this.axisRegistry?.getScale(axisId)
-      if (scale) scale.domain(domain)
+      if (scale) {
+        scale.domain(domain)
+        // Keep currentConfig in sync so update() skips _initialize() when only domains changed.
+        if (this.currentConfig) {
+          const axes = this.currentConfig.axes ?? {}
+          this.currentConfig = { ...this.currentConfig, axes: { ...axes, [axisId]: { ...(axes[axisId] ?? {}), min: domain[0], max: domain[1] } } }
+        }
+      }
     } else if (this.colorAxisRegistry?.hasAxis(axisId)) {
       this.colorAxisRegistry.setRange(axisId, domain[0], domain[1])
     } else if (this.filterAxisRegistry?.hasAxis(axisId)) {
@@ -821,17 +841,24 @@ void main() {
   }
 
   scheduleRender() {
+    if (!this.regl) return
     this._dirty = true
     if (this._rafId === null) {
-      this._rafId = requestAnimationFrame(() => {
+      const schedTime = performance.now()
+      this._rafId = requestAnimationFrame((rafTime) => {
         this._rafId = null
+        const lag = performance.now() - schedTime
+        if (lag > 50) console.warn(`[gladly] RAF lag ${lag.toFixed(0)}ms`)
         if (this._dirty) {
           this._dirty = false
+          const t0 = performance.now()
           try {
             this.render()
           } catch (e) {
             console.error('[gladly] Error during render():', e)
           }
+          const dt = performance.now() - t0
+          if (dt > 10) console.warn(`[gladly] render ${dt.toFixed(0)}ms`)
         }
       })
     }
@@ -958,6 +985,13 @@ void main() {
 
     // Render all registered spatial axes via WebGL (axis lines + tick marks + labels).
     if (this._axisLineCmd && this._axisBillboardCmd && this._tickLabelAtlas) {
+      // Pre-pass: mark all labels needed this frame, then flush the atlas once.
+      for (const axisId of AXES) {
+        if (!this.axisRegistry.getScale(axisId)) continue
+        this._getAxis(axisId).prepareAtlas(this._tickLabelAtlas, axisMvp, this.width, this.height)
+      }
+      this._tickLabelAtlas.flush()
+
       for (const axisId of AXES) {
         if (!this.axisRegistry.getScale(axisId)) continue
         this._getAxis(axisId).render(

@@ -68,6 +68,7 @@ const plotConfig = {
 }
 
 const plot = new Plot(document.getElementById('tab6-plot1'))
+const plotData = { input: data }
 
 let currentPlotConfig = plotConfig
 let lastEditorValue = ''
@@ -75,10 +76,10 @@ let lastSchema = ''
 let editor
 
 function createEditor(config) {
-  lastSchema = JSON.stringify(Plot.schema({ input: data }, config))
+  lastSchema = JSON.stringify(Plot.schema(plotData, config))
   if (editor) editor.destroy()
   editor = new JSONEditor(document.getElementById('tab6-editor-container'), {
-    schema: Plot.schema({ input: data }, config),
+    schema: Plot.schema(plotData, config),
     startval: config,
     theme: 'html',
     iconlib: 'fontawesome4',
@@ -118,12 +119,12 @@ function createEditor(config) {
 
 function updatePlot(plotConfig) {
   try {
-    plot.update({ config: plotConfig, data: { input: data } })
+    plot.update({ config: plotConfig })
     document.getElementById('tab6-validation-errors').innerHTML = ''
 
     const fullConfig = plot.getConfig()
     currentPlotConfig = fullConfig
-    const newSchema = JSON.stringify(Plot.schema({ input: data }, fullConfig))
+    const newSchema = JSON.stringify(Plot.schema(plotData, fullConfig))
     if (newSchema !== lastSchema) {
       return true
     } else if (editor) {
@@ -143,9 +144,20 @@ function updatePlot(plotConfig) {
   }
 }
 
+plot.update({ config: currentPlotConfig, data: plotData })
 updatePlot(currentPlotConfig)
 
+let mousedownPos = null
+plot.on('mousedown', (e) => {
+  mousedownPos = [e.clientX, e.clientY]
+})
 plot.on('mouseup', (e) => {
+  if (!mousedownPos) return
+  const dx = e.clientX - mousedownPos[0]
+  const dy = e.clientY - mousedownPos[1]
+  mousedownPos = null
+  if (dx*dx + dy*dy > 25) return  // drag, not click
+
   const rect = plot.container.getBoundingClientRect()
   const result = plot.pick(e.clientX - rect.left, e.clientY - rect.top)
   const status = document.getElementById('tab6-pick-status')
@@ -162,8 +174,10 @@ createEditor(currentPlotConfig)
 plot.onZoomEnd(() => {
   const config = plot.getConfig()
   currentPlotConfig = config
-  editor.setValue(config)
-  lastEditorValue = JSON.stringify(editor.getValue())
+  if (editor) {
+    editor.setValue(config)
+    lastEditorValue = JSON.stringify(editor.getValue())
+  }
 })
 
 }) // dataPromise.then

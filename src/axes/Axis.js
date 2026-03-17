@@ -103,6 +103,28 @@ export class Axis {
 
   // ─── WebGL rendering ───────────────────────────────────────────────────────
 
+  // Pre-pass: mark all labels this axis needs into the atlas (no flush).
+  // Called by Plot.render() for all axes before the single atlas.flush().
+  prepareAtlas(atlas, axisMvp, cw, ch) {
+    if (!this.isSpatial) return
+    const { axisRegistry, currentConfig } = this._plot
+    const scale = axisRegistry.getScale(this._name)
+    if (!scale) return
+
+    const screenLen = this._projectedLength(axisMvp, cw, ch)
+    const pxPerTick = AXIS_GEOMETRY[this._name].dir === 'y' ? 27 : 40
+    const tickCount = Math.max(2, Math.floor(screenLen / pxPerTick))
+    const ticks     = this._computeTicks(scale, tickCount)
+    atlas.markLabels(ticks.map(t => formatTick(t)))
+
+    const qk = axisRegistry.axisQuantityKinds[this._name]
+    if (qk) {
+      const axisConfig = currentConfig?.axes?.[this._name] ?? {}
+      const unitLabel  = axisConfig.label ?? getAxisQuantityKind(qk).label
+      if (unitLabel) atlas.markLabels(String(unitLabel).split('\n'))
+    }
+  }
+
   // Compute the approximate projected screen length of this axis (for tick density).
   _projectedLength(axisMvp, cw, ch) {
     const { start, end } = axisEndpoints(this._name)
@@ -251,8 +273,6 @@ export class Axis {
 
     // ── 3. Tick labels ──────────────────────────────────────────────────────
     const labels = ticks.map(t => formatTick(t))
-    atlas.markLabels(labels)
-    atlas.flush()
 
     if (!atlas.texture) return
 
@@ -315,8 +335,6 @@ export class Axis {
     if (!unitLabel) return
 
     const titleLines = String(unitLabel).split('\n')
-    for (const line of titleLines) atlas.markLabels([line])
-    atlas.flush()
 
     // Place title at axis midpoint + larger outward offset
     const titleAnchorBase = [

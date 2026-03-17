@@ -150,11 +150,10 @@ export class ZoomController {
     let startWorld   = null  // world point [x,y,z] pinned at drag start
     let startDomains = {}    // { axisId: [d0,d1] } snapshot at drag start
     let lastMouse    = null  // [x,y] for rotation delta
-
+    let dragRect     = null  // cached at mousedown; canvas position doesn't change during a drag
     const onMouseMove = (e) => {
-      const rect = canvas.getBoundingClientRect()
-      const mx = e.clientX - rect.left
-      const my = e.clientY - rect.top
+      const mx = e.clientX - dragRect.left
+      const my = e.clientY - dragRect.top
 
       if (isRotating) {
         const [lx, ly] = lastMouse
@@ -200,7 +199,7 @@ export class ZoomController {
       plot.scheduleRender()
     }
 
-    const onMouseUp = () => {
+    const onMouseUp = (e) => {
       if (isDragging || isRotating) plot._zoomEndCallbacks.forEach(cb => cb())
       isDragging   = false
       isRotating   = false
@@ -208,15 +207,16 @@ export class ZoomController {
       startWorld   = null
       startDomains = {}
       lastMouse    = null
+      dragRect     = null
       window.removeEventListener('mousemove', onMouseMove)
       window.removeEventListener('mouseup',   onMouseUp)
     }
 
     canvas.addEventListener('mousedown', (e) => {
       e.preventDefault()
-      const rect = canvas.getBoundingClientRect()
-      const mx = e.clientX - rect.left
-      const my = e.clientY - rect.top
+      dragRect = canvas.getBoundingClientRect()
+      const mx = e.clientX - dragRect.left
+      const my = e.clientY - dragRect.top
 
       // Right-click or Ctrl+left in 3D → rotate
       if (plot._is3D && (e.button === 2 || (e.button === 0 && e.ctrlKey))) {

@@ -16,7 +16,7 @@ export class GlBase {
   }
 
   _initRegl(canvas) {
-    const gl = canvas.getContext('webgl2')
+    const gl = canvas.getContext('webgl2', { desynchronized: true })
     if (!gl) throw new Error('WebGL 2.0 is required but not supported')
 
     const origGetExtension = gl.getExtension.bind(gl)

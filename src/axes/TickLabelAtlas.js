@@ -74,15 +74,18 @@ export class TickLabelAtlas {
       x += pw
     }
 
-    if (this._texture) this._texture.destroy()
     // flipY: false — v = canvas_y / ATLAS_SIZE; v=0 samples canvas top.
-    this._texture = this._regl.texture({
-      data:   this._canvas,
-      format: 'rgba',
-      mag:    'nearest',
-      min:    'nearest',
-      flipY:  false,
-    })
+    if (!this._texture) {
+      this._texture = this._regl.texture({
+        width:  ATLAS_SIZE,
+        height: ATLAS_SIZE,
+        format: 'rgba',
+        mag:    'nearest',
+        min:    'nearest',
+        flipY:  false,
+      })
+    }
+    this._texture.subimage({ data: this._canvas, x: 0, y: 0, flipY: false })
   }
 
   // Returns the atlas entry for a label, or null if it hasn't been built yet.
