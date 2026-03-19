@@ -23,6 +23,11 @@ export class TextureComputation extends Computation {
   // Override: inputs is { name: ColumnData | scalar }, returns raw regl texture.
   compute(regl, inputs, getAxisDomain) { throw new Error('Not implemented') }
 
+  // Override to declare output shape in JS without running GPU work.
+  // Return int[] (e.g. [W, H] for a 2D output), or null to fall back to 1D (_dataLength).
+  // inputs values are ColumnData (shapes accessible) or scalars.
+  outputShape(inputs) { return null }
+
   createColumn(regl, inputs, plot) {
     const accessedAxes = new Set()
     const cachedDomains = {}
@@ -75,6 +80,7 @@ export class TextureComputation extends Computation {
 
     return new TextureColumn(ref, {
       length: rawTex._dataLength ?? rawTex.width,
+      shape: rawTex._dataShape ?? this.outputShape(inputs) ?? null,
       refreshFn
     })
   }

@@ -2,7 +2,7 @@ import { Layer } from "./Layer.js"
 import { buildColorGlsl } from "../colorscales/ColorscaleRegistry.js"
 import { buildFilterGlsl } from "../axes/FilterAxisRegistry.js"
 import { resolveAttributeExpr } from "../compute/ComputationRegistry.js"
-import { SAMPLE_COLUMN_GLSL } from "../data/ColumnData.js"
+import { SAMPLE_COLUMN_GLSL, SAMPLE_COLUMN_ND_GLSL } from "../data/ColumnData.js"
 
 function buildSpatialGlsl() {
   return `uniform vec2 xDomain;
@@ -144,6 +144,10 @@ export class LayerType {
     const allDataColumns = []      // ColumnData instances for refresh()
     const mainInjections = []      // float name = expr; injected inside main()
 
+    const ndTextures = {}          // sampler2D textures for nD columns only (also in allTextures)
+    const ndColumnHelperLines = [] // shape uniform decls + typed wrapper fns
+    const ndShapeUniforms = {}     // { u_col_name_shape: [x, y, z, w] }
+
     for (const [key, expr] of Object.entries(layer.attributes)) {
       const result = resolveAttributeExpr(regl, expr, key, plot)
       if (result.kind === 'buffer') {
@@ -151,8 +155,26 @@ export class LayerType {
       } else {
         vertSrc = removeAttributeDecl(vertSrc, key)
         Object.assign(allTextures, result.textures)
-        mainInjections.push(`float ${key} = ${result.glslExpr};`)
         allDataColumns.push(result.col)
+
+        if (result.col.ndim === 1) {
+          mainInjections.push(`float ${key} = ${result.glslExpr};`)
+        } else {
+          // nD column: inject shape uniform + typed wrapper; skip auto-assignment
+          const uName = `u_col_${key}`
+          const s = result.col.shape
+          ndShapeUniforms[`${uName}_shape`] = [s[0] ?? 1, s[1] ?? 1, s[2] ?? 1, s[3] ?? 1]
+          Object.assign(ndTextures, result.textures)
+          const ndim = result.col.ndim
+          const ivecType = ndim <= 2 ? 'ivec2' : ndim === 3 ? 'ivec3' : 'ivec4'
+          const idxExpand = ndim <= 2 ? `ivec4(idx, 0, 0)` : ndim === 3 ? `ivec4(idx, 0)` : `idx`
+          ndColumnHelperLines.push(
+            `uniform ivec4 ${uName}_shape;`,
+            `float sample_${key}(${ivecType} idx) {`,
+            `  return sampleColumnND(${uName}, ${uName}_shape, ${idxExpand});`,
+            `}`
+          )
+        }
       }
     }
 
@@ -204,6 +226,7 @@ export class LayerType {
 
     // Build uniforms
     const uniforms = {
+      ...ndShapeUniforms,
       xDomain:    regl.prop("xDomain"),
       yDomain:    regl.prop("yDomain"),
       zDomain:    regl.prop("zDomain"),
@@ -245,9 +268,29 @@ export class LayerType {
     const filterGlsl = Object.keys(layer.filterAxes).length > 0 ? buildFilterGlsl() : ''
     const pickVertDecls = `in float a_pickId;\nout float v_pickId;`
 
-    // Column helpers: precision + samplers + sampleColumn function
+    const hasNdColumns = ndColumnHelperLines.length > 0
+    const ndColumnHelpersStr = ndColumnHelperLines.join('\n')
+
+    // Column helpers for vert: precision + all samplers + sampleColumn + sampleColumnND + wrappers
     const columnHelpers = allDataColumns.length > 0
-      ? `precision highp sampler2D;\n${samplerDecls}\n${SAMPLE_COLUMN_GLSL}`
+      ? [
+          'precision highp sampler2D;',
+          samplerDecls,
+          SAMPLE_COLUMN_GLSL,
+          hasNdColumns ? SAMPLE_COLUMN_ND_GLSL : '',
+          ndColumnHelpersStr,
+        ].filter(Boolean).join('\n')
+      : ''
+
+    // Column helpers for frag: only nD column samplers + sampleColumnND + wrappers
+    // (1D columns stay in vert; their a_pickId is a vertex attribute)
+    const ndFragHelpers = hasNdColumns
+      ? [
+          'precision highp sampler2D;',
+          ...Object.keys(ndTextures).map(n => `uniform sampler2D ${n};`),
+          SAMPLE_COLUMN_ND_GLSL,
+          ndColumnHelpersStr,
+        ].join('\n')
       : ''
 
     const fnSuffix = (s) => s.replace(/^_+/, '')
@@ -305,7 +348,7 @@ export class LayerType {
     const clipFragDiscard = `if (u_is3D > 0.5 && (v_clip_pos.x < 0.0 || v_clip_pos.x > 1.0 || v_clip_pos.y < 0.0 || v_clip_pos.y > 1.0 || v_clip_pos.z < 0.0 || v_clip_pos.z > 1.0)) discard;`
     const drawConfig = {
       vert: injectPickIdAssignment(injectInto(vertSrc, [spatialGlsl, filterGlsl, filterHelpers, columnHelpers, pickVertDecls])),
-      frag: injectIntoMainStart(injectInto(fragSrc, [buildApplyColorGlsl(), buildClipFragGlsl(), colorGlsl, colorHelpers, color2dHelpers, filterGlsl, filterHelpers]), clipFragDiscard),
+      frag: injectIntoMainStart(injectInto(fragSrc, [buildApplyColorGlsl(), buildClipFragGlsl(), colorGlsl, colorHelpers, color2dHelpers, filterGlsl, filterHelpers, ndFragHelpers]), clipFragDiscard),
       attributes,
       uniforms,
       viewport: regl.prop("viewport"),

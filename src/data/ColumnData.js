@@ -13,6 +13,22 @@ export const SAMPLE_COLUMN_GLSL = `float sampleColumn(sampler2D tex, float idx) 
   return texel.a;
 }`
 
+// ─── GLSL helper for multi-dimensional column sampling ───────────────────────
+// shape.xyzw holds the size of each logical dimension (unused dims = 1).
+// idx is the multi-dimensional index, row-major (first dim varies fastest).
+export const SAMPLE_COLUMN_ND_GLSL = `float sampleColumnND(sampler2D tex, ivec4 shape, ivec4 idx) {
+  int i = idx.x + shape.x * (idx.y + shape.y * (idx.z + shape.z * idx.w));
+  ivec2 sz = textureSize(tex, 0);
+  int texelI = i / 4;
+  int chan = i % 4;
+  ivec2 coord = ivec2(texelI % sz.x, texelI / sz.x);
+  vec4 texel = texelFetch(tex, coord, 0);
+  if (chan == 0) return texel.r;
+  if (chan == 1) return texel.g;
+  if (chan == 2) return texel.b;
+  return texel.a;
+}`
+
 // Upload a Float32Array as a 2D RGBA texture with 4 values packed per texel.
 export function uploadToTexture(regl, array) {
   const nTexels = Math.ceil(array.length / 4)
@@ -30,6 +46,9 @@ export class ColumnData {
   get length()       { return null }
   get domain()       { return null }
   get quantityKind() { return null }
+  get shape()        { return [this.length] }
+  get ndim()         { return this.shape.length }
+  get totalLength()  { return this.shape.reduce((a, b) => a * b, 1) }
 
   // Returns { glslExpr: string, textures: { uniformName: () => reglTexture } }
   // path must be a valid GLSL identifier fragment (no dots or special chars)
@@ -50,11 +69,12 @@ export class ColumnData {
 
 // ─── ArrayColumn ──────────────────────────────────────────────────────────────
 export class ArrayColumn extends ColumnData {
-  constructor(array, { domain = null, quantityKind = null } = {}) {
+  constructor(array, { domain = null, quantityKind = null, shape = null } = {}) {
     super()
     this._array = array
     this._domain = domain
     this._quantityKind = quantityKind
+    this._shape = shape
     this._ref = null  // { texture } lazy
   }
 
@@ -62,6 +82,7 @@ export class ArrayColumn extends ColumnData {
   get domain()       { return this._domain }
   get quantityKind() { return this._quantityKind }
   get array()        { return this._array }
+  get shape()        { return this._shape ?? [this._array.length] }
 
   _upload(regl) {
     if (this._array.length === 0) {
@@ -74,10 +95,11 @@ export class ArrayColumn extends ColumnData {
   resolve(path, regl) {
     const ref = this._upload(regl)
     const uName = `u_col_${path}`
-    return {
-      glslExpr: `sampleColumn(${uName}, a_pickId)`,
-      textures: { [uName]: () => ref.texture }
+    const shape = this.shape
+    if (shape.length === 1) {
+      return { glslExpr: `sampleColumn(${uName}, a_pickId)`, textures: { [uName]: () => ref.texture }, shape }
     }
+    return { glslExpr: null, textures: { [uName]: () => ref.texture }, shape }
   }
 
   toTexture(regl) { return this._upload(regl).texture }
@@ -85,31 +107,35 @@ export class ArrayColumn extends ColumnData {
 
 // ─── TextureColumn ────────────────────────────────────────────────────────────
 export class TextureColumn extends ColumnData {
-  constructor(ref, { domain = null, quantityKind = null, length = null, refreshFn = null } = {}) {
+  constructor(ref, { domain = null, quantityKind = null, length = null, refreshFn = null, shape = null } = {}) {
     super()
     this._ref = ref           // { texture } mutable so hot-swaps propagate
     this._domain = domain
     this._quantityKind = quantityKind
     this._length = length
     this._refreshFn = refreshFn
+    this._shape = shape
   }
 
   get length()       { return this._length }
   get domain()       { return this._domain }
   get quantityKind() { return this._quantityKind }
+  get shape()        { return this._shape ?? (this._length != null ? [this._length] : [0]) }
 
   resolve(path, regl) {
     if (!this._ref.texture) {
       throw new Error(`[gladly] TextureColumn '${path}': texture is null — the column was not properly initialized or its computation failed`)
     }
     const uName = `u_col_${path}`
-    return {
-      glslExpr: `sampleColumn(${uName}, a_pickId)`,
-      textures: { [uName]: () => {
-        if (!this._ref.texture) throw new Error(`[gladly] TextureColumn '${path}': texture became null after initialization`)
-        return this._ref.texture
-      }}
+    const texFn = () => {
+      if (!this._ref.texture) throw new Error(`[gladly] TextureColumn '${path}': texture became null after initialization`)
+      return this._ref.texture
     }
+    const shape = this.shape
+    if (shape.length === 1) {
+      return { glslExpr: `sampleColumn(${uName}, a_pickId)`, textures: { [uName]: texFn }, shape }
+    }
+    return { glslExpr: null, textures: { [uName]: texFn }, shape }
   }
 
   toTexture(regl) {
@@ -127,17 +153,26 @@ export class TextureColumn extends ColumnData {
 
 // ─── GlslColumn ───────────────────────────────────────────────────────────────
 export class GlslColumn extends ColumnData {
-  constructor(inputs, glslFn, { domain = null, quantityKind = null } = {}) {
+  constructor(inputs, glslFn, { domain = null, quantityKind = null, shape = null } = {}) {
     super()
-    this._inputs = inputs   // { name: ColumnData }
-    this._glslFn = glslFn   // (resolvedExprs: { name: string }) => string
+    this._inputs = inputs       // { name: ColumnData }
+    this._glslFn = glslFn       // (resolvedExprs: { name: string }) => string
     this._domain = domain
     this._quantityKind = quantityKind
+    this._targetShape = shape   // logical output shape (null = 1D, infer from inputs)
   }
 
-  get length()       { return Object.values(this._inputs)[0]?.length ?? null }
+  get length() {
+    if (this._targetShape) return this._targetShape.reduce((a, b) => a * b, 1)
+    return Object.values(this._inputs)[0]?.length ?? null
+  }
   get domain()       { return this._domain }
   get quantityKind() { return this._quantityKind }
+  get shape() {
+    if (this._targetShape) return this._targetShape
+    const l = Object.values(this._inputs)[0]?.length ?? null
+    return l != null ? [l] : [0]
+  }
 
   resolve(path, regl) {
     const resolvedExprs = {}
@@ -219,6 +254,7 @@ export class OffsetColumn extends ColumnData {
   get length()       { return this._base.length }
   get domain()       { return this._base.domain }
   get quantityKind() { return this._base.quantityKind }
+  get shape()        { return this._base.shape }
 
   resolve(path, regl) {
     const { glslExpr, textures } = this._base.resolve(path, regl)
