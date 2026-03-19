@@ -16,12 +16,14 @@ Wraps a `Float32Array`. Lazily uploads to a GPU texture on first use.
 import { ArrayColumn } from 'gladly-plot'
 
 const col = new ArrayColumn(myFloat32Array, { domain: [0, 1], quantityKind: 'velocity_ms' })
-col.array          // the raw Float32Array (CPU-accessible)
-col.length         // number of elements
-col.domain         // [min, max] or null
-col.quantityKind   // string or null
-col.toTexture(regl) // returns a regl texture (R channel, 1 value/texel, 2D layout)
-col.resolve(path, regl) // returns { glslExpr, textures }
+col.array           // the raw Float32Array (CPU-accessible)
+col.length          // number of elements
+col.shape           // [col.length] for 1D; pass { shape: [rows, cols] } to constructor for nD
+col.ndim            // col.shape.length
+col.domain          // [min, max] or null
+col.quantityKind    // string or null
+col.toTexture(regl) // returns a regl texture (RGBA, 4 values per texel, 2D layout)
+col.resolve(path, regl) // returns { glslExpr, textures, shape }
 ```
 
 Use `instanceof ArrayColumn` checks inside `TextureComputation.compute()` when your computation requires CPU access (e.g. for statistics, sorting, or FFT).
@@ -66,16 +68,22 @@ Typical use case: instanced rendering where two consecutive data points define a
 
 ### Common Interface
 
-All three subtypes share:
+All four subtypes share:
 
 | Property / Method | Description |
 |-------------------|-------------|
-| `col.length` | Number of data elements, or `null` if unknown |
+| `col.length` | Total number of data elements (`totalLength`), or `null` if unknown |
+| `col.shape` | Array of dimension sizes, e.g. `[1000]` for 1D or `[100, 200]` for 2D. Defaults to `[col.length]`. |
+| `col.ndim` | Number of dimensions: `col.shape.length` |
+| `col.totalLength` | Product of all shape dimensions |
 | `col.domain` | `[min, max]` or `null` |
 | `col.quantityKind` | string or `null` |
-| `col.resolve(path, regl)` | Returns `{ glslExpr: string, textures: { uniformName: () => tex } }` |
-| `col.toTexture(regl)` | Returns a raw regl texture |
+| `col.withOffset(offsetExpr)` | Returns an `OffsetColumn` that shifts the GLSL sampling index by the given GLSL expression |
+| `col.resolve(path, regl)` | Returns `{ glslExpr: string \| null, textures: { uniformName: () => tex }, shape }`. `glslExpr` is `null` for nD columns (shader wrapper generated instead). |
+| `col.toTexture(regl)` | Returns a raw regl texture (4 values packed per texel in RGBA) |
 | `col.refresh(plot)` | Refreshes if axis-reactive; returns `true` if updated |
+
+The `shape` property is what controls whether a column is treated as **1D** (sampled automatically at `a_pickId` in the vertex shader) or **nD** (accessed via a typed wrapper function, see [nD Column Shader Injection](#nd-column-shader-injection)).
 
 ---
 
@@ -176,7 +184,7 @@ Subclass `TextureComputation` and implement two methods:
 - Check `inputs.col instanceof ArrayColumn` to test for CPU-accessible data; then use `inputs.col.array` for the raw `Float32Array`.
 - Use `instanceof ArrayColumn` guards and throw for computations that strictly need CPU data (e.g. FFT, adaptive convolution).
 
-**Return value:** A regl texture. The framework samples it per-vertex using `a_pickId` as the texel index, reading the `R` channel as the attribute value. Set `tex._dataLength = n` when the logical length differs from `tex.width * tex.height`.
+**Return value:** A regl texture created with `uploadToTexture` (or equivalent). Values are packed 4 per texel in RGBA format; the framework samples them via `sampleColumn(tex, a_pickId)`. Set `tex._dataLength = n` so the framework knows the logical element count (which differs from `tex.width * tex.height * 4`).
 
 ### `schema(data)`
 
@@ -198,7 +206,7 @@ class WeightedAverageComputation extends TextureComputation {
     const { values, weights, bins } = inputs  // values and weights are ArrayColumn
     const vArr = values.array
     const wArr = weights.array
-    const outData = new Float32Array(bins * 4)  // RGBA, R channel used
+    const outData = new Float32Array(bins)  // one value per bin
 
     for (let b = 0; b < bins; b++) {
       let sumW = 0, sumWV = 0
@@ -208,10 +216,10 @@ class WeightedAverageComputation extends TextureComputation {
         sumW  += wArr[i]
         sumWV += wArr[i] * vArr[i]
       }
-      outData[b * 4] = sumW > 0 ? sumWV / sumW : 0  // R channel
+      outData[b] = sumW > 0 ? sumWV / sumW : 0
     }
 
-    return regl.texture({ data: outData, width: bins, height: 1, type: 'float', format: 'rgba' })
+    return uploadToTexture(regl, outData)  // packs 4 values per texel automatically
   }
 
   schema(data) {
@@ -336,10 +344,13 @@ import { uploadToTexture } from 'gladly-plot'
 
 const tex = uploadToTexture(regl, myFloat32Array)
 // tex._dataLength is set to array.length
-// tex uses R channel, 2D layout (w = min(n, maxTextureSize), h = ceil(n/w))
+// tex uses RGBA format: 4 values packed per texel
+// 2D layout: w = min(ceil(n/4), maxTextureSize), h = ceil(ceil(n/4) / w)
 ```
 
-Uploads a `Float32Array` as a GPU texture with one value per texel in the R channel. The 2D layout automatically handles arrays longer than `maxTextureSize`. Use this inside `TextureComputation.compute()` when you have constructed a CPU-side result array that needs to be returned as a texture.
+Uploads a `Float32Array` as a GPU texture with **four values packed per texel** (RGBA format). Element `i` is stored in texel `i/4`, channel `i%4` (r=0, g=1, b=2, a=3). The 2D layout automatically handles arrays longer than `maxTextureSize`. Use this inside `TextureComputation.compute()` when you have constructed a CPU-side result array that needs to be returned as a texture.
+
+The returned texture is compatible with `sampleColumn` and `sampleColumnND` GLSL helpers.
 
 ---
 
@@ -368,15 +379,90 @@ Resolves any expression form to a `ColumnData`:
 import { SAMPLE_COLUMN_GLSL } from 'gladly-plot'
 ```
 
-A GLSL helper string defining `sampleColumn(sampler2D tex, float idx)`. It is automatically injected into vertex shaders that use column data. You only need it when writing your own custom shaders or compute passes that need to sample column textures directly:
+A GLSL helper string defining `sampleColumn(sampler2D tex, float idx)`. It is automatically injected into vertex shaders that use 1D column data. You only need it when writing your own custom shaders or compute passes that need to sample column textures directly.
+
+Values are packed **4 per texel** in RGBA channels. Element `i` → texel `i/4`, channel `i%4`:
 
 ```glsl
 float sampleColumn(sampler2D tex, float idx) {
   ivec2 sz = textureSize(tex, 0);
   int i = int(idx);
-  return texelFetch(tex, ivec2(i % sz.x, i / sz.x), 0).r;
+  int texelI = i / 4;
+  int chan = i % 4;
+  ivec2 coord = ivec2(texelI % sz.x, texelI / sz.x);
+  vec4 texel = texelFetch(tex, coord, 0);
+  if (chan == 0) return texel.r;
+  if (chan == 1) return texel.g;
+  if (chan == 2) return texel.b;
+  return texel.a;
 }
 ```
+
+## `SAMPLE_COLUMN_ND_GLSL`
+
+```javascript
+import { SAMPLE_COLUMN_ND_GLSL } from 'gladly-plot'
+```
+
+A GLSL helper string defining `sampleColumnND(sampler2D tex, ivec4 shape, ivec4 idx)`. It is automatically injected when any nD column attribute is present. Used for multi-dimensional column access (see [nD Column Shader Injection](#nd-column-shader-injection)).
+
+`shape.xyzw` holds the logical dimension sizes (unused dims = 1). The index is converted to linear (row-major, first dim varies fastest) before unpacking from the 4-per-texel RGBA layout:
+
+```glsl
+float sampleColumnND(sampler2D tex, ivec4 shape, ivec4 idx) {
+  int i = idx.x + shape.x * (idx.y + shape.y * (idx.z + shape.z * idx.w));
+  ivec2 sz = textureSize(tex, 0);
+  int texelI = i / 4;
+  int chan = i % 4;
+  ivec2 coord = ivec2(texelI % sz.x, texelI / sz.x);
+  vec4 texel = texelFetch(tex, coord, 0);
+  if (chan == 0) return texel.r;
+  if (chan == 1) return texel.g;
+  if (chan == 2) return texel.b;
+  return texel.a;
+}
+```
+
+---
+
+## nD Column Shader Injection
+
+When a layer attribute is backed by a column with `ndim > 1` (i.e. `col.shape.length > 1`), the framework **does not** auto-inject a `float name = sampleColumn(...)` assignment into `main()`. Instead, it injects:
+
+1. A **shape uniform** `uniform ivec4 u_col_<name>_shape;` (padded to 4D, unused dims = 1).
+2. A **typed wrapper function** `float sample_<name>(ivecN idx)` that calls `sampleColumnND` with the correct shape. The vector type matches the column's `ndim`: `ivec2` for 2D, `ivec3` for 3D, `ivec4` for 4D.
+
+The shader can then call `sample_<name>(ivec2(row, col))` directly — no manual index calculation needed.
+
+**Example** — a layer attribute `weights` backed by a 2D column (shape `[rows, cols]`):
+
+```javascript
+// In createLayer:
+const weightsCol = new ArrayColumn(myFloat32Array, { shape: [rows, cols] })
+return [{ attributes: { weights: weightsCol }, ... }]
+```
+
+The following is injected automatically into the vertex shader (before `void main()`):
+
+```glsl
+uniform ivec4 u_col_weights_shape;       // [rows, cols, 1, 1]
+float sample_weights(ivec2 idx) {
+  return sampleColumnND(u_col_weights, u_col_weights_shape, ivec4(idx, 0, 0));
+}
+```
+
+In the vertex shader body, call it as:
+
+```glsl
+void main() {
+  float w = sample_weights(ivec2(row, col));
+  // ...
+}
+```
+
+Note: the raw `in float weights;` attribute declaration is **stripped** from the shader source automatically. Do not declare it manually.
+
+For nD columns, `SAMPLE_COLUMN_ND_GLSL` and the sampler declarations are also injected into the **fragment shader** (not just the vertex shader), so `sample_<name>` is available in `frag` as well.
 
 ---
 
