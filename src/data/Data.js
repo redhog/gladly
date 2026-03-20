@@ -34,6 +34,7 @@ export class ComputedDataNode {
       domain: this._meta?.domains?.[col] ?? null,
       quantityKind: this._meta?.quantityKinds?.[col] ?? null,
       length: ref.texture ? (ref.texture._dataLength ?? ref.texture.width) : null,
+      shape: this._meta?.shapes?.[col] ?? null,
       refreshFn: (plot) => {
         node.refreshIfNeeded(plot)
         if (node._version !== lastVersion) {
