@@ -88,7 +88,7 @@ export default function smoothKDE(regl, histTex, options = {}) {
   return kdeTex
 }
 
-const TDR_STEP_MS = 12
+const TDR_STEP_MS = 500
 
 class KdeComputation extends TextureComputation {
   async compute(regl, inputs, getAxisDomain) {

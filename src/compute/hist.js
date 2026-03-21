@@ -96,7 +96,7 @@ void main() {
   return histTex
 }
 
-const TDR_STEP_MS = 12
+const TDR_STEP_MS = 500
 
 // ─── HistogramComputation (TextureComputation — inline expression usage) ──────
 class HistogramComputation extends TextureComputation {

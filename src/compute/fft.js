@@ -171,7 +171,7 @@ function scalePass(regl, N) {
 }
 
 // If a single batch of FFT stages takes longer than this, yield before the next batch.
-const TDR_STEP_MS = 12
+const TDR_STEP_MS = 500
 
 /* ============================================================
    Internal GPU FFT — returns a complex texture (R=real, G=imag)

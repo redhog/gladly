@@ -18,7 +18,7 @@ import { GlBase } from "./GlBase.js"
 // longer than this on the CPU, yield to the browser before the next step.
 // This prevents submitting an unbounded burst of GPU commands in one synchronous
 // block, which can trigger the Windows TDR watchdog (~2 s GPU timeout).
-const TDR_STEP_MS = 12
+const TDR_STEP_MS = 500
 
 function buildPlotSchema(data, config) {
   const layerTypes = getRegisteredLayerTypes()
@@ -710,7 +710,7 @@ void main() {
   }
 
   async _processLayers(layersConfig, data) {
-    const TDR_STEP_MS = 12
+    const TDR_STEP_MS = 500
     for (let configLayerIndex = 0; configLayerIndex < layersConfig.length; configLayerIndex++) {
       const layerSpec = layersConfig[configLayerIndex]
       const entries = Object.entries(layerSpec)
@@ -894,7 +894,6 @@ void main() {
 
   async render() {
     this._dirty = false
-    this.regl.clear({ color: [1,1,1,1], depth:1 })
 
     // Validate axis domains once per render (warn only when domain is still
     // the D3 default, i.e. was never set — indicates a missing ensureAxis call)
@@ -947,7 +946,8 @@ void main() {
     ])
     const axisMvp = mat4Multiply(Mvp, cameraMvp)
 
-    // Refresh transform nodes before drawing (recomputes if tracked axis domains changed).
+    // Phase 1 — async compute: refresh all transforms and data columns before touching the canvas.
+    // Any TDR-yield RAF pauses happen here while the previous frame is still visible.
     // Yield between steps when a step is expensive to avoid triggering the Windows TDR watchdog.
     for (const node of this._dataTransformNodes) {
       const stepStart = performance.now()
@@ -967,7 +967,13 @@ void main() {
         if (performance.now() - stepStart > TDR_STEP_MS)
           await new Promise(r => requestAnimationFrame(r))
       }
+    }
 
+    // Phase 2 — synchronous draw: all data is ready; clear once then draw every layer.
+    // No async yields from here to the end of render() so the canvas is never blank mid-frame.
+    this.regl.clear({ color: [1,1,1,1], depth:1 })
+
+    for (const layer of this.layers) {
       const xIsLog = layer.xAxis ? this.axisRegistry.isLogScale(layer.xAxis) : false
       const yIsLog = layer.yAxis ? this.axisRegistry.isLogScale(layer.yAxis) : false
       const zIsLog = layer.zAxis ? this.axisRegistry.isLogScale(layer.zAxis) : false

@@ -101,7 +101,7 @@ export class GlBase {
   async _processTransforms(transforms) {
     if (!transforms || transforms.length === 0) return
 
-    const TDR_STEP_MS = 12
+    const TDR_STEP_MS = 500
     for (const { name, transform: spec } of transforms) {
       const entries = Object.entries(spec)
       if (entries.length !== 1) throw new Error(`Transform '${name}' must have exactly one key`)
