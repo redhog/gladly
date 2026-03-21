@@ -2,6 +2,29 @@
 
 ## Installation
 
+### Via CDN / script tag
+
+Include the pre-built standalone bundle directly — no build step or npm required:
+
+```html
+<script src="https://redhog.github.io/gladly/dist/gladly.iife.min.js"></script>
+<script>
+  const plot = new Gladly.Plot(document.getElementById('plot-container'))
+  // ...
+</script>
+```
+
+Or use the ES module build with an import map or `<script type="module">`:
+
+```html
+<script type="module">
+  import { Plot } from 'https://redhog.github.io/gladly/dist/gladly.esm.js'
+  // ...
+</script>
+```
+
+Unminified build also available at `https://redhog.github.io/gladly/dist/gladly.iife.js`.
+
 ### From npm
 
 ```bash

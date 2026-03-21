@@ -11,7 +11,8 @@
   ],
   "scripts": {
     "dev": "npx serve . -l 1234",
-    "build:example": "bash scripts/build-example.sh"
+    "build:example": "bash scripts/build-example.sh",
+    "build:lib": "rollup -c"
   },
   "dependencies": {
     "d3": "^7.8.5",
@@ -26,6 +27,9 @@
     "last 2 Safari versions"
   ],
   "devDependencies": {
-    "@json-editor/json-editor": "^2.15.1"
+    "@json-editor/json-editor": "^2.15.1",
+    "@rollup/plugin-node-resolve": "^15.0.0",
+    "@rollup/plugin-terser": "^0.4.0",
+    "rollup": "^4.0.0"
   }
 }
