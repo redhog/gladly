@@ -103,14 +103,14 @@ class PointsLayerType extends ScatterLayerTypeBase {
     }]
   }
 
-  createDrawCommand(regl, layer, plot) {
+  async createDrawCommand(regl, layer, plot) {
     const hasFilter = Object.keys(layer.filterAxes).length > 0
     const hasFirst  = '' in layer.colorAxes
     const hasSecond = '2' in layer.colorAxes
     const hasZ      = 'z' in layer.attributes
     this.vert = makePointsVert(hasFilter, hasZ)
     this.frag = makePointsFrag(hasFirst, hasSecond)
-    return super.createDrawCommand(regl, layer, plot)
+    return await super.createDrawCommand(regl, layer, plot)
   }
 }
 

@@ -96,9 +96,11 @@ void main() {
   return histTex
 }
 
+const TDR_STEP_MS = 12
+
 // ─── HistogramComputation (TextureComputation — inline expression usage) ──────
 class HistogramComputation extends TextureComputation {
-  compute(regl, inputs, getAxisDomain) {
+  async compute(regl, inputs, getAxisDomain) {
     const inputCol = inputs.input  // ColumnData
 
     let bins = inputs.bins
@@ -108,8 +110,9 @@ class HistogramComputation extends TextureComputation {
       bins = inputs.maxBins || 1024
     }
 
-    // Normalize to [0,1] for GPU histogram
+    // Normalize to [0,1] for GPU histogram (CPU work)
     let normalizedTex
+    const t0 = performance.now()
     if (inputCol instanceof ArrayColumn) {
       const arr = inputCol.array
       let min = arr[0], max = arr[0]
@@ -125,6 +128,8 @@ class HistogramComputation extends TextureComputation {
       // Already a GPU texture — assume values are in [0,1]
       normalizedTex = inputCol.toTexture(regl)
     }
+    if (performance.now() - t0 > TDR_STEP_MS)
+      await new Promise(r => requestAnimationFrame(r))
 
     return makeHistogram(regl, normalizedTex, { bins })
   }
@@ -154,7 +159,7 @@ class HistogramData extends ComputedData {
     return { filter: qk }
   }
 
-  compute(regl, params, data, getAxisDomain) {
+  async compute(regl, params, data, getAxisDomain) {
     const srcCol = data.getData(params.input)
     if (!(srcCol instanceof ArrayColumn)) {
       throw new Error(`HistogramData: input '${params.input}' must be a plain data column`)
@@ -227,7 +232,10 @@ class HistogramData extends ComputedData {
       }
       countInput = new Float32Array(filtered)
     }
+    const uploadStart = performance.now()
     const normalizedTex = uploadToTexture(regl, countInput)
+    if (performance.now() - uploadStart > TDR_STEP_MS)
+      await new Promise(r => requestAnimationFrame(r))
     const countsTex = makeHistogram(regl, normalizedTex, { bins })
     countsTex._dataLength = bins
 

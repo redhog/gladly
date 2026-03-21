@@ -51,7 +51,7 @@ export class PlotGroup {
    * @param {*}      [options.data]   - Raw data passed to all plots (normalized once).
    * @param {object} [options.plots]  - Map of { plotName: plotConfig } to update individually.
    */
-  update({ data, plots } = {}) {
+  async update({ data, plots } = {}) {
     // Normalize data once so every plot receives the same DataGroup instance.
     const normalizedData = data !== undefined ? normalizeData(data) : undefined
 
@@ -77,7 +77,7 @@ export class PlotGroup {
         const arg = {}
         if (normalizedData !== undefined) arg.data = normalizedData
         if (plots?.[name] !== undefined) arg.config = plots[name]
-        plot._applyUpdate(arg)
+        await plot._applyUpdate(arg)
       }
 
       // Phase 2: validate links across every plot now that all QKs are final.
@@ -91,7 +91,7 @@ export class PlotGroup {
       for (const { plot, prevConfig, prevRawData } of toUpdate) {
         plot.currentConfig = prevConfig
         plot._rawData = prevRawData
-        try { plot._applyUpdate({}) } catch (e) {
+        try { await plot._applyUpdate({}) } catch (e) {
           console.error('[gladly] PlotGroup: error during rollback re-render:', e)
         }
       }

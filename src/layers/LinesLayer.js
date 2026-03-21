@@ -106,7 +106,7 @@ class LinesLayerType extends ScatterLayerTypeBase {
     }
   }
 
-  _createLayer(regl, parameters, data, plot) {
+  async _createLayer(regl, parameters, data, plot) {
     const d = Data.wrap(data)
     const { lineSegmentIdData: lineSegmentIdDataRaw, lineColorMode = "gradient", lineWidth = 1.0 } = parameters
     const lineSegmentIdData = (lineSegmentIdDataRaw == null || lineSegmentIdDataRaw === "none") ? null : lineSegmentIdDataRaw
@@ -122,13 +122,13 @@ class LinesLayerType extends ScatterLayerTypeBase {
     const vQK  = vData  ? (resolveQuantityKind(vData,  d) ?? vData)  : null
     const vQK2 = vData2 ? (resolveQuantityKind(vData2, d) ?? vData2) : null
 
-    const colX   = resolveExprToColumn(xData, d, regl, plot)
-    const colY   = resolveExprToColumn(yData, d, regl, plot)
-    const colZ   = zData  ? resolveExprToColumn(zData,  d, regl, plot) : null
-    const colV   = vData  ? resolveExprToColumn(vData,  d, regl, plot) : null
-    const colV2  = vData2 ? resolveExprToColumn(vData2, d, regl, plot) : null
-    const colF   = fData  ? resolveExprToColumn(fData,  d, regl, plot) : null
-    const colSeg = lineSegmentIdData ? resolveExprToColumn(lineSegmentIdData, d, regl, plot) : null
+    const colX   = await resolveExprToColumn(xData, d, regl, plot)
+    const colY   = await resolveExprToColumn(yData, d, regl, plot)
+    const colZ   = zData  ? await resolveExprToColumn(zData,  d, regl, plot) : null
+    const colV   = vData  ? await resolveExprToColumn(vData,  d, regl, plot) : null
+    const colV2  = vData2 ? await resolveExprToColumn(vData2, d, regl, plot) : null
+    const colF   = fData  ? await resolveExprToColumn(fData,  d, regl, plot) : null
+    const colSeg = lineSegmentIdData ? await resolveExprToColumn(lineSegmentIdData, d, regl, plot) : null
 
     if (!colX) throw new Error(`Data column '${xData}' not found`)
     if (!colY) throw new Error(`Data column '${yData}' not found`)
@@ -167,7 +167,7 @@ class LinesLayerType extends ScatterLayerTypeBase {
     }]
   }
 
-  createDrawCommand(regl, layer, plot) {
+  async createDrawCommand(regl, layer, plot) {
     const hasFilter  = Object.keys(layer.filterAxes).length > 0
     const hasFirst   = '' in layer.colorAxes
     const hasSecond  = '2' in layer.colorAxes
@@ -177,7 +177,7 @@ class LinesLayerType extends ScatterLayerTypeBase {
     const hasZ       = 'a_z0'   in layer.attributes
     this.vert = makeLinesVert(hasFilter, hasSegIds, hasV, hasV2, hasZ)
     this.frag = makeLinesFrag(hasFirst, hasSecond)
-    return super.createDrawCommand(regl, layer, plot)
+    return await super.createDrawCommand(regl, layer, plot)
   }
 }
 

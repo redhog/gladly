@@ -28,7 +28,7 @@ export class TextureComputation extends Computation {
   // inputs values are ColumnData (shapes accessible) or scalars.
   outputShape(inputs) { return null }
 
-  createColumn(regl, inputs, plot) {
+  async createColumn(regl, inputs, plot) {
     const accessedAxes = new Set()
     const cachedDomains = {}
 
@@ -37,7 +37,7 @@ export class TextureComputation extends Computation {
       return plot ? plot.getAxisDomain(axisId) : null
     }
 
-    const rawTex = this.compute(regl, inputs, getAxisDomain)
+    const rawTex = await this.compute(regl, inputs, getAxisDomain)
     const ref = { texture: rawTex }
 
     const hasColumnInputs = Object.values(inputs).some(v => v instanceof ColumnData)
@@ -48,11 +48,11 @@ export class TextureComputation extends Computation {
       }
 
       const comp = this
-      refreshFn = (currentPlot, texRef) => {
+      refreshFn = async (currentPlot, texRef) => {
         // Refresh inputs first; track if any updated
         let inputsRefreshed = false
         for (const val of Object.values(inputs)) {
-          if (val instanceof ColumnData && val.refresh(currentPlot)) inputsRefreshed = true
+          if (val instanceof ColumnData && await val.refresh(currentPlot)) inputsRefreshed = true
         }
 
         let ownAxisChanged = false
@@ -67,7 +67,7 @@ export class TextureComputation extends Computation {
 
         const newAxes = new Set()
         const newGetter = (axisId) => { newAxes.add(axisId); return currentPlot.getAxisDomain(axisId) }
-        texRef.texture = comp.compute(regl, inputs, newGetter)
+        texRef.texture = await comp.compute(regl, inputs, newGetter)
 
         accessedAxes.clear()
         for (const axisId of newAxes) {

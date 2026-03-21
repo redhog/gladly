@@ -35,8 +35,8 @@ export class ComputedDataNode {
       quantityKind: this._meta?.quantityKinds?.[col] ?? null,
       length: ref.texture ? (ref.texture._dataLength ?? ref.texture.width) : null,
       shape: this._meta?.shapes?.[col] ?? null,
-      refreshFn: (plot) => {
-        node.refreshIfNeeded(plot)
+      refreshFn: async (plot) => {
+        await node.refreshIfNeeded(plot)
         if (node._version !== lastVersion) {
           lastVersion = node._version
           return true
@@ -54,7 +54,7 @@ export class ComputedDataNode {
     return this._meta?.domains?.[col] ?? null
   }
 
-  _initialize(regl, dataGroup, plot) {
+  async _initialize(regl, dataGroup, plot) {
     this._regl = regl
     this._dataGroup = dataGroup
 
@@ -63,7 +63,7 @@ export class ComputedDataNode {
       return plot ? plot.getAxisDomain(axisId) : null
     }
 
-    const result = this._computedData.compute(regl, this._params, dataGroup, getAxisDomain)
+    const result = await this._computedData.compute(regl, this._params, dataGroup, getAxisDomain)
     this._meta = result._meta ?? null
 
     for (const [key, val] of Object.entries(result)) {
@@ -76,7 +76,7 @@ export class ComputedDataNode {
     }
   }
 
-  refreshIfNeeded(plot) {
+  async refreshIfNeeded(plot) {
     if (this._accessedAxes.size === 0) return
 
     let needsRecompute = false
@@ -95,7 +95,7 @@ export class ComputedDataNode {
       return plot ? plot.getAxisDomain(axisId) : null
     }
 
-    const result = this._computedData.compute(this._regl, this._params, this._dataGroup, getAxisDomain)
+    const result = await this._computedData.compute(this._regl, this._params, this._dataGroup, getAxisDomain)
     this._meta = result._meta ?? null
 
     for (const [key, val] of Object.entries(result)) {

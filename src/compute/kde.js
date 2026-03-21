@@ -88,9 +88,14 @@ export default function smoothKDE(regl, histTex, options = {}) {
   return kdeTex
 }
 
+const TDR_STEP_MS = 12
+
 class KdeComputation extends TextureComputation {
-  compute(regl, inputs, getAxisDomain) {
+  async compute(regl, inputs, getAxisDomain) {
+    const t0 = performance.now()
     const inputTex = inputs.input.toTexture(regl)
+    if (performance.now() - t0 > TDR_STEP_MS)
+      await new Promise(r => requestAnimationFrame(r))
     return smoothKDE(regl, inputTex, { bins: inputs.bins, bandwidth: inputs.bandwidth })
   }
 

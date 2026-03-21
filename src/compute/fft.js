@@ -170,12 +170,15 @@ function scalePass(regl, N) {
   });
 }
 
+// If a single batch of FFT stages takes longer than this, yield before the next batch.
+const TDR_STEP_MS = 12
+
 /* ============================================================
    Internal GPU FFT — returns a complex texture (R=real, G=imag)
    with 1 frequency bin per texel. NOT for direct use with sampleColumn.
    ============================================================ */
 
-export function fft1d(regl, realArray, inverse = false) {
+export async function fft1d(regl, realArray, inverse = false) {
   const N = nextPow2(realArray.length);
 
   let texA = makeComplexTexture(regl, realArray, N);
@@ -190,8 +193,9 @@ export function fft1d(regl, realArray, inverse = false) {
   });
   [fboA, fboB] = [fboB, fboA];
 
-  // FFT stages
+  // FFT stages — yield between batches to avoid triggering the Windows TDR watchdog.
   const stages = Math.log2(N);
+  let batchStart = performance.now();
   for (let s = 1; s <= stages; s++) {
     fftStagePass(regl, 1 << s, inverse)({
       input: fboA,
@@ -199,6 +203,10 @@ export function fft1d(regl, realArray, inverse = false) {
       fbo: fboB
     });
     [fboA, fboB] = [fboB, fboA];
+    if (performance.now() - batchStart > TDR_STEP_MS) {
+      await new Promise(r => requestAnimationFrame(r));
+      batchStart = performance.now();
+    }
   }
 
   // scale for inverse
@@ -217,11 +225,11 @@ export function fft1d(regl, realArray, inverse = false) {
    FFT-based convolution (internal)
    ============================================================ */
 
-export function fftConvolution(regl, signal, kernel) {
+export async function fftConvolution(regl, signal, kernel) {
   const N = nextPow2(signal.length + kernel.length);
 
-  const sigTex = fft1d(regl, signal, false);
-  const kerTex = fft1d(regl, kernel, false);
+  const sigTex = await fft1d(regl, signal, false);
+  const kerTex = await fft1d(regl, kernel, false);
 
   const outTex = makeEmptyComplexTexture(regl, N);
   const outFBO = makeFBO(regl, outTex);
@@ -256,7 +264,7 @@ export function fftConvolution(regl, signal, kernel) {
   })();
 
   // inverse FFT
-  return fft1d(regl, new Float32Array(N), true);
+  return await fft1d(regl, new Float32Array(N), true);
 }
 
 /* ============================================================
@@ -308,13 +316,13 @@ function extractAndRepack(regl, complexTex, channelSwizzle, N) {
 class FftData extends ComputedData {
   columns() { return ['real', 'imag'] }
 
-  compute(regl, params, data, getAxisDomain) {
+  async compute(regl, params, data, getAxisDomain) {
     const inputCol = data.getData(params.input)
     if (!(inputCol instanceof ArrayColumn)) {
       throw new Error(`FftData: input '${params.input}' must be a plain data column`)
     }
     const N = nextPow2(inputCol.array.length)
-    const complexTex = fft1d(regl, inputCol.array, params.inverse ?? false)
+    const complexTex = await fft1d(regl, inputCol.array, params.inverse ?? false)
     return {
       real: extractAndRepack(regl, complexTex, 'r', N),
       imag: extractAndRepack(regl, complexTex, 'g', N),
@@ -347,11 +355,11 @@ registerComputedData('FftData', new FftData())
 
 class FftConvolutionComputation extends TextureComputation {
   getQuantityKind(params, data) { return resolveQuantityKind(params.signal, data) }
-  compute(regl, params, data, getAxisDomain) {
+  async compute(regl, params, data, getAxisDomain) {
     const signal = params.signal instanceof ArrayColumn ? params.signal.array : params.signal
     const kernel = params.kernel instanceof ArrayColumn ? params.kernel.array : params.kernel
     const N = nextPow2(signal.length + kernel.length)
-    const complexResult = fftConvolution(regl, signal, kernel)
+    const complexResult = await fftConvolution(regl, signal, kernel)
     return extractAndRepack(regl, complexResult, 'r', N)
   }
   schema(data) {

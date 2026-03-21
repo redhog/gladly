@@ -98,9 +98,10 @@ export class GlBase {
   // No-op in base class. Overridden by Plot to schedule a WebGL render frame.
   scheduleRender() {}
 
-  _processTransforms(transforms) {
+  async _processTransforms(transforms) {
     if (!transforms || transforms.length === 0) return
 
+    const TDR_STEP_MS = 12
     for (const { name, transform: spec } of transforms) {
       const entries = Object.entries(spec)
       if (entries.length !== 1) throw new Error(`Transform '${name}' must have exactly one key`)
@@ -115,11 +116,14 @@ export class GlBase {
       }
 
       const node = new ComputedDataNode(computedData, params)
+      const stepStart = performance.now()
       try {
-        node._initialize(this.regl, this.currentData, this)
+        await node._initialize(this.regl, this.currentData, this)
       } catch (e) {
         throw new Error(`Transform '${name}' (${className}) failed to initialize: ${e.message}`, { cause: e })
       }
+      if (performance.now() - stepStart > TDR_STEP_MS)
+        await new Promise(r => requestAnimationFrame(r))
 
       const filterDataExtents = node._meta?.filterDataExtents ?? {}
       for (const [qk, extent] of Object.entries(filterDataExtents)) {

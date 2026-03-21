@@ -145,8 +145,8 @@ export class TextureColumn extends ColumnData {
     return this._ref.texture
   }
 
-  refresh(plot) {
-    if (this._refreshFn) return this._refreshFn(plot, this._ref) ?? false
+  async refresh(plot) {
+    if (this._refreshFn) return await this._refreshFn(plot, this._ref) ?? false
     return false
   }
 }

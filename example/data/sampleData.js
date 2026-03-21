@@ -9,14 +9,14 @@
 import { ComputePipeline } from "../../src/index.js"
 import { resolveExprToColumn } from "../../src/compute/ComputationRegistry.js"
 
-function generate() {
+async function generate() {
   const pipeline = new ComputePipeline()
   const regl = pipeline.regl
 
   // Batch readback helpers — separate GPU submission from CPU sync.
   // Phase 1: resolve expression and upload texture (non-blocking).
-  function submitColumn(expr) {
-    const col = resolveExprToColumn(expr, null, regl, null)
+  async function submitColumn(expr) {
+    const col = await resolveExprToColumn(expr, null, regl, null)
     const tex = col.toTexture(regl)
     const dataLength = tex._dataLength ?? (tex.width * tex.height * 4)
     const fbo = regl.framebuffer({ color: tex, depth: false })
@@ -46,8 +46,8 @@ function generate() {
   // t_N[i] = (i + 0.5) / N  ≈  i / N  ∈ (0, 1)
   // t_M[i] = (i + 0.5) / M  ≈  i / M  ∈ (0, 1)
   // Pre-resolve once so the GPU texture is created once and shared.
-  const t_N = resolveExprToColumn({ linspace: { length: N } }, null, regl, null)
-  const t_M = resolveExprToColumn({ linspace: { length: M } }, null, regl, null)
+  const t_N = await resolveExprToColumn({ linspace: { length: N } }, null, regl, null)
+  const t_M = await resolveExprToColumn({ linspace: { length: M } }, null, regl, null)
 
   // Noise: maps random ∈ (0,1) to (-amp/2, +amp/2).
   // Each call uses a distinct seed so each column gets independent noise.
@@ -58,23 +58,24 @@ function generate() {
     }
   })
 
-  // --- Phase 1: submit all GPU compute work (non-blocking) ---
-
+  // --- Phase 1: submit all GPU compute work ---
+  // submitColumn is async (resolveExprToColumn is async) but each call is fast —
+  // the actual GPU work is submitted synchronously inside toTexture().
   // Dataset 1: distance (0-10 m) vs voltage (0-5 V)
   // x1[i] = t * 10
   // y1 = 2.5 + 2*sin(x1*0.8) + noise*0.5  →  2.5 + 2*sin(t*8) + n
   // v1 = (sin(x1*2) + 1) / 2               →  (sin(t*20) + 1) / 2
   // f1 = tan(x1)                            →  tan(t*10)
-  const s_x1 = submitColumn({ glslExpr: { expr: '{t} * 10.0', inputs: { t: t_N } } })
-  const s_y1 = submitColumn({ glslExpr: {
+  const s_x1 = await submitColumn({ glslExpr: { expr: '{t} * 10.0', inputs: { t: t_N } } })
+  const s_y1 = await submitColumn({ glslExpr: {
     expr: '2.5 + 2.0 * sin({t} * 8.0) + {n}',
     inputs: { t: t_N, n: noise(N, 1, 0.5) }
   }})
-  const s_v1 = submitColumn({ glslExpr: {
+  const s_v1 = await submitColumn({ glslExpr: {
     expr: '(sin({t} * 20.0) + 1.0) / 2.0',
     inputs: { t: t_N }
   }})
-  const s_f1 = submitColumn({ glslExpr: {
+  const s_f1 = await submitColumn({ glslExpr: {
     expr: 'tan({t} * 10.0)',
     inputs: { t: t_N }
   }})
@@ -84,16 +85,16 @@ function generate() {
   // y2 = 30 + 15*sin(x2*0.1) + noise*2  →  30 + 15*sin(t*10) + n
   // v2 = (cos(x2*0.15) + 1) / 2         →  (cos(t*15) + 1) / 2
   // f2 = tan(x2*0.1)                    →  tan(t*10)
-  const s_x2 = submitColumn({ glslExpr: { expr: '{t} * 100.0', inputs: { t: t_N } } })
-  const s_y2 = submitColumn({ glslExpr: {
+  const s_x2 = await submitColumn({ glslExpr: { expr: '{t} * 100.0', inputs: { t: t_N } } })
+  const s_y2 = await submitColumn({ glslExpr: {
     expr: '30.0 + 15.0 * sin({t} * 10.0) + {n}',
     inputs: { t: t_N, n: noise(N, 2, 2) }
   }})
-  const s_v2 = submitColumn({ glslExpr: {
+  const s_v2 = await submitColumn({ glslExpr: {
     expr: '(cos({t} * 15.0) + 1.0) / 2.0',
     inputs: { t: t_N }
   }})
-  const s_f2 = submitColumn({ glslExpr: {
+  const s_f2 = await submitColumn({ glslExpr: {
     expr: 'tan({t} * 10.0)',
     inputs: { t: t_N }
   }})
@@ -105,33 +106,38 @@ function generate() {
   // ch3_V = 0.4*sin(time*3.5+1) + 0.3*cos(time*0.8) + n
   //       →  0.4*sin(t*35+1) + 0.3*cos(t*8) + n
   // quality_flag: time ∈ [3,4] or [7,8]  →  t ∈ [0.3,0.4] or [0.7,0.8]
-  const s_time_s = submitColumn({ glslExpr: { expr: '{t} * 10.0', inputs: { t: t_M } } })
-  const s_ch1_V = submitColumn({ glslExpr: {
+  const s_time_s = await submitColumn({ glslExpr: { expr: '{t} * 10.0', inputs: { t: t_M } } })
+  const s_ch1_V = await submitColumn({ glslExpr: {
     expr: 'sin({t} * 20.0) + {n}',
     inputs: { t: t_M, n: noise(M, 3, 0.15) }
   }})
-  const s_ch2_V = submitColumn({ glslExpr: {
+  const s_ch2_V = await submitColumn({ glslExpr: {
     expr: 'cos({t} * 13.0) * 0.7 + {n}',
     inputs: { t: t_M, n: noise(M, 4, 0.15) }
   }})
-  const s_ch3_V = submitColumn({ glslExpr: {
+  const s_ch3_V = await submitColumn({ glslExpr: {
     expr: '0.4 * sin({t} * 35.0 + 1.0) + 0.3 * cos({t} * 8.0) + {n}',
     inputs: { t: t_M, n: noise(M, 5, 0.1) }
   }})
-  const s_quality_flag = submitColumn({ glslExpr: {
+  const s_quality_flag = await submitColumn({ glslExpr: {
     expr: '(({t} * 10.0 >= 3.0 && {t} * 10.0 <= 4.0) || ({t} * 10.0 >= 7.0 && {t} * 10.0 <= 8.0)) ? 1.0 : 0.0',
     inputs: { t: t_M }
   }})
 
-  // --- Phase 2: batch readbacks (GPU sync on first call only) ---
-  const x1 = readBack(s_x1)
+  // --- Phase 2: batch readbacks ---
+  // The first readBack forces the GPU to finish all submitted work (CPU-GPU sync).
+  // We yield to the browser between groups so the page stays responsive.
+  const x1 = readBack(s_x1)   // forces GPU sync here
+  await new Promise(r => requestAnimationFrame(r))
   const y1 = readBack(s_y1)
   const v1 = readBack(s_v1)
   const f1 = readBack(s_f1)
+  await new Promise(r => requestAnimationFrame(r))
   const x2 = readBack(s_x2)
   const y2 = readBack(s_y2)
   const v2 = readBack(s_v2)
   const f2 = readBack(s_f2)
+  await new Promise(r => requestAnimationFrame(r))
   const time_s = readBack(s_time_s)
   const ch1_V = readBack(s_ch1_V)
   const ch2_V = readBack(s_ch2_V)
@@ -158,5 +164,5 @@ function generate() {
   }
 }
 
-// Export as a Promise — callers await it; no top-level await here.
-export const data = Promise.resolve(generate())
+// generate() is async and returns a Promise — callers await it.
+export const data = generate()

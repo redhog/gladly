@@ -14,6 +14,12 @@ import { DataGroup, normalizeData } from "../data/Data.js"
 import { enqueueRegl, compileEnqueuedShaders } from "./ShaderQueue.js"
 import { GlBase } from "./GlBase.js"
 
+// If a single compute step (ComputedData refresh or TextureColumn refresh) takes
+// longer than this on the CPU, yield to the browser before the next step.
+// This prevents submitting an unbounded burst of GPU commands in one synchronous
+// block, which can trigger the Windows TDR watchdog (~2 s GPU timeout).
+const TDR_STEP_MS = 12
+
 function buildPlotSchema(data, config) {
   const layerTypes = getRegisteredLayerTypes()
   // Normalise once — always a DataGroup (or null). Columns are e.g. "input.x1".
@@ -208,6 +214,7 @@ export class Plot extends GlBase {
     this._zoomEndCallbacks = new Set()
     this._dirty = false
     this._rafId = null
+    this._rendering = false
     this._is3D = false
     this._camera = null
     this._tickLabelAtlas = null
@@ -228,7 +235,7 @@ export class Plot extends GlBase {
   // Stores new config/data and re-initialises the plot. No link validation.
   // Called directly by PlotGroup so it can validate all plots together after
   // all have been updated.
-  _applyUpdate({ config, data } = {}) {
+  async _applyUpdate({ config, data } = {}) {
     if (config !== undefined) this.currentConfig = config
     if (data !== undefined) {
       this._rawData = normalizeData(data)  // normalise once; kept immutable
@@ -255,7 +262,7 @@ export class Plot extends GlBase {
     this.plotHeight = plotHeight
 
     this._warnedMissingDomains = false
-    this._initialize()
+    await this._initialize()
     this._syncFloats()
   }
 
@@ -278,7 +285,7 @@ export class Plot extends GlBase {
     }
   }
 
-  update({ config, data } = {}) {
+  async update({ config, data } = {}) {
     // Skip expensive _initialize() if nothing actually changed.
     if (config !== undefined || data !== undefined) {
       const configSame = config === undefined || JSON.stringify(config) === JSON.stringify(this.currentConfig)
@@ -294,7 +301,7 @@ export class Plot extends GlBase {
     const previousConfig = this.currentConfig
     const previousRawData = this._rawData
     try {
-      this._applyUpdate({ config, data })
+      await this._applyUpdate({ config, data })
       this._validateLinks()
     } catch (error) {
       this.currentConfig = previousConfig
@@ -303,8 +310,8 @@ export class Plot extends GlBase {
     }
   }
 
-  forceUpdate() {
-    this.update({})
+  async forceUpdate() {
+    await this.update({})
   }
 
   getConfig() {
@@ -354,7 +361,7 @@ export class Plot extends GlBase {
     return { transforms: [], colorbars: [], ...this.currentConfig, axes}
   }
 
-  _initialize() {
+  async _initialize() {
     const { layers = [], axes = {}, colorbars = [], transforms = [] } = this.currentConfig
 
     if (!this.regl) {
@@ -388,8 +395,8 @@ export class Plot extends GlBase {
     this.colorAxisRegistry = new ColorAxisRegistry()
     this.filterAxisRegistry = new FilterAxisRegistry()
 
-    this._processTransforms(transforms)
-    this._processLayers(layers, this.currentData)
+    await this._processTransforms(transforms)
+    await this._processLayers(layers, this.currentData)
     this._setDomains(axes)
 
     // Detect 3D mode: any axis outside the 4 standard 2D positions has a scale.
@@ -419,7 +426,7 @@ export class Plot extends GlBase {
     }
 
     if (!this._zoomController) this._zoomController = new ZoomController(this)
-    this.render()
+    this.scheduleRender()
   }
 
   // Compile the two regl commands shared across all axis rendering.
@@ -528,9 +535,9 @@ void main() {
         // Defer to next animation frame so the ResizeObserver callback exits
         // before any DOM/layout changes happen, avoiding the "loop completed
         // with undelivered notifications" browser error.
-        requestAnimationFrame(() => {
+        requestAnimationFrame(async () => {
           try {
-            this.forceUpdate()
+            await this.forceUpdate()
           } catch (e) {
             console.error('[gladly] Error during resize-triggered update():', e)
           }
@@ -538,9 +545,9 @@ void main() {
       })
       this.resizeObserver.observe(this.container)
     } else {
-      this._resizeHandler = () => {
+      this._resizeHandler = async () => {
         try {
-          this.forceUpdate()
+          await this.forceUpdate()
         } catch (e) {
           console.error('[gladly] Error during resize-triggered update():', e)
         }
@@ -702,7 +709,8 @@ void main() {
     this.canvas.remove()
   }
 
-  _processLayers(layersConfig, data) {
+  async _processLayers(layersConfig, data) {
+    const TDR_STEP_MS = 12
     for (let configLayerIndex = 0; configLayerIndex < layersConfig.length; configLayerIndex++) {
       const layerSpec = layersConfig[configLayerIndex]
       const entries = Object.entries(layerSpec)
@@ -737,25 +745,28 @@ void main() {
       // Create one draw command per GPU config returned by the layer type.
       let gpuLayers
       try {
-        gpuLayers = layerType.createLayer(this.regl, parameters, data, this)
+        gpuLayers = await layerType.createLayer(this.regl, parameters, data, this)
       } catch (e) {
         throw new Error(`Layer '${layerTypeName}' (index ${configLayerIndex}) failed to create: ${e.message}`, { cause: e })
       }
       for (const layer of gpuLayers) {
         layer.configLayerIndex = configLayerIndex
+        const stepStart = performance.now()
         try {
-          layer.draw = this._compileLayerDraw(layer)
+          layer.draw = await this._compileLayerDraw(layer)
         } catch (e) {
           throw new Error(`Layer '${layerTypeName}' (index ${configLayerIndex}) failed to build draw command: ${e.message}`, { cause: e })
         }
+        if (performance.now() - stepStart > TDR_STEP_MS)
+          await new Promise(r => requestAnimationFrame(r))
         this.layers.push(layer)
       }
     }
     compileEnqueuedShaders(this.regl)
   }
 
-  _compileLayerDraw(layer) {
-    const drawConfig = layer.type.createDrawCommand(this.regl, layer, this)
+  async _compileLayerDraw(layer) {
+    const drawConfig = await layer.type.createDrawCommand(this.regl, layer, this)
 
     // Layer types that fully override createDrawCommand (e.g. TileLayer) return
     // a ready-to-call function instead of a plain drawConfig object. Pass through.
@@ -843,14 +854,14 @@ void main() {
   scheduleRender() {
     if (!this.regl) return
     this._dirty = true
-    if (this._rafId === null) {
+    if (this._rafId === null && !this._rendering) {
       const schedTime = performance.now()
       const _st0 = schedTime
       setTimeout(() => {
         const _stLag = performance.now() - _st0
         if (_stLag > 20) console.warn(`[gladly] setTimeout(0) lag ${_stLag.toFixed(0)}ms`)
       }, 0)
-      this._rafId = requestAnimationFrame((rafTime) => {
+      this._rafId = requestAnimationFrame(async (rafTime) => {
         this._rafId = null
         const now = performance.now()
         const lag = now - schedTime
@@ -859,10 +870,13 @@ void main() {
         if (this._dirty) {
           this._dirty = false
           const t0 = performance.now()
+          this._rendering = true
           try {
-            this.render()
+            await this.render()
           } catch (e) {
             console.error('[gladly] Error during render():', e)
+          } finally {
+            this._rendering = false
           }
           const dt = performance.now() - t0
           if (dt > 10) console.warn(`[gladly] render ${dt.toFixed(0)}ms`)
@@ -878,7 +892,7 @@ void main() {
     }
   }
 
-  render() {
+  async render() {
     this._dirty = false
     this.regl.clear({ color: [1,1,1,1], depth:1 })
 
@@ -933,17 +947,26 @@ void main() {
     ])
     const axisMvp = mat4Multiply(Mvp, cameraMvp)
 
-    // Refresh transform nodes before drawing (recomputes if tracked axis domains changed)
+    // Refresh transform nodes before drawing (recomputes if tracked axis domains changed).
+    // Yield between steps when a step is expensive to avoid triggering the Windows TDR watchdog.
     for (const node of this._dataTransformNodes) {
+      const stepStart = performance.now()
       try {
-        node.refreshIfNeeded(this)
+        await node.refreshIfNeeded(this)
       } catch (e) {
         throw new Error(`Transform refresh failed: ${e.message}`, { cause: e })
       }
+      if (performance.now() - stepStart > TDR_STEP_MS)
+        await new Promise(r => requestAnimationFrame(r))
     }
 
     for (const layer of this.layers) {
-      for (const col of layer._dataColumns ?? []) col.refresh(this)
+      for (const col of layer._dataColumns ?? []) {
+        const stepStart = performance.now()
+        await col.refresh(this)
+        if (performance.now() - stepStart > TDR_STEP_MS)
+          await new Promise(r => requestAnimationFrame(r))
+      }
 
       const xIsLog = layer.xAxis ? this.axisRegistry.isLogScale(layer.xAxis) : false
       const yIsLog = layer.yAxis ? this.axisRegistry.isLogScale(layer.yAxis) : false
@@ -1051,7 +1074,7 @@ void main() {
     return { remove: () => window.removeEventListener(eventType, handler, { capture: true }) }
   }
 
-  pick(x, y) {
+  async pick(x, y) {
     if (!this.regl || !this.layers.length) return null
 
     const glX = Math.round(x)
@@ -1068,7 +1091,12 @@ void main() {
 
     // Refresh transform nodes before picking (same as render)
     for (const node of this._dataTransformNodes) {
-      node.refreshIfNeeded(this)
+      await node.refreshIfNeeded(this)
+    }
+
+    // Refresh data columns outside the synchronous regl() callback
+    for (const layer of this.layers) {
+      for (const col of layer._dataColumns ?? []) await col.refresh(this)
     }
 
     let result = null
@@ -1081,7 +1109,6 @@ void main() {
       }
       for (let i = 0; i < this.layers.length; i++) {
         const layer = this.layers[i]
-        for (const col of layer._dataColumns ?? []) col.refresh(this)
 
         const xIsLog = layer.xAxis ? this.axisRegistry.isLogScale(layer.xAxis) : false
         const yIsLog = layer.yAxis ? this.axisRegistry.isLogScale(layer.yAxis) : false

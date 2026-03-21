@@ -27,7 +27,7 @@ export function getRegisteredComputedData() {
 
 // ─── resolveExprToColumn ─────────────────────────────────────────────────────
 // Turns any expression (string col name, { compName: params }, ColumnData) into ColumnData.
-export function resolveExprToColumn(expr, data, regl, plot) {
+export async function resolveExprToColumn(expr, data, regl, plot) {
   if (expr instanceof ColumnData) return expr
 
   if (typeof expr === 'string') {
@@ -44,13 +44,13 @@ export function resolveExprToColumn(expr, data, regl, plot) {
 
       if (textureComputations.has(compName)) {
         const comp = textureComputations.get(compName)
-        const resolvedInputs = resolveParams(params, data, regl, plot)
-        return comp.createColumn(regl, resolvedInputs, plot)
+        const resolvedInputs = await resolveParams(params, data, regl, plot)
+        return await comp.createColumn(regl, resolvedInputs, plot)
       }
 
       if (glslComputations.has(compName)) {
         const comp = glslComputations.get(compName)
-        const resolvedInputs = resolveParams(params, data, regl, plot)
+        const resolvedInputs = await resolveParams(params, data, regl, plot)
         return comp.createColumn(resolvedInputs)
       }
     }
@@ -60,7 +60,7 @@ export function resolveExprToColumn(expr, data, regl, plot) {
 }
 
 // Resolve a params dict recursively: column refs -> ColumnData, scalars pass through.
-function resolveParams(params, data, regl, plot) {
+async function resolveParams(params, data, regl, plot) {
   if (params === null || params === undefined) return params
   if (typeof params === 'number' || typeof params === 'boolean') return params
   if (params instanceof ColumnData) return params
@@ -75,11 +75,11 @@ function resolveParams(params, data, regl, plot) {
     const keys = Object.keys(params)
     if (keys.length === 1 &&
         (textureComputations.has(keys[0]) || glslComputations.has(keys[0]))) {
-      return resolveExprToColumn(params, data, regl, plot)
+      return await resolveExprToColumn(params, data, regl, plot)
     }
     const resolved = {}
     for (const [k, v] of Object.entries(params)) {
-      resolved[k] = resolveParams(v, data, regl, plot)
+      resolved[k] = await resolveParams(v, data, regl, plot)
     }
     return resolved
   }
@@ -91,7 +91,7 @@ function resolveParams(params, data, regl, plot) {
 // Entry point from LayerType.createDrawCommand. Returns:
 //   { kind: 'buffer', value: Float32Array }                 — fixed geometry
 //   { kind: 'computed', glslExpr, textures, col }           — data column
-export function resolveAttributeExpr(regl, expr, attrShaderName, plot) {
+export async function resolveAttributeExpr(regl, expr, attrShaderName, plot) {
   if (expr instanceof Float32Array) {
     return { kind: 'buffer', value: expr }
   }
@@ -99,7 +99,7 @@ export function resolveAttributeExpr(regl, expr, attrShaderName, plot) {
   const data = plot ? plot.currentData : null
   const col = (expr instanceof ColumnData)
     ? expr
-    : resolveExprToColumn(expr, data, regl, plot)
+    : await resolveExprToColumn(expr, data, regl, plot)
 
   const safePath = attrShaderName.replace(/[^a-zA-Z0-9_]/g, '_')
   const { glslExpr, textures } = col.resolve(safePath, regl)

@@ -150,10 +150,10 @@ export const multiLineLayerType = new LayerType({
     })
   },
 
-  createDrawCommand: function(regl, layer, plot) {
+  createDrawCommand: async function(regl, layer, plot) {
     const hasFilter = 'filter0' in layer.attributes
     this.vert = makeMultiLineVert(hasFilter)
-    return LayerType.prototype.createDrawCommand.call(this, regl, layer, plot)
+    return await LayerType.prototype.createDrawCommand.call(this, regl, layer, plot)
   },
 })
 

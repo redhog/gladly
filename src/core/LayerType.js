@@ -136,7 +136,7 @@ export class LayerType {
     if (createDrawCommand) this.createDrawCommand = createDrawCommand
   }
 
-  createDrawCommand(regl, layer, plot) {
+  async createDrawCommand(regl, layer, plot) {
     // --- Resolve attributes ---
     let vertSrc = this.vert
     const bufferAttrs = {}         // name → Float32Array (fixed geometry)
@@ -149,7 +149,7 @@ export class LayerType {
     const ndShapeUniforms = {}     // { u_col_name_shape: [x, y, z, w] }
 
     for (const [key, expr] of Object.entries(layer.attributes)) {
-      const result = resolveAttributeExpr(regl, expr, key, plot)
+      const result = await resolveAttributeExpr(regl, expr, key, plot)
       if (result.kind === 'buffer') {
         bufferAttrs[key] = result.value
       } else {
@@ -401,11 +401,11 @@ export class LayerType {
     return resolved
   }
 
-  createLayer(regl, parameters, data, plot) {
+  async createLayer(regl, parameters, data, plot) {
     if (!this._createLayer) {
       throw new Error(`LayerType '${this.name}' does not implement createLayer()`)
     }
-    const gpuConfigs = this._createLayer.call(this, regl, parameters, data, plot)
+    const gpuConfigs = await this._createLayer.call(this, regl, parameters, data, plot)
     const axisConfig = this.resolveAxisConfig(parameters, data)
 
     return gpuConfigs.map(gpuConfig => new Layer({

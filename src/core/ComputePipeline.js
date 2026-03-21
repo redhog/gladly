@@ -101,7 +101,7 @@ export class ComputePipeline extends GlBase {
   //
   // axes: { [quantityKind]: { min, max } } — sets filter axis ranges before computing.
   // Transforms that access a filter axis will see the configured range.
-  update({ data, transforms = [], axes = {} } = {}) {
+  async update({ data, transforms = [], axes = {} } = {}) {
     if (data !== undefined) {
       this._rawData = normalizeData(data)
     }
@@ -119,7 +119,7 @@ export class ComputePipeline extends GlBase {
 
     // Run transforms; filter axes are registered and data extents set during this step.
     // At this point filter ranges are all null (open bounds).
-    this._processTransforms(transforms)
+    await this._processTransforms(transforms)
 
     // Apply axes config to set filter ranges on any registered filter axis.
     for (const [axisId, axisConfig] of Object.entries(axes)) {
@@ -134,7 +134,7 @@ export class ComputePipeline extends GlBase {
 
     // Refresh transforms whose output depends on any filter axis that now has a range set.
     for (const node of this._dataTransformNodes) {
-      node.refreshIfNeeded(this)
+      await node.refreshIfNeeded(this)
     }
 
     return new ComputeOutput(this.currentData, this.regl)

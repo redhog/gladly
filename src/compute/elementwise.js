@@ -8,13 +8,13 @@ class ElementwiseData extends ComputedData {
     return params.columns.map(c => c.dst)
   }
 
-  compute(regl, params, data, getAxisDomain) {
+  async compute(regl, params, data, getAxisDomain) {
     const plotProxy = { currentData: data, getAxisDomain }
 
     let N = params.dataLength ?? null
     if (N == null) {
       for (const { src } of params.columns) {
-        const col = resolveExprToColumn(src, data, regl, plotProxy)
+        const col = await resolveExprToColumn(src, data, regl, plotProxy)
         if (col?.length !== null) { N = col.length; break }
       }
     }
@@ -22,7 +22,7 @@ class ElementwiseData extends ComputedData {
 
     const result = {}
     for (const { dst, src } of params.columns) {
-      const col = resolveExprToColumn(src, data, regl, plotProxy)
+      const col = await resolveExprToColumn(src, data, regl, plotProxy)
       const tex = col.toTexture(regl)
       tex._dataLength = N
       result[dst] = tex
