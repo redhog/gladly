@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html>
+<head><title>Test 05: RGBA+FLOAT texImage2D format</title></head>
+<body>
+<h2>Test 05: texImage2D with RGBA (not RGBA32F) internal format + FLOAT type</h2>
+<p>In WebGL2, the correct internal format for a 32-bit float RGBA texture is <code>RGBA32F</code>.
+Gladly's GlBase.js monkey-patches <code>gl.texImage2D</code> to auto-upgrade calls that use
+<code>RGBA + FLOAT</code> (the old WebGL1 way) to <code>RGBA32F</code>, implying the underlying
+code calls it incorrectly. This test calls <code>texImage2D</code> with the raw <code>RGBA + FLOAT</code>
+combination <em>without</em> the monkey-patch, to check whether the Nvidia driver crashes or just
+returns an error instead.</p>
+<p>It also tests the correct <code>RGBA32F</code> form as a control.</p>
+<canvas id="c" width="400" height="200" style="border:1px solid #ccc"></canvas>
+<pre id="log"></pre>
+<script>
+const canvas = document.getElementById('c');
+const log = document.getElementById('log');
+
+function addLog(msg) {
+  log.textContent += msg + '\n';
+  console.log(msg);
+}
+
+canvas.addEventListener('webglcontextlost', (e) => {
+  e.preventDefault();
+  addLog('EVENT: webglcontextlost — GPU context lost');
+});
+
+const gl = canvas.getContext('webgl2');
+if (!gl) {
+  addLog('ERROR: WebGL2 not available');
+} else {
+  addLog('OK: WebGL2 context created\n');
+
+  const extFloat = gl.getExtension('OES_texture_float');
+  addLog(`OES_texture_float: ${extFloat ? 'available' : 'not available'}`);
+  const extColorFloat = gl.getExtension('EXT_color_buffer_float');
+  addLog(`EXT_color_buffer_float: ${extColorFloat ? 'available' : 'not available'}\n`);
+
+  const data = new Float32Array(4 * 4 * 4); // 4×4 RGBA float texture
+  for (let i = 0; i < data.length; i++) data[i] = i / data.length;
+
+  // --- Test A: correct WebGL2 form (RGBA32F internal format) ---
+  addLog('Test A: texImage2D with RGBA32F (correct WebGL2 form)...');
+  gl.getError(); // clear any prior errors
+  try {
+    const texA = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texA);
+    gl.texImage2D(
+      gl.TEXTURE_2D, 0,
+      gl.RGBA32F,        // correct WebGL2 internal format
+      4, 4, 0,
+      gl.RGBA,           // format
+      gl.FLOAT,          // type
+      data
+    );
+    const err = gl.getError();
+    if (err !== gl.NO_ERROR) {
+      addLog(`Test A: GL error ${glErrorName(err)} — texture not created`);
+    } else {
+      addLog('Test A: OK — no GL error\n');
+    }
+    gl.deleteTexture(texA);
+  } catch(e) {
+    addLog(`Test A: JS exception: ${e}\n`);
+  }
+
+  // --- Test B: incorrect/legacy form (RGBA internal format + FLOAT type) ---
+  // This is what gladly's code does before the monkey-patch upgrades it.
+  // In WebGL2, passing RGBA as internalFormat with FLOAT type is technically
+  // invalid per spec. Some drivers return an error; others may crash.
+  addLog('Test B: texImage2D with RGBA internal format + FLOAT type (pre-patch form)...');
+  gl.getError();
+  try {
+    const texB = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texB);
+    gl.texImage2D(
+      gl.TEXTURE_2D, 0,
+      gl.RGBA,           // WRONG for WebGL2 float — should be RGBA32F
+      4, 4, 0,
+      gl.RGBA,
+      gl.FLOAT,
+      data
+    );
+    const err = gl.getError();
+    if (err !== gl.NO_ERROR) {
+      addLog(`Test B: GL error ${glErrorName(err)} — driver returned error (safe, expected)`);
+    } else {
+      addLog('Test B: NO GL error — driver silently accepted invalid format');
+    }
+    gl.deleteTexture(texB);
+  } catch(e) {
+    addLog(`Test B: JS exception: ${e}`);
+  }
+
+  addLog('\nIf this page is still alive, neither form crashed the driver.');
+  addLog('If the browser crashed BEFORE reaching this line, Test B is likely the culprit.');
+}
+
+function glErrorName(err) {
+  const gl2 = document.getElementById('c').getContext('webgl2');
+  const names = {
+    [gl2.NO_ERROR]: 'NO_ERROR',
+    [gl2.INVALID_ENUM]: 'INVALID_ENUM',
+    [gl2.INVALID_VALUE]: 'INVALID_VALUE',
+    [gl2.INVALID_OPERATION]: 'INVALID_OPERATION',
+    [gl2.OUT_OF_MEMORY]: 'OUT_OF_MEMORY',
+    [gl2.CONTEXT_LOST_WEBGL]: 'CONTEXT_LOST_WEBGL',
+  };
+  return names[err] || `0x${err.toString(16)}`;
+}
+</script>
+</body>
+</html>

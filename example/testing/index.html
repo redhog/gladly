@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Gladly WebGL Crash Tests</title>
+<style>
+  body { font-family: monospace; padding: 2em; }
+  ul { line-height: 2em; }
+  li { margin-bottom: 0.5em; }
+  .desc { color: #555; font-size: 0.9em; }
+</style>
+</head>
+<body>
+<h1>Gladly WebGL Crash Tests</h1>
+<p>Open each test one at a time. Report which ones crash the entire browser (not just the tab).</p>
+<ul>
+  <li>
+    <a href="01-desynchronized.html">01 — desynchronized: true context</a><br>
+    <span class="desc">Creates a WebGL2 context with { desynchronized: true } and runs a simple render loop.</span>
+  </li>
+  <li>
+    <a href="02-long-shader.html">02 — Long-running single draw call</a><br>
+    <span class="desc">Fullscreen quad with a 500K-iteration fragment shader. Tests Windows TDR threshold (~2s GPU timeout).</span>
+  </li>
+  <li>
+    <a href="03-many-fbo-passes.html">03 — Many sequential FBO passes</a><br>
+    <span class="desc">64 sequential framebuffer ping-pong passes with texture reads. Simulates FFT compute pipeline.</span>
+  </li>
+  <li>
+    <a href="04-additive-blend-1m.html">04 — 1M-point additive blend scatter</a><br>
+    <span class="desc">Draws 1 million points with additive blending. Simulates histogram scatter pass.</span>
+  </li>
+  <li>
+    <a href="05-float-texture-format.html">05 — RGBA+FLOAT texImage2D format</a><br>
+    <span class="desc">Calls texImage2D with RGBA (not RGBA32F) as internal format + FLOAT type. Tests invalid WebGL2 format handling.</span>
+  </li>
+</ul>
+</body>
+</html>

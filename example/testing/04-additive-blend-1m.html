@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html>
+<head><title>Test 04: 1M-point additive blend scatter</title></head>
+<body>
+<h2>Test 04: 1 million points with additive blending</h2>
+<p>Draws 1,000,000 points (gl.POINTS, pointSize=1) into an FBO with additive blending enabled.
+Each point writes a vec4 based on its bin/channel assignment. Simulates the gladly histogram
+scatter pass. Tests whether large additive-blend draw calls cause driver instability.</p>
+<canvas id="c" width="800" height="600" style="border:1px solid #ccc"></canvas>
+<pre id="log"></pre>
+<script>
+const canvas = document.getElementById('c');
+const log = document.getElementById('log');
+
+function addLog(msg) {
+  log.textContent += msg + '\n';
+  console.log(msg);
+}
+
+canvas.addEventListener('webglcontextlost', (e) => {
+  e.preventDefault();
+  addLog('EVENT: webglcontextlost — GPU context lost');
+});
+
+const gl = canvas.getContext('webgl2');
+if (!gl) {
+  addLog('ERROR: WebGL2 not available');
+} else {
+  addLog('OK: WebGL2 context created');
+
+  const N = 1_000_000;
+  const W = 800, H = 600;
+
+  // Vertex shader: each vertex is a data point; scatter it to a pixel position
+  // based on its value (simulating histogram bin assignment).
+  // a_value is the raw data value; we bin it into [0, W) and select RGBA channel.
+  const vs = `#version 300 es
+    in float a_value;    // data value in [0, 1)
+    in float a_channel;  // which RGBA channel this point contributes to (0-3)
+    out vec4 v_color;
+    void main() {
+      // Map value to x position in [-1, 1], place at a fixed y
+      float x = a_value * 2.0 - 1.0;
+      float y = 0.0;
+      gl_Position = vec4(x, y, 0.0, 1.0);
+      gl_PointSize = 1.0;
+      // Write only into the appropriate channel (simulates makeHistogram)
+      float c = floor(a_channel);
+      v_color = vec4(float(c < 0.5), float(c >= 0.5 && c < 1.5),
+                     float(c >= 1.5 && c < 2.5), float(c >= 2.5));
+    }`;
+
+  const fs = `#version 300 es
+    precision mediump float;
+    in vec4 v_color;
+    out vec4 outColor;
+    void main() { outColor = v_color; }`;
+
+  const prog = compileProgram(gl, vs, fs);
+  if (!prog) { addLog('ERROR: shader compilation failed'); }
+  else {
+    gl.useProgram(prog);
+
+    addLog(`Generating ${N.toLocaleString()} random data points on CPU...`);
+    const t0 = performance.now();
+
+    const values   = new Float32Array(N);
+    const channels = new Float32Array(N);
+    // Use a simple LCG for speed — Math.random() in a loop of 1M is slow
+    let seed = 12345;
+    for (let i = 0; i < N; i++) {
+      seed = (seed * 1664525 + 1013904223) & 0xffffffff;
+      values[i]   = ((seed >>> 0) / 0xffffffff);
+      seed = (seed * 1664525 + 1013904223) & 0xffffffff;
+      channels[i] = ((seed >>> 0) % 4);
+    }
+    addLog(`CPU data generated in ${((performance.now() - t0)/1000).toFixed(2)}s`);
+
+    const bufVal = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, bufVal);
+    gl.bufferData(gl.ARRAY_BUFFER, values, gl.STATIC_DRAW);
+    const locVal = gl.getAttribLocation(prog, 'a_value');
+    gl.enableVertexAttribArray(locVal);
+    gl.vertexAttribPointer(locVal, 1, gl.FLOAT, false, 0, 0);
+
+    const bufChan = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, bufChan);
+    gl.bufferData(gl.ARRAY_BUFFER, channels, gl.STATIC_DRAW);
+    const locChan = gl.getAttribLocation(prog, 'a_channel');
+    gl.enableVertexAttribArray(locChan);
+    gl.vertexAttribPointer(locChan, 1, gl.FLOAT, false, 0, 0);
+
+    // Set up FBO target
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, W, H, 0, gl.RGBA, gl.FLOAT, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+
+    const fbo = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+
+    const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+    if (status !== gl.FRAMEBUFFER_COMPLETE) {
+      addLog(`ERROR: framebuffer incomplete (${status}) — float FBO may not be supported`);
+    } else {
+      // Enable additive blending (key: ONE + ONE)
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.ONE, gl.ONE);
+
+      gl.viewport(0, 0, W, H);
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+
+      addLog(`Issuing draw call for ${N.toLocaleString()} points with additive blending...`);
+      const t1 = performance.now();
+
+      gl.drawArrays(gl.POINTS, 0, N);
+      gl.finish();
+
+      const elapsed = ((performance.now() - t1) / 1000).toFixed(3);
+      addLog(`DONE: draw completed in ${elapsed}s — no crash`);
+
+      // Blit to canvas so we can see something
+      gl.disable(gl.BLEND);
+      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, fbo);
+      gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
+      gl.viewport(0, 0, W, H);
+      // Can't directly blit float FBO to canvas; render it via a quad instead
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      // Just clear to a success color
+      gl.clearColor(0.1, 0.6, 0.1, 1.0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+    }
+  }
+}
+
+function compileProgram(gl, vsSrc, fsSrc) {
+  const vs = gl.createShader(gl.VERTEX_SHADER);
+  gl.shaderSource(vs, vsSrc);
+  gl.compileShader(vs);
+  if (!gl.getShaderParameter(vs, gl.COMPILE_STATUS)) {
+    addLog('VS error: ' + gl.getShaderInfoLog(vs));
+    return null;
+  }
+  const fs = gl.createShader(gl.FRAGMENT_SHADER);
+  gl.shaderSource(fs, fsSrc);
+  gl.compileShader(fs);
+  if (!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) {
+    addLog('FS error: ' + gl.getShaderInfoLog(fs));
+    return null;
+  }
+  const prog = gl.createProgram();
+  gl.attachShader(prog, vs);
+  gl.attachShader(prog, fs);
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+    addLog('Link error: ' + gl.getProgramInfoLog(prog));
+    return null;
+  }
+  return prog;
+}
+</script>
+</body>
+</html>

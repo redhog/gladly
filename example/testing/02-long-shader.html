@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html>
+<head><title>Test 02: Long-running shader</title></head>
+<body>
+<h2>Test 02: Single draw call with very long fragment shader</h2>
+<p>Renders a fullscreen quad where each fragment runs a 500,000-iteration loop.
+The loop has a data dependency (Mandelbrot-like iteration) so the GPU compiler cannot eliminate it.
+On an 800×600 canvas that is 480M × 500K = 240 billion dependent operations.
+A fast GPU may complete this in a few seconds; a slow one will trigger the Windows TDR (~2s GPU timeout).</p>
+<canvas id="c" width="800" height="600" style="border:1px solid #ccc"></canvas>
+<pre id="log"></pre>
+<script>
+const canvas = document.getElementById('c');
+const log = document.getElementById('log');
+
+function addLog(msg) {
+  log.textContent += msg + '\n';
+  console.log(msg);
+}
+
+canvas.addEventListener('webglcontextlost', (e) => {
+  e.preventDefault();
+  addLog('EVENT: webglcontextlost — GPU context lost (TDR likely fired)');
+});
+
+const gl = canvas.getContext('webgl2');
+if (!gl) {
+  addLog('ERROR: WebGL2 not available');
+} else {
+  addLog('OK: WebGL2 context created');
+
+  // Fragment shader: 500K iterations of Mandelbrot without early-exit.
+  // Every pixel runs exactly ITER_COUNT iterations (no break), so the GPU
+  // cannot predict or short-circuit the work. Output depends on final z,
+  // preventing dead-code elimination.
+  const vs = `#version 300 es
+    in vec2 a_pos;
+    out vec2 v_uv;
+    void main() {
+      v_uv = a_pos * 0.5 + 0.5;
+      gl_Position = vec4(a_pos, 0.0, 1.0);
+    }`;
+
+  const fs = `#version 300 es
+    precision highp float;
+    in vec2 v_uv;
+    out vec4 outColor;
+    void main() {
+      vec2 c = (v_uv * 2.0 - 1.0) * 1.5;
+      vec2 z = vec2(0.0);
+      // No break — all pixels always run every iteration.
+      // Compiler cannot eliminate due to data dependency on z.
+      for (int i = 0; i < 500000; i++) {
+        z = vec2(z.x*z.x - z.y*z.y + c.x, 2.0*z.x*z.y + c.y);
+      }
+      outColor = vec4(tanh(length(z) * 0.1), 0.2, 0.5, 1.0);
+    }`;
+
+  const prog = compileProgram(gl, vs, fs);
+  if (!prog) { addLog('ERROR: shader compilation failed'); }
+  else {
+    gl.useProgram(prog);
+
+    const buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+    const loc = gl.getAttribLocation(prog, 'a_pos');
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+
+    addLog('Starting draw call — this may take several seconds or crash the browser...');
+    const t0 = performance.now();
+
+    requestAnimationFrame(() => {
+      gl.clearColor(0, 0, 0, 1);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      // gl.finish() forces the GPU to complete before we measure time.
+      // Without it, drawArrays returns immediately and the GPU runs async.
+      gl.finish();
+      const elapsed = ((performance.now() - t0) / 1000).toFixed(2);
+      addLog(`DONE: draw completed in ${elapsed}s — no TDR crash`);
+    });
+  }
+}
+
+function compileProgram(gl, vsSrc, fsSrc) {
+  const vs = gl.createShader(gl.VERTEX_SHADER);
+  gl.shaderSource(vs, vsSrc);
+  gl.compileShader(vs);
+  if (!gl.getShaderParameter(vs, gl.COMPILE_STATUS)) {
+    addLog('VS error: ' + gl.getShaderInfoLog(vs));
+    return null;
+  }
+  const fs = gl.createShader(gl.FRAGMENT_SHADER);
+  gl.shaderSource(fs, fsSrc);
+  gl.compileShader(fs);
+  if (!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) {
+    addLog('FS error: ' + gl.getShaderInfoLog(fs));
+    return null;
+  }
+  const prog = gl.createProgram();
+  gl.attachShader(prog, vs);
+  gl.attachShader(prog, fs);
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+    addLog('Link error: ' + gl.getProgramInfoLog(prog));
+    return null;
+  }
+  return prog;
+}
+</script>
+</body>
+</html>
