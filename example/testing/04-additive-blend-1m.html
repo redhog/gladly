@@ -28,6 +28,9 @@ if (!gl) {
 } else {
   addLog('OK: WebGL2 context created');
 
+  const extCBF = gl.getExtension('EXT_color_buffer_float');
+  addLog(extCBF ? 'OK: EXT_color_buffer_float enabled' : 'WARN: EXT_color_buffer_float not available — float FBO will fail');
+
   const N = 1_000_000;
   const W = 800, H = 600;
 
