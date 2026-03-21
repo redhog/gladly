@@ -28,8 +28,8 @@
   ],
   "devDependencies": {
     "@json-editor/json-editor": "^2.15.1",
-    "@rollup/plugin-node-resolve": "^15.0.0",
-    "@rollup/plugin-terser": "^0.4.0",
-    "rollup": "^4.0.0"
+    "@rollup/plugin-node-resolve": "^15.3.1",
+    "@rollup/plugin-terser": "^0.4.4",
+    "rollup": "^4.59.1"
   }
 }
