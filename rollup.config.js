@@ -1,5 +1,6 @@
 import resolve from '@rollup/plugin-node-resolve';
 import terser from '@rollup/plugin-terser';
+import json from '@rollup/plugin-json';
 
 export default [
   // ESM bundle for npm/bundler consumers — dependencies stay external
@@ -14,7 +15,7 @@ export default [
   // Standalone IIFE bundle for <script> tag use — all dependencies bundled in
   {
     input: 'src/index.js',
-    plugins: [resolve()],
+    plugins: [resolve(), json()],
     output: [
       {
         file: 'dist/gladly.iife.js',
