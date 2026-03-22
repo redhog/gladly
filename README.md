@@ -19,6 +19,10 @@ Gladly combines WebGL rendering (via regl) with D3.js for interactive axes and z
 - 🌈 Axis to coloring or filtering linking
 - 🌎 Basemap layer with XYZ,WMS and WMTS support and CRS reprojection
 
+## Extensions
+
+- **[gladly-jupyter](https://redhog.github.io/gladly-jupyter/)** - Jupyter notebook widget extension for Gladly
+
 ## Documentation
 
 - **[Quick Start](docs/Quickstart.md)** - Installation and minimal working example
