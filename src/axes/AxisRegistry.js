@@ -138,7 +138,9 @@ export class AxisRegistry {
       const scale = this.getScale(axis)
       if (!scale) continue
       const override = axesOverrides[axis]
-      const domain   = override ? [override.min, override.max] : autoDomains[axis]
+      const domain   = (override?.min != null && override?.max != null)
+        ? [override.min, override.max]
+        : autoDomains[axis]
       if (domain) {
         const [lo, hi] = domain
         if (lo == null || hi == null || !isFinite(lo) || !isFinite(hi))
