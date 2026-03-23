@@ -362,6 +362,7 @@ export class Plot extends GlBase {
   }
 
   async _initialize() {
+    const epoch = ++this._initEpoch
     const { layers = [], axes = {}, colorbars = [], transforms = [] } = this.currentConfig
 
     if (!this.regl) {
@@ -395,8 +396,10 @@ export class Plot extends GlBase {
     this.colorAxisRegistry = new ColorAxisRegistry()
     this.filterAxisRegistry = new FilterAxisRegistry()
 
-    await this._processTransforms(transforms)
-    await this._processLayers(layers, this.currentData)
+    await this._processTransforms(transforms, epoch)
+    if (this._initEpoch !== epoch) return
+    await this._processLayers(layers, this.currentData, epoch)
+    if (this._initEpoch !== epoch) return
     this._setDomains(axes)
 
     // Detect 3D mode: any axis outside the 4 standard 2D positions has a scale.
@@ -709,7 +712,7 @@ void main() {
     this.canvas.remove()
   }
 
-  async _processLayers(layersConfig, data) {
+  async _processLayers(layersConfig, data, epoch) {
     const TDR_STEP_MS = 500
     for (let configLayerIndex = 0; configLayerIndex < layersConfig.length; configLayerIndex++) {
       const layerSpec = layersConfig[configLayerIndex]
@@ -749,6 +752,7 @@ void main() {
       } catch (e) {
         throw new Error(`Layer '${layerTypeName}' (index ${configLayerIndex}) failed to create: ${e.message}`, { cause: e })
       }
+      if (this._initEpoch !== epoch) return
       for (const layer of gpuLayers) {
         layer.configLayerIndex = configLayerIndex
         const stepStart = performance.now()
@@ -757,11 +761,14 @@ void main() {
         } catch (e) {
           throw new Error(`Layer '${layerTypeName}' (index ${configLayerIndex}) failed to build draw command: ${e.message}`, { cause: e })
         }
+        if (this._initEpoch !== epoch) return
         if (performance.now() - stepStart > TDR_STEP_MS)
           await new Promise(r => requestAnimationFrame(r))
+        if (this._initEpoch !== epoch) return
         this.layers.push(layer)
       }
     }
+    if (this._initEpoch !== epoch) return
     compileEnqueuedShaders(this.regl)
   }
 

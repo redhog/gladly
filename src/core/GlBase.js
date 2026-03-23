@@ -13,6 +13,7 @@ export class GlBase {
     this.filterAxisRegistry = null
     this._axisCache = new Map()
     this._axesProxy = null
+    this._initEpoch = 0
   }
 
   _initRegl(canvas) {
@@ -98,7 +99,7 @@ export class GlBase {
   // No-op in base class. Overridden by Plot to schedule a WebGL render frame.
   scheduleRender() {}
 
-  async _processTransforms(transforms) {
+  async _processTransforms(transforms, epoch) {
     if (!transforms || transforms.length === 0) return
 
     const TDR_STEP_MS = 500
@@ -124,6 +125,7 @@ export class GlBase {
       }
       if (performance.now() - stepStart > TDR_STEP_MS)
         await new Promise(r => requestAnimationFrame(r))
+      if (this._initEpoch !== epoch) return
 
       const filterDataExtents = node._meta?.filterDataExtents ?? {}
       for (const [qk, extent] of Object.entries(filterDataExtents)) {
