@@ -20,9 +20,12 @@ import { GlBase } from "./GlBase.js"
 // block, which can trigger the Windows TDR watchdog (~2 s GPU timeout).
 const TDR_STEP_MS = 500
 
-// Minimum ms between renders for plots updated via a linked axis.
-// Keeps linked secondary plots (e.g. histograms) from blocking the primary plot's frame rate.
-const LINK_THROTTLE_MS = 150
+// Throttle linked-plot renders when the source plot's "blocked lag" is high.
+// Blocked lag = max(0, RAF_wait - own_render_time): high when other plots' renders
+// are delaying the source's frames, but near zero for fast plots (colorbars, filterbars).
+const LINK_THROTTLE_MS      = 150   // ms between renders of a throttled linked plot
+const BLOCKED_LAG_THRESHOLD = 30    // ms: throttle kicks in above this blocked lag
+const BLOCKED_LAG_ALPHA     = 0.5   // EMA weight — reacts within ~2 samples
 
 function buildPlotSchema(data, config) {
   const layerTypes = getRegisteredLayerTypes()
@@ -221,7 +224,8 @@ export class Plot extends GlBase {
     this._rendering = false
     this._lastRenderEnd = performance.now()
     this._throttleTimerId = null
-    this._pendingFromLink = false
+    this._pendingSourcePlot = null   // source plot of pending linked render (for throttle check)
+    this._blockedLag = 0             // EMA of (RAF wait - own render time); high when blocked by others
     this._is3D = false
     this._camera = null
     this._tickLabelAtlas = null
@@ -865,16 +869,19 @@ void main() {
     return buildPlotSchema(data, config)
   }
 
-  scheduleRender(fromLink = false) {
+  scheduleRender(sourcePlot = null) {
     if (!this.regl) return
     this._dirty = true
-    if (fromLink) this._pendingFromLink = true  // sticky: persists until RAF is queued
+    // Track source plot — sticky until RAF is committed so timer/vsync re-entries
+    // can still check whether throttling is warranted.
+    if (sourcePlot) this._pendingSourcePlot = sourcePlot
     if (this._rafId !== null || this._rendering || this._throttleTimerId !== null) return
 
-    // Throttle renders triggered by linked-axis domain changes so secondary plots
-    // (e.g. histograms) don't block the primary plot's frame rate.
-    // _pendingFromLink stays true across timer/vsync re-entries until a RAF is committed.
-    if (this._pendingFromLink) {
+    // Throttle only when the source plot is being blocked by slow linked renders.
+    // blocked lag = RAF wait − own render time; near zero for fast plots (colorbars,
+    // filterbars) so those never throttle this plot's renders.
+    const source = this._pendingSourcePlot
+    if (source && source._blockedLag > BLOCKED_LAG_THRESHOLD) {
       const delay = LINK_THROTTLE_MS - (performance.now() - this._lastRenderEnd)
       if (delay > 0) {
         this._throttleTimerId = setTimeout(() => {
@@ -884,7 +891,7 @@ void main() {
         return
       }
     }
-    this._pendingFromLink = false  // commit: reset now that we're queuing the RAF
+    this._pendingSourcePlot = null  // commit: reset now that we're queuing the RAF
 
     const schedTime = performance.now()
     const _st0 = schedTime
@@ -911,6 +918,9 @@ void main() {
         }
         const dt = performance.now() - t0
         if (dt > 10) console.warn(`[gladly] render ${dt.toFixed(0)}ms`)
+        // Update blocked-lag EMA: how long were we waiting for others vs rendering ourselves?
+        const blockedLag = Math.max(0, lag - dt)
+        this._blockedLag = this._blockedLag * (1 - BLOCKED_LAG_ALPHA) + blockedLag * BLOCKED_LAG_ALPHA
         this._lastRenderEnd = performance.now()
         // After submitting GPU work, hold _rafId so no new render can be queued
         // until the compositor is ready for the next frame (browser waits for GPU).

@@ -86,12 +86,12 @@ export class Axis {
 
   getDomain() { return this._plot.getAxisDomain(this._name) }
 
-  setDomain(domain, { fromLink = false } = {}) {
+  setDomain(domain, { sourcePlot = null } = {}) {
     if (this._propagating) return
     this._propagating = true
     try {
       this._plot.setAxisDomain(this._name, domain)
-      this._plot.scheduleRender(fromLink)
+      this._plot.scheduleRender(sourcePlot)
       for (const cb of this._listeners) cb(domain)
     } finally {
       this._propagating = false

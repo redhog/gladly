@@ -16,8 +16,8 @@ export function linkAxes(axis1, axis2) {
     throw new Error(`Cannot link axes with incompatible quantity kinds: ${qk1} vs ${qk2}`)
   }
 
-  const cb1 = (domain) => axis2.setDomain(domain, { fromLink: true })
-  const cb2 = (domain) => axis1.setDomain(domain, { fromLink: true })
+  const cb1 = (domain) => axis2.setDomain(domain, { sourcePlot: axis1._plot })
+  const cb2 = (domain) => axis1.setDomain(domain, { sourcePlot: axis2._plot })
 
   axis1.subscribe(cb1)
   axis2.subscribe(cb2)
