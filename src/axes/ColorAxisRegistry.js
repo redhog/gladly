@@ -81,6 +81,8 @@ export class ColorAxisRegistry {
 
       if (min !== Infinity) {
         this.setRange(quantityKind, override?.min ?? min, override?.max ?? max)
+      } else if (override?.min !== undefined && override?.max !== undefined) {
+        this.setRange(quantityKind, override.min, override.max)
       }
     }
 
