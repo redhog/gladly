@@ -140,34 +140,14 @@ Renders bar charts with configurable bin positions and heights.
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `xData` | string | yes | — | Column name for bin center x positions |
-| `yData` | string | yes | — | Column name for bar heights (counts) |
+| `xData` | string | yes | — | Column name for bin center positions |
+| `yData` | string | yes | — | Column name for bar lengths (counts) |
+| `orientation` | string | no | `"vertical"` | `"vertical"`: bins on x-axis, bars extend up; `"horizontal"`: bins on y-axis, bars extend right |
 | `color` | array | no | `[0.2, 0.5, 0.8, 1.0]` | Bar color as `[R, G, B, A]` in [0, 1] |
 | `xAxis` | string | no | `"xaxis_bottom"` | x-axis position |
 | `yAxis` | string | no | `"yaxis_left"` | y-axis position |
 
----
-
-## histogram
-
-Renders a histogram with optional filtering. Uses GPU-accelerated binning via the `histogram` or `filteredHistogram` texture computation.
-
-**Auto-registered** on import. `histogramLayerType` is also exported if needed.
-
-```javascript
-{ histogram: { vData: "temperature", filterColumn: "depth", bins: 50 } }
-```
-
-### Parameters
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `vData` | string | yes | — | Data column to histogram |
-| `filterColumn` | string | yes | — | Data column used to filter points via its filter axis, or `"none"` |
-| `bins` | integer | no | auto | Number of bins (auto-selected by sqrt rule if omitted) |
-| `color` | array | no | `[0.2, 0.5, 0.8, 1.0]` | Bar color as `[R, G, B, A]` in [0, 1] |
-| `xAxis` | string | no | `"xaxis_bottom"` | x-axis position |
-| `yAxis` | string | no | `"yaxis_left"` | y-axis position |
+When `orientation` is `"horizontal"`, the quantity kinds are swapped: `xData`'s quantity kind is bound to `yAxis` (bin positions) and `yData`'s quantity kind is bound to `xAxis` (bar lengths). This is the correct wiring for a sideways histogram sharing its position axis with an adjacent scatter plot.
 
 ---
 

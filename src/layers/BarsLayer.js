@@ -4,13 +4,16 @@ import { registerLayerType } from "../core/LayerTypeRegistry.js"
 import { AXES } from "../axes/AxisRegistry.js"
 
 // Generic instanced bar layer. Renders `instanceCount` bars using live texture refs
-// for bin center x positions and bar heights (counts).
+// for bin center positions and bar lengths (counts).
 //
 // Each bar is a quad drawn as a triangle strip (4 vertices).
 // Per-instance: x_center (bin centre, from texture) and a_pickId (bin index, divisor 1).
 // Per-vertex:   a_corner ∈ {0,1,2,3} — selects which corner of the rectangle.
 //   corner 0: bottom-left   corner 1: bottom-right
 //   corner 2: top-left      corner 3: top-right
+//
+// orientation "vertical"   — bins on x-axis, bars extend upward (default)
+// orientation "horizontal" — bins on y-axis, bars extend rightward
 
 const BARS_VERT = `#version 300 es
   precision mediump float;
@@ -24,13 +27,14 @@ const BARS_VERT = `#version 300 es
   uniform float xScaleType;
   uniform float yScaleType;
   uniform float u_binHalfWidth;
+  uniform float u_horizontal;
 
   void main() {
     float side = mod(a_corner, 2.0);       // 0 = left, 1 = right
-    float top  = floor(a_corner / 2.0);    // 0 = bottom, 1 = top
+    float vert = floor(a_corner / 2.0);    // 0 = bottom, 1 = top
 
-    float bx = x_center + (side * 2.0 - 1.0) * u_binHalfWidth;
-    float by = top * count;
+    float bx = mix(x_center + (side * 2.0 - 1.0) * u_binHalfWidth, side * count, u_horizontal);
+    float by = mix(vert * count, x_center + (vert * 2.0 - 1.0) * u_binHalfWidth, u_horizontal);
 
     gl_Position = plot_pos(vec2(bx, by));
   }
@@ -51,7 +55,15 @@ class BarsLayerType extends LayerType {
 
   _getAxisConfig(parameters, data) {
     const d = Data.wrap(data)
-    const { xData, yData, xAxis = "xaxis_bottom", yAxis = "yaxis_left" } = parameters
+    const { xData, yData, xAxis = "xaxis_bottom", yAxis = "yaxis_left", orientation = "vertical" } = parameters
+    if (orientation === "horizontal") {
+      return {
+        xAxis,
+        xAxisQuantityKind: d.getQuantityKind(yData) ?? yData,
+        yAxis,
+        yAxisQuantityKind: d.getQuantityKind(xData) ?? xData,
+      }
+    }
     return {
       xAxis,
       xAxisQuantityKind: d.getQuantityKind(xData) ?? xData,
@@ -83,6 +95,12 @@ class BarsLayerType extends LayerType {
           default: [0.2, 0.5, 0.8, 1.0],
           description: "Bar colour as [R, G, B, A] in [0, 1]"
         },
+        orientation: {
+          type: "string",
+          enum: ["vertical", "horizontal"],
+          default: "vertical",
+          description: "vertical: bins on x-axis, bars extend up; horizontal: bins on y-axis, bars extend right"
+        },
         xAxis: {
           type: "string",
           enum: AXES.filter(a => a.includes("x")),
@@ -104,6 +122,7 @@ class BarsLayerType extends LayerType {
       xData,
       yData,
       color = [0.2, 0.5, 0.8, 1.0],
+      orientation = "vertical",
     } = parameters
 
     const xRef = d.getData(xData)
@@ -132,6 +151,7 @@ class BarsLayerType extends LayerType {
       uniforms: {
         u_binHalfWidth: binHalfWidth,
         u_color: color,
+        u_horizontal: orientation === "horizontal" ? 1.0 : 0.0,
       },
       vertexCount: 4,
       instanceCount: bins,
