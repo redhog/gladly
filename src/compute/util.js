@@ -1,15 +1,50 @@
 import { registerTextureComputation, registerGlslComputation, EXPRESSION_REF } from "./ComputationRegistry.js"
 import { TextureComputation, GlslComputation } from "../data/Computation.js"
-import { GlslColumn, uploadToTexture } from "../data/ColumnData.js"
+import { GlslColumn } from "../data/ColumnData.js"
+
+// Shared helper: allocate an output texture + FBO and run a fullscreen quad.
+function runFullscreenQuad(regl, N, fragGlsl, uniforms = {}) {
+  const nTexels = Math.ceil(N / 4)
+  const w = Math.min(nTexels, regl.limits.maxTextureSize)
+  const h = Math.ceil(nTexels / w)
+  const outputTex = regl.texture({ width: w, height: h, type: 'float', format: 'rgba' })
+  const outputFBO = regl.framebuffer({ color: outputTex, depth: false, stencil: false })
+  regl({
+    framebuffer: outputFBO,
+    vert: `#version 300 es
+precision highp float;
+in vec2 a_position;
+void main() { gl_Position = vec4(a_position, 0.0, 1.0); }`,
+    frag: fragGlsl(w),
+    attributes: { a_position: [[-1, -1], [1, -1], [-1, 1], [1, 1]] },
+    uniforms,
+    count: 4,
+    primitive: 'triangle strip'
+  })()
+  outputTex._dataLength = N
+  return outputTex
+}
 
 // ─── linspace ─────────────────────────────────────────────────────────────────
-// Produces N values in ]0, 1[ : value[i] = (i + 0.5) / N
+// Produces N values in ]0, 1[ : value[i] = (i + 0.5) / N  — fully on GPU.
 class LinspaceComputation extends TextureComputation {
   compute(regl, inputs, _getAxisDomain) {
     const N = inputs.length
-    const arr = new Float32Array(N)
-    for (let i = 0; i < N; i++) arr[i] = (i + 0.5) / N
-    return uploadToTexture(regl, arr)
+    return runFullscreenQuad(regl, N, w => `#version 300 es
+precision highp float;
+uniform int u_N;
+out vec4 fragColor;
+float linVal(int idx) { return (float(idx) + 0.5) / float(u_N); }
+void main() {
+  int texelI = int(gl_FragCoord.y) * ${w} + int(gl_FragCoord.x);
+  int base = texelI * 4;
+  fragColor = vec4(
+    base + 0 < u_N ? linVal(base + 0) : 0.0,
+    base + 1 < u_N ? linVal(base + 1) : 0.0,
+    base + 2 < u_N ? linVal(base + 2) : 0.0,
+    base + 3 < u_N ? linVal(base + 3) : 0.0
+  );
+}`, { u_N: N })
   }
 
   schema(_data) {
@@ -27,13 +62,24 @@ class LinspaceComputation extends TextureComputation {
 registerTextureComputation('linspace', new LinspaceComputation())
 
 // ─── range ────────────────────────────────────────────────────────────────────
-// Produces N integer values: 0, 1, 2, ..., N-1
+// Produces N integer values: 0, 1, 2, ..., N-1  — fully on GPU.
 class RangeComputation extends TextureComputation {
   compute(regl, inputs, _getAxisDomain) {
     const N = inputs.length
-    const arr = new Float32Array(N)
-    for (let i = 0; i < N; i++) arr[i] = i
-    return uploadToTexture(regl, arr)
+    return runFullscreenQuad(regl, N, w => `#version 300 es
+precision highp float;
+uniform int u_N;
+out vec4 fragColor;
+void main() {
+  int texelI = int(gl_FragCoord.y) * ${w} + int(gl_FragCoord.x);
+  int base = texelI * 4;
+  fragColor = vec4(
+    base + 0 < u_N ? float(base + 0) : 0.0,
+    base + 1 < u_N ? float(base + 1) : 0.0,
+    base + 2 < u_N ? float(base + 2) : 0.0,
+    base + 3 < u_N ? float(base + 3) : 0.0
+  );
+}`, { u_N: N })
   }
 
   schema(_data) {
@@ -101,21 +147,7 @@ class RandomComputation extends TextureComputation {
   compute(regl, inputs, _getAxisDomain) {
     const N    = inputs.length
     const seed = (inputs.seed || 0) === 0 ? (Math.random() * 0x7fffffff) | 0 : inputs.seed
-
-    const nTexels = Math.ceil(N / 4)
-    const w = Math.min(nTexels, regl.limits.maxTextureSize)
-    const h = Math.ceil(nTexels / w)
-
-    const outputTex = regl.texture({ width: w, height: h, type: 'float', format: 'rgba' })
-    const outputFBO = regl.framebuffer({ color: outputTex, depth: false, stencil: false })
-
-    regl({
-      framebuffer: outputFBO,
-      vert: `#version 300 es
-precision highp float;
-in vec2 a_position;
-void main() { gl_Position = vec4(a_position, 0.0, 1.0); }`,
-      frag: `#version 300 es
+    return runFullscreenQuad(regl, N, w => `#version 300 es
 precision highp float;
 uniform int u_seed;
 uniform int u_N;
@@ -139,20 +171,13 @@ float randVal(int idx) {
 void main() {
   int texelI = int(gl_FragCoord.y) * ${w} + int(gl_FragCoord.x);
   int base = texelI * 4;
-  float v0 = base + 0 < u_N ? randVal(base + 0) : 0.0;
-  float v1 = base + 1 < u_N ? randVal(base + 1) : 0.0;
-  float v2 = base + 2 < u_N ? randVal(base + 2) : 0.0;
-  float v3 = base + 3 < u_N ? randVal(base + 3) : 0.0;
-  fragColor = vec4(v0, v1, v2, v3);
-}`,
-      attributes: { a_position: [[-1, -1], [1, -1], [-1, 1], [1, 1]] },
-      uniforms: { u_seed: seed | 0, u_N: N },
-      count: 4,
-      primitive: 'triangle strip'
-    })()
-
-    outputTex._dataLength = N
-    return outputTex
+  fragColor = vec4(
+    base + 0 < u_N ? randVal(base + 0) : 0.0,
+    base + 1 < u_N ? randVal(base + 1) : 0.0,
+    base + 2 < u_N ? randVal(base + 2) : 0.0,
+    base + 3 < u_N ? randVal(base + 3) : 0.0
+  );
+}`, { u_seed: seed | 0, u_N: N })
   }
 
   schema(_data) {

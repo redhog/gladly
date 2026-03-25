@@ -1,6 +1,7 @@
 import { registerComputedData, EXPRESSION_REF, resolveExprToColumn } from "./ComputationRegistry.js"
 import { ComputedData } from "../data/Computation.js"
-import { ColumnData } from "../data/ColumnData.js"
+
+const TDR_STEP_MS = 500
 
 class ElementwiseData extends ComputedData {
   columns(params) {
@@ -21,12 +22,23 @@ class ElementwiseData extends ComputedData {
     if (N == null) throw new Error('ElementwiseData: cannot determine data length; set dataLength param')
 
     const result = {}
-    for (const { dst, src } of params.columns) {
+    const quantityKinds = {}
+    let stepStart = performance.now()
+
+    for (const { dst, src, quantityKind } of params.columns) {
       const col = await resolveExprToColumn(src, data, regl, plotProxy)
       const tex = col.toTexture(regl)
       tex._dataLength = N
       result[dst] = tex
+      if (quantityKind) quantityKinds[dst] = quantityKind
+
+      if (performance.now() - stepStart > TDR_STEP_MS) {
+        await new Promise(r => requestAnimationFrame(r))
+        stepStart = performance.now()
+      }
     }
+
+    if (Object.keys(quantityKinds).length > 0) result._meta = { quantityKinds }
     return result
   }
 
@@ -44,8 +56,9 @@ class ElementwiseData extends ComputedData {
           items: {
             type: 'object',
             properties: {
-              dst: { type: 'string', description: 'Output column name' },
-              src: EXPRESSION_REF
+              dst:          { type: 'string', description: 'Output column name' },
+              src:          EXPRESSION_REF,
+              quantityKind: { type: 'string', description: 'Quantity kind for axis matching (optional)' }
             },
             required: ['dst', 'src']
           }
