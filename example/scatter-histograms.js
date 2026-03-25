@@ -30,25 +30,27 @@ const scatterConfig = {
   "layers": [
     {
       "points": {
-        "xData": "input.x1",
-        "yData": "input.y1",
+        "xData": "input.v2",
+        "yData": "input.y2",
+        "vData": "input.x2",
         "xAxis": "xaxis_bottom",
         "yAxis": "yaxis_left"
       }
     }
   ],
   "axes": {
-    "xaxis_bottom": { "min": 0, "max": 10, "label": "Distance (m)" },
-    "yaxis_left":   { "min": 0, "max": 5,  "label": "Voltage (V)"  }
+    "xaxis_bottom": { "min": 0,  "max": 1   },
+    "yaxis_left":   { "min": 10, "max": 50  },
+    "distance_m":   { "min": 0,  "max": 120, "colorbar": "vertical" }
   },
   "colorbars": []
 }
 
-// Histogram of x1 (distance_m), filtered by the y-axis range (voltage_V).
-// Shares xaxis_bottom (distance_m) with the scatter via autoLink.
+// Histogram of v2 (temperature_K), filtered by the y-axis range (current_A).
+// Shares xaxis_bottom (temperature_K) with the scatter via autoLink.
 const xHistConfig = {
   "transforms": [
-    { "name": "hist", "transform": { "HistogramData": { "input": "input.x1", "filter": "input.y1", "bins": 0 } } }
+    { "name": "hist", "transform": { "HistogramData": { "input": "input.v2", "filter": "input.y2", "bins": 0 } } }
   ],
   "layers": [
     {
@@ -61,18 +63,18 @@ const xHistConfig = {
     }
   ],
   "axes": {
-    "xaxis_bottom": { "label": "Distance (m)" },
+    "xaxis_bottom": {},
     "count":        { "label": "Count" }
   },
   "colorbars": []
 }
 
-// Histogram of y1 (voltage_V), filtered by the x-axis range (distance_m).
-// Shares yaxis_left (voltage_V) with the scatter via autoLink.
+// Histogram of y2 (current_A), filtered by the x-axis range (temperature_K).
+// Shares yaxis_left (current_A) with the scatter via autoLink.
 // orientation: "horizontal" puts bin centers on y-axis and counts on x-axis.
 const yHistConfig = {
   "transforms": [
-    { "name": "hist", "transform": { "HistogramData": { "input": "input.y1", "filter": "input.x1", "bins": 0 } } }
+    { "name": "hist", "transform": { "HistogramData": { "input": "input.y2", "filter": "input.v2", "bins": 0 } } }
   ],
   "layers": [
     {
@@ -86,8 +88,8 @@ const yHistConfig = {
     }
   ],
   "axes": {
-    "yaxis_left":   { "label": "Voltage (V)" },
-    "count":        { "label": "Count" }
+    "yaxis_left": {},
+    "count":      { "label": "Count" }
   },
   "colorbars": []
 }
@@ -97,10 +99,10 @@ const xhist   = new Plot(document.getElementById('tab7-xhist'))
 const yhist   = new Plot(document.getElementById('tab7-yhist'))
 
 // autoLink wires up all shared quantity kinds automatically:
-//   scatter xaxis_bottom (distance_m)  ↔  xhist xaxis_bottom (distance_m)   → shared x scale
-//   scatter yaxis_left   (voltage_V)   ↔  yhist yaxis_left   (voltage_V)    → shared y scale
-//   scatter yaxis_left   (voltage_V)   ↔  xhist filter axis  (voltage_V)    → x-hist filters on y-zoom
-//   scatter xaxis_bottom (distance_m)  ↔  yhist filter axis  (distance_m)   → y-hist filters on x-zoom
+//   scatter xaxis_bottom (temperature_K) ↔  xhist xaxis_bottom (temperature_K)  → shared x scale
+//   scatter yaxis_left   (current_A)     ↔  yhist yaxis_left   (current_A)      → shared y scale
+//   scatter yaxis_left   (current_A)     ↔  xhist filter axis  (current_A)      → x-hist filters on y-zoom
+//   scatter xaxis_bottom (temperature_K) ↔  yhist filter axis  (temperature_K)  → y-hist filters on x-zoom
 const group = new PlotGroup({ scatter, xhist, yhist }, { autoLink: true })
 
 // group.update() must run when the containers have real dimensions so that
