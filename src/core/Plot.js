@@ -20,6 +20,10 @@ import { GlBase } from "./GlBase.js"
 // block, which can trigger the Windows TDR watchdog (~2 s GPU timeout).
 const TDR_STEP_MS = 500
 
+// Minimum ms between renders for plots updated via a linked axis.
+// Keeps linked secondary plots (e.g. histograms) from blocking the primary plot's frame rate.
+const LINK_THROTTLE_MS = 150
+
 function buildPlotSchema(data, config) {
   const layerTypes = getRegisteredLayerTypes()
   // Normalise once — always a DataGroup (or null). Columns are e.g. "input.x1".
@@ -215,6 +219,9 @@ export class Plot extends GlBase {
     this._dirty = false
     this._rafId = null
     this._rendering = false
+    this._lastRenderEnd = performance.now()
+    this._throttleTimerId = null
+    this._pendingFromLink = false
     this._is3D = false
     this._camera = null
     this._tickLabelAtlas = null
@@ -858,45 +865,62 @@ void main() {
     return buildPlotSchema(data, config)
   }
 
-  scheduleRender() {
+  scheduleRender(fromLink = false) {
     if (!this.regl) return
     this._dirty = true
-    if (this._rafId === null && !this._rendering) {
-      const schedTime = performance.now()
-      const _st0 = schedTime
-      setTimeout(() => {
-        const _stLag = performance.now() - _st0
-        if (_stLag > 20) console.warn(`[gladly] setTimeout(0) lag ${_stLag.toFixed(0)}ms`)
-      }, 0)
-      this._rafId = requestAnimationFrame(async (rafTime) => {
-        this._rafId = null
-        const now = performance.now()
-        const lag = now - schedTime
-        const postVsync = now - rafTime  // time from vsync to our callback executing
-        if (lag > 50) console.warn(`[gladly] RAF lag ${lag.toFixed(0)}ms  (vsync-to-callback: ${postVsync.toFixed(1)}ms)`)
-        if (this._dirty) {
-          this._dirty = false
-          const t0 = performance.now()
-          this._rendering = true
-          try {
-            await this.render()
-          } catch (e) {
-            console.error('[gladly] Error during render():', e)
-          } finally {
-            this._rendering = false
-          }
-          const dt = performance.now() - t0
-          if (dt > 10) console.warn(`[gladly] render ${dt.toFixed(0)}ms`)
-          // After submitting GPU work, hold _rafId so no new render can be queued
-          // until the compositor is ready for the next frame (browser waits for GPU).
-          // Any state changes that arrive during GPU execution are captured then.
-          this._rafId = requestAnimationFrame(() => {
-            this._rafId = null
-            if (this._dirty) this.scheduleRender()
-          })
-        }
-      })
+    if (fromLink) this._pendingFromLink = true  // sticky: persists until RAF is queued
+    if (this._rafId !== null || this._rendering || this._throttleTimerId !== null) return
+
+    // Throttle renders triggered by linked-axis domain changes so secondary plots
+    // (e.g. histograms) don't block the primary plot's frame rate.
+    // _pendingFromLink stays true across timer/vsync re-entries until a RAF is committed.
+    if (this._pendingFromLink) {
+      const delay = LINK_THROTTLE_MS - (performance.now() - this._lastRenderEnd)
+      if (delay > 0) {
+        this._throttleTimerId = setTimeout(() => {
+          this._throttleTimerId = null
+          if (this._dirty) this.scheduleRender()
+        }, delay)
+        return
+      }
     }
+    this._pendingFromLink = false  // commit: reset now that we're queuing the RAF
+
+    const schedTime = performance.now()
+    const _st0 = schedTime
+    setTimeout(() => {
+      const _stLag = performance.now() - _st0
+      if (_stLag > 20) console.warn(`[gladly] setTimeout(0) lag ${_stLag.toFixed(0)}ms`)
+    }, 0)
+    this._rafId = requestAnimationFrame(async (rafTime) => {
+      this._rafId = null
+      const now = performance.now()
+      const lag = now - schedTime
+      const postVsync = now - rafTime  // time from vsync to our callback executing
+      if (lag > 50) console.warn(`[gladly] RAF lag ${lag.toFixed(0)}ms  (vsync-to-callback: ${postVsync.toFixed(1)}ms)`)
+      if (this._dirty) {
+        this._dirty = false
+        const t0 = performance.now()
+        this._rendering = true
+        try {
+          await this.render()
+        } catch (e) {
+          console.error('[gladly] Error during render():', e)
+        } finally {
+          this._rendering = false
+        }
+        const dt = performance.now() - t0
+        if (dt > 10) console.warn(`[gladly] render ${dt.toFixed(0)}ms`)
+        this._lastRenderEnd = performance.now()
+        // After submitting GPU work, hold _rafId so no new render can be queued
+        // until the compositor is ready for the next frame (browser waits for GPU).
+        // Any state changes that arrive during GPU execution are captured then.
+        this._rafId = requestAnimationFrame(() => {
+          this._rafId = null
+          if (this._dirty) this.scheduleRender()
+        })
+      }
+    })
   }
 
   async render() {
