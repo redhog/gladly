@@ -1052,16 +1052,18 @@ void main() {
       }
 
       for (const qk of Object.values(layer.colorAxes)) {
-        props[`colorscale_${qk}`] = this.colorAxisRegistry.getColorscaleIndex(qk)
+        const pk = qk.replace(/\./g, '_')
+        props[`colorscale_${pk}`] = this.colorAxisRegistry.getColorscaleIndex(qk)
         const range = this.colorAxisRegistry.getRange(qk)
-        props[`color_range_${qk}`] = range ?? [0, 1]
-        props[`color_scale_type_${qk}`] = this._getScaleTypeFloat(qk)
-        props[`alpha_blend_${qk}`] = this.colorAxisRegistry.getAlphaBlend(qk)
+        props[`color_range_${pk}`] = range ?? [0, 1]
+        props[`color_scale_type_${pk}`] = this._getScaleTypeFloat(qk)
+        props[`alpha_blend_${pk}`] = this.colorAxisRegistry.getAlphaBlend(qk)
       }
 
       for (const qk of Object.values(layer.filterAxes)) {
-        props[`filter_range_${qk}`] = this.filterAxisRegistry.getRangeUniform(qk)
-        props[`filter_scale_type_${qk}`] = this._getScaleTypeFloat(qk)
+        const pk = qk.replace(/\./g, '_')
+        props[`filter_range_${pk}`] = this.filterAxisRegistry.getRangeUniform(qk)
+        props[`filter_scale_type_${pk}`] = this._getScaleTypeFloat(qk)
       }
 
       layer.draw(props)
@@ -1178,15 +1180,17 @@ void main() {
         }
         if (layer.instanceCount !== null) props.instances = layer.instanceCount
         for (const qk of Object.values(layer.colorAxes)) {
-          props[`colorscale_${qk}`] = this.colorAxisRegistry.getColorscaleIndex(qk)
+          const pk = qk.replace(/\./g, '_')
+          props[`colorscale_${pk}`] = this.colorAxisRegistry.getColorscaleIndex(qk)
           const range = this.colorAxisRegistry.getRange(qk)
-          props[`color_range_${qk}`] = range ?? [0, 1]
-          props[`color_scale_type_${qk}`] = this._getScaleTypeFloat(qk)
-          props[`alpha_blend_${qk}`] = this.colorAxisRegistry.getAlphaBlend(qk)
+          props[`color_range_${pk}`] = range ?? [0, 1]
+          props[`color_scale_type_${pk}`] = this._getScaleTypeFloat(qk)
+          props[`alpha_blend_${pk}`] = this.colorAxisRegistry.getAlphaBlend(qk)
         }
         for (const qk of Object.values(layer.filterAxes)) {
-          props[`filter_range_${qk}`] = this.filterAxisRegistry.getRangeUniform(qk)
-          props[`filter_scale_type_${qk}`] = this._getScaleTypeFloat(qk)
+          const pk = qk.replace(/\./g, '_')
+          props[`filter_range_${pk}`] = this.filterAxisRegistry.getRangeUniform(qk)
+          props[`filter_scale_type_${pk}`] = this._getScaleTypeFloat(qk)
         }
         layer.draw(props)
       }

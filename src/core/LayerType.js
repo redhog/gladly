@@ -242,15 +242,17 @@ export class LayerType {
     }
 
     for (const [suffix, qk] of Object.entries(layer.colorAxes)) {
-      uniforms[`colorscale${suffix}`]       = regl.prop(`colorscale_${qk}`)
-      uniforms[`color_range${suffix}`]      = regl.prop(`color_range_${qk}`)
-      uniforms[`color_scale_type${suffix}`] = regl.prop(`color_scale_type_${qk}`)
-      uniforms[`alpha_blend${suffix}`]      = regl.prop(`alpha_blend_${qk}`)
+      const pk = qk.replace(/\./g, '_')
+      uniforms[`colorscale${suffix}`]       = regl.prop(`colorscale_${pk}`)
+      uniforms[`color_range${suffix}`]      = regl.prop(`color_range_${pk}`)
+      uniforms[`color_scale_type${suffix}`] = regl.prop(`color_scale_type_${pk}`)
+      uniforms[`alpha_blend${suffix}`]      = regl.prop(`alpha_blend_${pk}`)
     }
 
     for (const [suffix, qk] of Object.entries(layer.filterAxes)) {
-      uniforms[`filter_range${suffix}`]      = regl.prop(`filter_range_${qk}`)
-      uniforms[`filter_scale_type${suffix}`] = regl.prop(`filter_scale_type_${qk}`)
+      const pk = qk.replace(/\./g, '_')
+      uniforms[`filter_range${suffix}`]      = regl.prop(`filter_range_${pk}`)
+      uniforms[`filter_scale_type${suffix}`] = regl.prop(`filter_scale_type_${pk}`)
     }
 
     // Strip spatial uniforms from vert (re-declared in buildSpatialGlsl)
