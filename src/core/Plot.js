@@ -98,46 +98,20 @@ function buildPlotSchema(data, config) {
       },
       axes: {
         type: "object",
-        properties: {
-          xaxis_bottom: {
+        properties: Object.fromEntries(AXES.map(axisId => {
+          const isXAxis = axisId.startsWith('x')
+          return [axisId, {
             type: "object",
             properties: {
+              quantity_kind: { type: "string" },
               min: { type: "number" },
               max: { type: "number" },
               label: { type: "string" },
               scale: { type: "string", enum: ["linear", "log"] },
-              rotate: { type: "boolean" }
+              ...(isXAxis ? { rotate: { type: "boolean" } } : {})
             }
-          },
-          xaxis_top: {
-            type: "object",
-            properties: {
-              min: { type: "number" },
-              max: { type: "number" },
-              label: { type: "string" },
-              scale: { type: "string", enum: ["linear", "log"] },
-              rotate: { type: "boolean" }
-            }
-          },
-          yaxis_left: {
-            type: "object",
-            properties: {
-              min: { type: "number" },
-              max: { type: "number" },
-              label: { type: "string" },
-              scale: { type: "string", enum: ["linear", "log"] }
-            }
-          },
-          yaxis_right: {
-            type: "object",
-            properties: {
-              min: { type: "number" },
-              max: { type: "number" },
-              label: { type: "string" },
-              scale: { type: "string", enum: ["linear", "log"] }
-            }
-          }
-        },
+          }]
+        })),
         additionalProperties: {
           // Color/filter/quantity-kind axes.
           // All fields from the quantity kind registration are valid here and override the registration.
@@ -335,7 +309,7 @@ export class Plot extends GlBase {
           const [min, max] = scale.domain()
           const qk    = this.axisRegistry.axisQuantityKinds[axisId]
           const qkDef = qk ? getAxisQuantityKind(qk) : {}
-          axes[axisId] = { ...qkDef, ...(axes[axisId] ?? {}), min, max }
+          axes[axisId] = { ...qkDef, ...(axes[axisId] ?? {}), min, max, ...(qk ? { quantity_kind: qk } : {}) }
         }
       }
     }
@@ -411,7 +385,21 @@ export class Plot extends GlBase {
     if (this._initEpoch !== epoch) return
     await this._processLayers(layers, this.currentData, epoch)
     if (this._initEpoch !== epoch) return
-    this._setDomains(axes)
+
+    // Discard any spatial axis config whose stored quantity_kind doesn't match
+    // Discard any spatial axis config whose stored quantity_kind doesn't match
+    // what the layers assigned — stale settings from a previous axis type.
+    const cleanAxes = { ...axes }
+    for (const axisId of AXES) {
+      const cfg = cleanAxes[axisId]
+      if (cfg?.quantity_kind != null &&
+          cfg.quantity_kind !== this.axisRegistry.axisQuantityKinds[axisId]) {
+        delete cleanAxes[axisId]
+      }
+    }
+    this.currentConfig = { ...this.currentConfig, axes: cleanAxes }
+
+    this._setDomains(cleanAxes)
 
     // Detect 3D mode: any axis outside the 4 standard 2D positions has a scale.
     this._is3D = AXES.some(a => !AXES_2D.includes(a) && this.axisRegistry.getScale(a) !== null)

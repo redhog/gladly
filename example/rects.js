@@ -114,13 +114,13 @@ function createEditor(config) {
     }
     lastEditorValue = JSON.stringify(editor.getValue())
   })
-  editor.on('change', () => {
+  editor.on('change', async () => {
     const value = editor.getValue()
     if (JSON.stringify(value) === lastEditorValue) return
     lastEditorValue = JSON.stringify(value)
     const errors = editor.validate()
     if (errors.length === 0) {
-      const schemaChanged = updatePlot(value)
+      const schemaChanged = await updatePlot(value)
       if (schemaChanged) setTimeout(() => createEditor(currentPlotConfig), 0)
     } else {
       const errorMessages = errors.map(err => `${err.path}: ${err.message}`).join('<br>')
@@ -133,9 +133,9 @@ function createEditor(config) {
   })
 }
 
-function updatePlot(cfg) {
+async function updatePlot(cfg) {
   try {
-    plot.update({ config: cfg, data: { input: data } })
+    await plot.update({ config: cfg, data: { input: data } })
     document.getElementById('tab3-validation-errors').innerHTML = ''
     const fullConfig = plot.getConfig()
     currentPlotConfig = fullConfig
@@ -156,7 +156,7 @@ function updatePlot(cfg) {
   }
 }
 
-updatePlot(currentPlotConfig)
+await updatePlot(currentPlotConfig)
 
 plot.on('mouseup', (e) => {
   const rect = plot.container.getBoundingClientRect()

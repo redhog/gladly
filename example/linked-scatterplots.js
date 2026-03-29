@@ -35,7 +35,7 @@ import { data as dataPromise } from "./shared.js"
   document.body.appendChild(pickStatus)
 }
 
-dataPromise.then(data => {
+dataPromise.then(async data => {
 
 let activePlot = 'plot1'
 let lastEditorValue = ''
@@ -65,13 +65,13 @@ function createEditor(config) {
     }
     lastEditorValue = JSON.stringify(editor.getValue())
   })
-  editor.on('change', () => {
+  editor.on('change', async () => {
     const value = editor.getValue()
     if (JSON.stringify(value) === lastEditorValue) return
     lastEditorValue = JSON.stringify(value)
     const errors = editor.validate()
     if (errors.length === 0) {
-      const schemaChanged = updatePlot(activePlot, value)
+      const schemaChanged = await updatePlot(activePlot, value)
       if (schemaChanged) {
         const currentConfig = activePlot === 'plot1' ? plot1Config : plot2Config
         setTimeout(() => createEditor(currentConfig), 0)
@@ -188,10 +188,10 @@ let plot2Config = {
   "colorbars": []
 }
   
-function updatePlot(plotId, plotConfig) {
+async function updatePlot(plotId, plotConfig) {
   const plot = plotId === 'plot1' ? plot1 : plot2
   try {
-    group.update({ data: { input: data }, plots: { [plotId]: plotConfig } })
+    await group.update({ data: { input: data }, plots: { [plotId]: plotConfig } })
     document.getElementById('tab1-validation-errors').innerHTML = ''
 
     const fullConfig = plot.getConfig()
@@ -221,7 +221,7 @@ function updatePlot(plotId, plotConfig) {
   }
 }
 
-group.update({
+await group.update({
   data: { input: data },
   plots: { plot1: plot1Config, plot2: plot2Config }
 })

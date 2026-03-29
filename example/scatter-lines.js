@@ -29,7 +29,7 @@ import { data as dataPromise } from "./shared.js"
   document.body.appendChild(pickStatus)
 }
 
-dataPromise.then(data => {
+dataPromise.then(async data => {
 
 const plotConfig = {
   "layers": [
@@ -117,13 +117,13 @@ function createEditor(config) {
     }
     lastEditorValue = JSON.stringify(editor.getValue())
   })
-  editor.on('change', () => {
+  editor.on('change', async () => {
     const value = editor.getValue()
     if (JSON.stringify(value) === lastEditorValue) return
     lastEditorValue = JSON.stringify(value)
     const errors = editor.validate()
     if (errors.length === 0) {
-      const schemaChanged = updatePlot(value)
+      const schemaChanged = await updatePlot(value)
       if (schemaChanged) setTimeout(() => createEditor(currentPlotConfig), 0)
     } else {
       const errorMessages = errors.map(err => `${err.path}: ${err.message}`).join('<br>')
@@ -136,9 +136,9 @@ function createEditor(config) {
   })
 }
 
-function updatePlot(plotConfig) {
+async function updatePlot(plotConfig) {
   try {
-    plot.update({ config: plotConfig, data: { input: data } })
+    await plot.update({ config: plotConfig, data: { input: data } })
     document.getElementById('tab2-validation-errors').innerHTML = ''
 
     const fullConfig = plot.getConfig()
@@ -163,7 +163,7 @@ function updatePlot(plotConfig) {
   }
 }
 
-updatePlot(currentPlotConfig)
+await updatePlot(currentPlotConfig)
 
 plot.on('mouseup', (e) => {
   const rect = plot.container.getBoundingClientRect()

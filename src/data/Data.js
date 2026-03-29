@@ -265,6 +265,18 @@ export class Data {
   }
 
   getDomain(col) {
-    return this._entry(col).domain
+    const entry = this._entry(col)
+    if (entry.domain) return entry.domain
+    const arr = entry.data
+    if (!arr || arr.length === 0) return null
+    let min = Infinity, max = -Infinity
+    for (let i = 0; i < arr.length; i++) {
+      const v = arr[i]
+      if (isFinite(v)) {
+        if (v < min) min = v
+        if (v > max) max = v
+      }
+    }
+    return min === Infinity ? null : [min, max]
   }
 }
