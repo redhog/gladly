@@ -98,29 +98,18 @@ function buildPlotSchema(data, config) {
       },
       axes: {
         type: "object",
-        properties: Object.fromEntries(AXES.map(axisId => {
-          const isXAxis = axisId.startsWith('x')
-          return [axisId, {
-            type: "object",
-            properties: {
-              quantity_kind: { type: "string" },
-              min: { type: "number" },
-              max: { type: "number" },
-              label: { type: "string" },
-              scale: { type: "string", enum: ["linear", "log"] },
-              ...(isXAxis ? { rotate: { type: "boolean" } } : {})
-            }
-          }]
-        })),
+        // All axes (spatial, color, filter) are populated by getConfig() after the first render.
+        // Using only additionalProperties means no hardcoded axis list appears in the schema;
+        // the config editor shows exactly the axes declared by active layers.
         additionalProperties: {
-          // Color/filter/quantity-kind axes.
-          // All fields from the quantity kind registration are valid here and override the registration.
           type: "object",
           properties: {
+            quantity_kind: { type: "string" },
             min: { type: "number" },
             max: { type: "number" },
             label: { type: "string" },
             scale: { type: "string", enum: ["linear", "log"] },
+            rotate: { type: "boolean" },
             colorscale: {
               type: "string",
               enum: [
