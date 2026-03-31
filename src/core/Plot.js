@@ -222,18 +222,18 @@ export class Plot extends GlBase {
     const plotWidth = width - this.margin.left - this.margin.right
     const plotHeight = height - this.margin.top - this.margin.bottom
 
-    // Container is hidden, not yet laid out, or too small to fit the margins.
-    // Store config/data and return; ResizeObserver will call forceUpdate() once
-    // the container gets real dimensions.
-    if (width === 0 || height === 0 || plotWidth <= 0 || plotHeight <= 0) return
+    // Clamp to at least 1×1 so _initialize() always runs and getConfig() stays
+    // accurate even when the container is hidden or too small to fit the margins.
+    // The canvas backing store and WebGL context update synchronously; the D3
+    // axis pixel ranges will be corrected when the ResizeObserver fires on
+    // becoming visible.
+    this.canvas.width = Math.max(1, width)
+    this.canvas.height = Math.max(1, height)
 
-    this.canvas.width = width
-    this.canvas.height = height
-
-    this.width = width
-    this.height = height
-    this.plotWidth = plotWidth
-    this.plotHeight = plotHeight
+    this.width = Math.max(1, width)
+    this.height = Math.max(1, height)
+    this.plotWidth = Math.max(1, plotWidth)
+    this.plotHeight = Math.max(1, plotHeight)
 
     this._warnedMissingDomains = false
     await this._initialize()
