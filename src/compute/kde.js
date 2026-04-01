@@ -1,6 +1,7 @@
 import { registerTextureComputation, EXPRESSION_REF, resolveQuantityKind } from "./ComputationRegistry.js"
 import { TextureComputation } from "../data/Computation.js"
 import { SAMPLE_COLUMN_GLSL } from "../data/ColumnData.js"
+import { tdrYield } from "../tdr.js"
 
 /**
  * Smooth a histogram to produce a KDE texture
@@ -11,7 +12,7 @@ import { SAMPLE_COLUMN_GLSL } from "../data/ColumnData.js"
  *   - bins: output bins (default same as input via _dataLength)
  * @returns {Texture} - smoothed KDE texture (4-packed, _dataLength = bins)
  */
-export default function smoothKDE(regl, histTex, options = {}) {
+export default async function smoothKDE(regl, histTex, options = {}) {
   const bins = options.bins || histTex._dataLength || histTex.width * 4
   const bandwidth = options.bandwidth || 5.0
 
@@ -85,17 +86,13 @@ export default function smoothKDE(regl, histTex, options = {}) {
   drawKDE()
 
   kdeTex._dataLength = bins
+  await tdrYield()
   return kdeTex
 }
 
-const TDR_STEP_MS = 500
-
 class KdeComputation extends TextureComputation {
   async compute(regl, inputs, getAxisDomain) {
-    const t0 = performance.now()
-    const inputTex = inputs.input.toTexture(regl)
-    if (performance.now() - t0 > TDR_STEP_MS)
-      await new Promise(r => requestAnimationFrame(r))
+    const inputTex = await inputs.input.toTexture(regl)
     return smoothKDE(regl, inputTex, { bins: inputs.bins, bandwidth: inputs.bandwidth })
   }
 

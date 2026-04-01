@@ -1,6 +1,7 @@
 import { registerTextureComputation, registerComputedData, EXPRESSION_REF, EXPRESSION_REF_OPT } from "./ComputationRegistry.js"
 import { TextureComputation, ComputedData } from "../data/Computation.js"
 import { ArrayColumn, uploadToTexture, SAMPLE_COLUMN_GLSL } from "../data/ColumnData.js"
+import { tdrYield } from "../tdr.js"
 
 function autoBinsScott(data, options = {}) {
   const N = data.length
@@ -41,7 +42,7 @@ function autoBins(data, options = {}) {
 // Build a histogram texture from a column texture (4 values per texel).
 // Assumes input values are already normalized to [0, 1].
 // Returns a 4-packed texture: bins values packed 4 per texel.
-export default function makeHistogram(regl, inputTex, options = {}) {
+export default async function makeHistogram(regl, inputTex, options = {}) {
   const N = inputTex._dataLength ?? inputTex.width * inputTex.height * 4
   const bins = options.bins || 1024
 
@@ -93,10 +94,9 @@ void main() {
 
   drawPoints()
   histTex._dataLength = bins
+  await tdrYield()
   return histTex
 }
-
-const TDR_STEP_MS = 500
 
 // ─── HistogramComputation (TextureComputation — inline expression usage) ──────
 class HistogramComputation extends TextureComputation {
@@ -112,7 +112,6 @@ class HistogramComputation extends TextureComputation {
 
     // Normalize to [0,1] for GPU histogram (CPU work)
     let normalizedTex
-    const t0 = performance.now()
     if (inputCol instanceof ArrayColumn) {
       const arr = inputCol.array
       let min = arr[0], max = arr[0]
@@ -126,10 +125,8 @@ class HistogramComputation extends TextureComputation {
       normalizedTex = uploadToTexture(regl, normalized)
     } else {
       // Already a GPU texture — assume values are in [0,1]
-      normalizedTex = inputCol.toTexture(regl)
+      normalizedTex = await inputCol.toTexture(regl)
     }
-    if (performance.now() - t0 > TDR_STEP_MS)
-      await new Promise(r => requestAnimationFrame(r))
 
     return makeHistogram(regl, normalizedTex, { bins })
   }
@@ -232,11 +229,8 @@ class HistogramData extends ComputedData {
       }
       countInput = new Float32Array(filtered)
     }
-    const uploadStart = performance.now()
     const normalizedTex = uploadToTexture(regl, countInput)
-    if (performance.now() - uploadStart > TDR_STEP_MS)
-      await new Promise(r => requestAnimationFrame(r))
-    const countsTex = makeHistogram(regl, normalizedTex, { bins })
+    const countsTex = await makeHistogram(regl, normalizedTex, { bins })
     countsTex._dataLength = bins
 
     const histCpu = new Float32Array(bins)

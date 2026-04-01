@@ -15,7 +15,7 @@ import makeHistogram from "./hist.js"
 // getAxisDomain(filterAxisId) returns [min|null, max|null] where null means
 // unbounded.  The computation is re-run automatically whenever the domain changes.
 class FilteredHistogramComputation extends TextureComputation {
-  compute(regl, inputs, getAxisDomain) {
+  async compute(regl, inputs, getAxisDomain) {
     const inputCol = inputs.input
     const filterCol = inputs.filterValues
     if (!(inputCol instanceof ArrayColumn)) throw new Error('filteredHistogram: input must be ArrayColumn')
@@ -38,7 +38,7 @@ class FilteredHistogramComputation extends TextureComputation {
     }
 
     const filteredTex = uploadToTexture(regl, new Float32Array(filtered))
-    return makeHistogram(regl, filteredTex, { bins })
+    return await makeHistogram(regl, filteredTex, { bins })
   }
 
   schema(data) {

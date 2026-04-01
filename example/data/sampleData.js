@@ -98,7 +98,7 @@ async function generate() {
   for (const fullCol of output.columns()) {
     const name = fullCol.replace(/^gen\./, '')
     const readable = output.getData(fullCol)
-    if (readable) data[name] = readable.getArray()
+    if (readable) data[name] = await readable.getArray()
     if (readable?.quantityKind) quantity_kinds[name] = readable.quantityKind
   }
 

@@ -1,9 +1,10 @@
 import { registerTextureComputation, registerGlslComputation, EXPRESSION_REF } from "./ComputationRegistry.js"
 import { TextureComputation, GlslComputation } from "../data/Computation.js"
 import { GlslColumn } from "../data/ColumnData.js"
+import { tdrYield } from "../tdr.js"
 
 // Shared helper: allocate an output texture + FBO and run a fullscreen quad.
-function runFullscreenQuad(regl, N, fragGlsl, uniforms = {}) {
+async function runFullscreenQuad(regl, N, fragGlsl, uniforms = {}) {
   const nTexels = Math.ceil(N / 4)
   const w = Math.min(nTexels, regl.limits.maxTextureSize)
   const h = Math.ceil(nTexels / w)
@@ -22,6 +23,7 @@ void main() { gl_Position = vec4(a_position, 0.0, 1.0); }`,
     primitive: 'triangle strip'
   })()
   outputTex._dataLength = N
+  await tdrYield()
   return outputTex
 }
 

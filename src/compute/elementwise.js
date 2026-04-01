@@ -1,8 +1,6 @@
 import { registerComputedData, EXPRESSION_REF, resolveExprToColumn } from "./ComputationRegistry.js"
 import { ComputedData } from "../data/Computation.js"
 
-const TDR_STEP_MS = 500
-
 class ElementwiseData extends ComputedData {
   columns(params) {
     if (!params?.columns) return []
@@ -23,19 +21,13 @@ class ElementwiseData extends ComputedData {
 
     const result = {}
     const quantityKinds = {}
-    let stepStart = performance.now()
 
     for (const { dst, src, quantityKind } of params.columns) {
       const col = await resolveExprToColumn(src, data, regl, plotProxy)
-      const tex = col.toTexture(regl)
+      const tex = await col.toTexture(regl)
       tex._dataLength = N
       result[dst] = tex
       if (quantityKind) quantityKinds[dst] = quantityKind
-
-      if (performance.now() - stepStart > TDR_STEP_MS) {
-        await new Promise(r => requestAnimationFrame(r))
-        stepStart = performance.now()
-      }
     }
 
     if (Object.keys(quantityKinds).length > 0) result._meta = { quantityKinds }

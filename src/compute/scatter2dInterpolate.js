@@ -201,7 +201,7 @@ void main() {
 class Scatter2dInterpolateData extends ComputedData {
   columns() { return ['value', 'x', 'y'] }
 
-  compute(regl, params, data, getAxisDomain) {
+  async compute(regl, params, data, getAxisDomain) {
     const xCol    = data.getData(params.x)
     const yCol    = data.getData(params.y)
     const valCol  = data.getData(params.value)
@@ -218,9 +218,9 @@ class Scatter2dInterpolateData extends ComputedData {
     const pickIds = new Float32Array(N)
     for (let i = 0; i < N; i++) pickIds[i] = i
 
-    const xTex    = xCol.toTexture(regl)
-    const yTex    = yCol.toTexture(regl)
-    const valTex  = valCol.toTexture(regl)
+    const xTex    = await xCol.toTexture(regl)
+    const yTex    = await yCol.toTexture(regl)
+    const valTex  = await valCol.toTexture(regl)
 
     const xDomain = colDomain(xCol)
     const yDomain = colDomain(yCol)

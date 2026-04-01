@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html>
+<head><title>Test 06: Gladly data generation</title></head>
+<body>
+<h2>Test 06: Gladly ComputePipeline data generation in isolation</h2>
+<p>Runs the same data generation as the main example (13 GPU columns, 1 M points each)
+without any plot rendering. Each step is timed and logged. If this crashes the browser,
+the bug is in the compute/readback path, not in rendering.</p>
+<pre id="log" style="background:#111;color:#bfb;padding:1em;font-size:13px;max-height:80vh;overflow:auto"></pre>
+
+<script type="importmap">
+{
+  "imports": {
+    "d3-selection":   "/node_modules/d3-selection/src/index.js",
+    "d3-zoom":        "/node_modules/d3-zoom/src/index.js",
+    "d3-scale":       "/node_modules/d3-scale/src/index.js",
+    "d3-axis":        "/node_modules/d3-axis/src/index.js",
+    "d3-dispatch":    "/node_modules/d3-dispatch/src/index.js",
+    "d3-drag":        "/node_modules/d3-drag/src/index.js",
+    "d3-interpolate": "/node_modules/d3-interpolate/src/index.js",
+    "d3-transition":  "/node_modules/d3-transition/src/index.js",
+    "d3-array":       "/node_modules/d3-array/src/index.js",
+    "d3-format":      "/node_modules/d3-format/src/index.js",
+    "d3-time":        "/node_modules/d3-time/src/index.js",
+    "d3-time-format": "/node_modules/d3-time-format/src/index.js",
+    "d3-color":       "/node_modules/d3-color/src/index.js",
+    "d3-ease":        "/node_modules/d3-ease/src/index.js",
+    "d3-timer":       "/node_modules/d3-timer/src/index.js",
+    "internmap":      "/node_modules/internmap/src/index.js",
+    "projnames":      "/node_modules/projnames/index.mjs",
+    "regl":           "/example/vendor/regl.js",
+    "proj4":          "/example/vendor/proj4.js",
+    "@json-editor/json-editor": "/example/vendor/json-editor.js"
+  }
+}
+</script>
+
+<script src="/node_modules/regl/dist/regl.js"></script>
+<script src="/node_modules/proj4/dist/proj4.js"></script>
+
+<script type="module">
+import { ComputePipeline } from "../../src/index.js"
+
+const logEl = document.getElementById('log')
+function log(msg) {
+  logEl.textContent += msg + '\n'
+  logEl.scrollTop = logEl.scrollHeight
+  console.log(msg)
+}
+
+function fmt(ms) { return (ms / 1000).toFixed(2) + 's' }
+
+const f = n => Number.isInteger(n) ? `${n}.0` : `${n}`
+const noise = (length, seed, amp) => ({
+  glslExpr: {
+    expr: `({r} - 0.5) * ${f(amp)}`,
+    inputs: { r: { random: { length, seed } } }
+  }
+})
+
+const N = 1_000_000
+const M = 300
+const t_N = { linspace: { length: N } }
+const t_M = { linspace: { length: M } }
+
+const transforms = [
+  {
+    name: 'gen',
+    transform: {
+      ElementwiseData: {
+        columns: [
+          { dst: 'x1', quantityKind: 'distance_m',
+            src: { glslExpr: { expr: '{t} * 10.0', inputs: { t: t_N } } } },
+          { dst: 'y1', quantityKind: 'voltage_V',
+            src: { glslExpr: { expr: '2.5 + 2.0 * sin({t} * 8.0) + {n}',
+                               inputs: { t: t_N, n: noise(N, 1, 0.5) } } } },
+          { dst: 'v1', quantityKind: 'reflectance_au',
+            src: { glslExpr: { expr: '(sin({t} * 20.0) + 1.0) / 2.0', inputs: { t: t_N } } } },
+          { dst: 'f1', quantityKind: 'incidence_angle_rad',
+            src: { glslExpr: { expr: 'tan({t} * 10.0)', inputs: { t: t_N } } } },
+          { dst: 'x2', quantityKind: 'distance_m',
+            src: { glslExpr: { expr: '{t} * 100.0', inputs: { t: t_N } } } },
+          { dst: 'y2', quantityKind: 'current_A',
+            src: { glslExpr: { expr: '30.0 + 15.0 * sin({t} * 10.0) + {n}',
+                               inputs: { t: t_N, n: noise(N, 2, 2) } } } },
+          { dst: 'v2', quantityKind: 'temperature_K',
+            src: { glslExpr: { expr: '(cos({t} * 15.0) + 1.0) / 2.0', inputs: { t: t_N } } } },
+          { dst: 'f2', quantityKind: 'velocity_ms',
+            src: { glslExpr: { expr: 'tan({t} * 10.0)', inputs: { t: t_N } } } },
+          { dst: 'time_s',
+            src: { glslExpr: { expr: '{t} * 10.0', inputs: { t: t_M } } } },
+          { dst: 'ch1_V', quantityKind: 'voltage_V',
+            src: { glslExpr: { expr: 'sin({t} * 20.0) + {n}',
+                               inputs: { t: t_M, n: noise(M, 3, 0.15) } } } },
+          { dst: 'ch2_V', quantityKind: 'voltage_V',
+            src: { glslExpr: { expr: 'cos({t} * 13.0) * 0.7 + {n}',
+                               inputs: { t: t_M, n: noise(M, 4, 0.15) } } } },
+          { dst: 'ch3_V', quantityKind: 'voltage_V',
+            src: { glslExpr: { expr: '0.4 * sin({t} * 35.0 + 1.0) + 0.3 * cos({t} * 8.0) + {n}',
+                               inputs: { t: t_M, n: noise(M, 5, 0.1) } } } },
+          { dst: 'quality_flag',
+            src: { glslExpr: {
+              expr: '(({t}*10.0 >= 3.0 && {t}*10.0 <= 4.0) || ({t}*10.0 >= 7.0 && {t}*10.0 <= 8.0)) ? 1.0 : 0.0',
+              inputs: { t: t_M }
+            } } },
+        ]
+      }
+    }
+  }
+]
+
+async function run() {
+  log('OffscreenCanvas available: ' + (typeof OffscreenCanvas !== 'undefined'))
+  log('')
+
+  const pipeline = new ComputePipeline()
+  log('ComputePipeline created')
+
+  // ── Phase 1: GPU compute ──────────────────────────────────────────────────
+  log('Phase 1: pipeline.update() — GPU compute for all columns')
+  const t0 = performance.now()
+  let output
+  try {
+    output = await pipeline.update({ transforms })
+    log(`  OK: ${fmt(performance.now() - t0)}`)
+  } catch (e) {
+    log(`  ERROR: ${e.message}`)
+    log(e.stack)
+    return
+  }
+
+  // ── Phase 2: CPU readback, one column at a time ───────────────────────────
+  log('')
+  log('Phase 2: CPU readback — one column at a time')
+  const cols = output.columns()
+  log(`  ${cols.length} columns to read back`)
+
+  const data = {}
+  const t1 = performance.now()
+  for (const fullCol of cols) {
+    const name = fullCol.replace(/^gen\./, '')
+    const readable = output.getData(fullCol)
+    if (!readable) { log(`  SKIP ${name} (no data)`); continue }
+
+    const tCol = performance.now()
+    try {
+      data[name] = await readable.getArray()
+      log(`  ${name}: ${data[name].length} values in ${fmt(performance.now() - tCol)}`)
+    } catch (e) {
+      log(`  ERROR reading ${name}: ${e.message}`)
+    }
+  }
+  log(`  Total readback: ${fmt(performance.now() - t1)}`)
+
+  // ── Phase 3: basic sanity checks ─────────────────────────────────────────
+  log('')
+  log('Phase 3: sanity checks')
+  for (const [name, arr] of Object.entries(data)) {
+    const min = arr.reduce((a, b) => Math.min(a, b), Infinity)
+    const max = arr.reduce((a, b) => Math.max(a, b), -Infinity)
+    log(`  ${name}: min=${min.toFixed(3)} max=${max.toFixed(3)}`)
+  }
+
+  pipeline.destroy()
+  log('')
+  log('DONE — pipeline destroyed. No crash!')
+}
+
+run().catch(e => {
+  document.getElementById('log').textContent += '\nUNCAUGHT: ' + e.message + '\n' + e.stack
+})
+</script>
+</body>
+</html>

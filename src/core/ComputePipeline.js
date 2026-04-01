@@ -2,9 +2,10 @@ import { GlBase } from "./GlBase.js"
 import { FilterAxisRegistry } from "../axes/FilterAxisRegistry.js"
 import { DataGroup, normalizeData } from "../data/Data.js"
 import { ColumnData, ArrayColumn } from "../data/ColumnData.js"
+import { tdrYield } from "../tdr.js"
 
 // Read a 4-packed RGBA float texture back to a flat Float32Array of length dataLength.
-function readTextureToArray(regl, texture) {
+async function readTextureToArray(regl, texture) {
   const dataLength = texture._dataLength ?? (texture.width * texture.height * 4)
   const fbo = regl.framebuffer({ color: texture, depth: false })
   let pixels
@@ -15,6 +16,7 @@ function readTextureToArray(regl, texture) {
   } finally {
     fbo.destroy()
   }
+  await tdrYield()
   const arr = pixels instanceof Float32Array ? pixels : new Float32Array(pixels.buffer, pixels.byteOffset, pixels.byteLength / 4)
   return arr.slice(0, dataLength)
 }
@@ -32,13 +34,13 @@ class ReadableColumn extends ColumnData {
   get quantityKind() { return this._col.quantityKind }
 
   resolve(path, regl) { return this._col.resolve(path, regl) }
-  toTexture(regl)     { return this._col.toTexture(regl) }
+  async toTexture(regl)     { return this._col.toTexture(regl) }
   refresh(plot)       { return this._col.refresh(plot) }
   withOffset(expr)    { return this._col.withOffset(expr) }
 
-  getArray() {
+  async getArray() {
     if (this._col instanceof ArrayColumn) return this._col.array
-    const tex = this._col.toTexture(this._regl)
+    const tex = await this._col.toTexture(this._regl)
     return readTextureToArray(this._regl, tex)
   }
 }

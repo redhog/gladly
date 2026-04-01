@@ -1,3 +1,5 @@
+import { tdrYield } from '../tdr.js'
+
 // ─── GLSL helper injected into any shader that samples column data ─────────────
 // Values are packed 4 per texel (RGBA). Element i → texel i/4, channel i%4.
 export const SAMPLE_COLUMN_GLSL = `float sampleColumn(sampler2D tex, float idx) {
@@ -185,7 +187,7 @@ export class GlslColumn extends ColumnData {
     return { glslExpr: this._glslFn(resolvedExprs), textures }
   }
 
-  toTexture(regl) {
+  async toTexture(regl) {
     const N = this.length
     if (N === null) throw new Error('GlslColumn: cannot determine length for toTexture()')
     const nTexels = Math.ceil(N / 4)
@@ -229,6 +231,7 @@ void main() {
       primitive: 'triangle strip'
     })()
     outputTex._dataLength = N
+    await tdrYield()
     return outputTex
   }
 
@@ -264,6 +267,6 @@ export class OffsetColumn extends ColumnData {
     }
   }
 
-  toTexture(regl) { return this._base.toTexture(regl) }
+  async toTexture(regl) { return this._base.toTexture(regl) }
   refresh(plot)   { return this._base.refresh(plot) }
 }
