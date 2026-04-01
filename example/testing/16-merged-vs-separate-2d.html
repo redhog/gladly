@@ -167,7 +167,6 @@ uniform float alpha_blend_b;
 in float tval_x;
 in float tval_y;
 out vec4 fragColor;
-vec4 gladly_apply_color(vec4 c) { return c; }
 vec4 map_color_2d_(vec2 values) {
   return map_color_s_2d(colorscale_a, color_range_a, values.x, color_scale_type_a, alpha_blend_a,
                         colorscale_b, color_range_b, values.y, color_scale_type_b, alpha_blend_b);
@@ -176,7 +175,8 @@ void main() { fragColor = map_color_2d_(vec2(0.5, 0.5)); }
 `
 
 function tryCompile(label, colorGlsl) {
-  const fragSrc = `#version 300 es\nprecision mediump float;\n${colorGlsl}\n${fragMain}`
+  const preamble = `#version 300 es\nprecision mediump float;\nvec4 gladly_apply_color(vec4 c) { return c; }\n`
+  const fragSrc = preamble + colorGlsl + '\n' + fragMain
 
   const t0 = performance.now()
 
