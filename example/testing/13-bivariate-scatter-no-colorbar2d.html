@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html>
+<head><title>Test 13: Bivariate scatter, no 2D colorbar</title></head>
+<body>
+<h2>Test 13: Scatter with vData + vData2 but NO 2D colorbar</h2>
+<p>Scatter layer with both <code>vData</code> and <code>vData2</code>, using <strong>1D colorscales only</strong>
+for both axes. No <code>colorbars</code> entry. <code>colorbars: []</code>.</p>
+<p><strong>Theory tested:</strong> Because both vData and vData2 are present,
+<code>colorAxis2dQuantityKinds = {'': ['','2']}</code> is set on the layer
+(ScatterShared.js:30), making <code>map_color_s_2d</code> → <code>map_color_2d</code> →
+all 9 2D colorscale functions reachable in the scatter shader's call graph — even though
+both <code>cs_a</code> and <code>cs_b</code> are positive 1D indices at runtime and the
+2D branch is never taken.</p>
+<p>Compare with test 08 (which also has a 2D colorbar). If this crashes like 08, the
+scatter shader alone is sufficient. If it passes, the ColorbarLayer2d is needed too.</p>
+<div id="p1" style="width:480px;height:360px;border:1px solid #888;position:relative"></div>
+<pre id="log" style="background:#111;color:#bfb;padding:1em;font-size:13px"></pre>
+
+<script type="importmap">
+{
+  "imports": {
+    "d3-selection":   "../../node_modules/d3-selection/src/index.js",
+    "d3-zoom":        "../../node_modules/d3-zoom/src/index.js",
+    "d3-scale":       "../../node_modules/d3-scale/src/index.js",
+    "d3-axis":        "../../node_modules/d3-axis/src/index.js",
+    "d3-dispatch":    "../../node_modules/d3-dispatch/src/index.js",
+    "d3-drag":        "../../node_modules/d3-drag/src/index.js",
+    "d3-interpolate": "../../node_modules/d3-interpolate/src/index.js",
+    "d3-transition":  "../../node_modules/d3-transition/src/index.js",
+    "d3-array":       "../../node_modules/d3-array/src/index.js",
+    "d3-format":      "../../node_modules/d3-format/src/index.js",
+    "d3-time":        "../../node_modules/d3-time/src/index.js",
+    "d3-time-format": "../../node_modules/d3-time-format/src/index.js",
+    "d3-color":       "../../node_modules/d3-color/src/index.js",
+    "d3-ease":        "../../node_modules/d3-ease/src/index.js",
+    "d3-timer":       "../../node_modules/d3-timer/src/index.js",
+    "internmap":      "../../node_modules/internmap/src/index.js",
+    "projnames":      "../../node_modules/projnames/index.mjs",
+    "regl":           "../vendor/regl.js",
+    "proj4":          "../vendor/proj4.js",
+    "@json-editor/json-editor": "../vendor/json-editor.js"
+  }
+}
+</script>
+<script src="../../node_modules/regl/dist/regl.js"></script>
+<script src="../../node_modules/proj4/dist/proj4.js"></script>
+
+<script type="module">
+import { Plot, registerAxisQuantityKind } from "../../src/index.js"
+import "../../src/layers/PointsLayer.js"
+import { data as dataPromise } from "../data/sampleData.js"
+
+registerAxisQuantityKind("temperature_K",       { label: "Temp (K)",             scale: "linear", colorscale: "coolwarm" })
+registerAxisQuantityKind("reflectance_au",      { label: "Reflectance (a.u)",    scale: "linear", colorscale: "magma"   })
+registerAxisQuantityKind("incidence_angle_rad", { label: "Incidence angle (rad)", scale: "linear" })
+
+const logEl = document.getElementById('log')
+function log(msg) { logEl.textContent += msg + '\n'; console.log(msg) }
+
+log('Loading data...')
+const data = await dataPromise
+log(`Data ready (${data.x1?.length ?? '?'} points). Starting scatter with vData2...`)
+const t0 = performance.now()
+
+const plot = new Plot(document.getElementById('p1'))
+
+// Scatter with BOTH vData and vData2 — this sets colorAxis2dQuantityKinds on the layer,
+// making the 2D colorscale path (and all 9 2D colorscale functions) reachable in the shader.
+// Both axes use 1D colorscales (cs_a, cs_b >= 0 at runtime), so the 2D branch is never
+// actually executed — but the compiler must still compile map_color_2d and all 9 functions.
+const config = {
+  layers: [{
+    points: {
+      xData: "input.x1", yData: "input.y1",
+      vData: "input.v1", vData2: "input.v2",
+      xAxis: "xaxis_bottom", yAxis: "yaxis_left"
+    }
+  }],
+  axes: {
+    yaxis_left:   { min: 0, max: 5  },
+    xaxis_bottom: { min: 0, max: 10 },
+    temperature_K:    { min: 0, max: 1, colorscale: "coolwarm", colorbar: "none" },
+    reflectance_au:   { min: 0, max: 1, colorscale: "magma",    colorbar: "none" },
+    incidence_angle_rad: { min: -1.5, max: 1.5, filterbar: "none" }
+  },
+  colorbars: []   // NO 2D colorbar — no ColorbarLayer2d compiled
+}
+
+log('Calling plot.update()...')
+try {
+  await plot.update({ config, data: { input: data } })
+  log(`Done in ${((performance.now()-t0)/1000).toFixed(2)}s — no crash!`)
+} catch (e) {
+  log(`ERROR: ${e.message}`)
+  console.error(e)
+}
+</script>
+</body>
+</html>

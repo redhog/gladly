@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html>
+<head><title>Test 15: Only moreland_5x5 (1 complex 2D colorscale)</title></head>
+<body>
+<h2>Test 15: 2D colorbar with ONLY moreland_5x5 registered</h2>
+<p>Same structure as test 14 but registers <strong>moreland_5x5</strong> instead of bilinear4corner.
+moreland_5x5 is the most complex 2D colorscale: 25 nested <code>if/else if</code> branches
+with integer index lookups.</p>
+<p><strong>Theory tested:</strong> If test 14 passes but this crashes, it is the
+<em>complexity</em> of the specific GLSL function (not just its presence) that triggers
+the D3D11 HLSL compiler crash. If both crash or both pass, complexity is not the discriminator.</p>
+<div id="p1" style="width:480px;height:360px;border:1px solid #888;position:relative"></div>
+<pre id="log" style="background:#111;color:#bfb;padding:1em;font-size:13px"></pre>
+
+<script type="importmap">
+{
+  "imports": {
+    "d3-selection":   "../../node_modules/d3-selection/src/index.js",
+    "d3-zoom":        "../../node_modules/d3-zoom/src/index.js",
+    "d3-scale":       "../../node_modules/d3-scale/src/index.js",
+    "d3-axis":        "../../node_modules/d3-axis/src/index.js",
+    "d3-dispatch":    "../../node_modules/d3-dispatch/src/index.js",
+    "d3-drag":        "../../node_modules/d3-drag/src/index.js",
+    "d3-interpolate": "../../node_modules/d3-interpolate/src/index.js",
+    "d3-transition":  "../../node_modules/d3-transition/src/index.js",
+    "d3-array":       "../../node_modules/d3-array/src/index.js",
+    "d3-format":      "../../node_modules/d3-format/src/index.js",
+    "d3-time":        "../../node_modules/d3-time/src/index.js",
+    "d3-time-format": "../../node_modules/d3-time-format/src/index.js",
+    "d3-color":       "../../node_modules/d3-color/src/index.js",
+    "d3-ease":        "../../node_modules/d3-ease/src/index.js",
+    "d3-timer":       "../../node_modules/d3-timer/src/index.js",
+    "internmap":      "../../node_modules/internmap/src/index.js",
+    "projnames":      "../../node_modules/projnames/index.mjs",
+    "regl":           "../vendor/regl.js",
+    "proj4":          "../vendor/proj4.js",
+    "@json-editor/json-editor": "../vendor/json-editor.js"
+  }
+}
+</script>
+<script src="../../node_modules/regl/dist/regl.js"></script>
+<script src="../../node_modules/proj4/dist/proj4.js"></script>
+
+<script type="module">
+// Import components individually — do NOT use src/index.js.
+import { Plot }                     from "../../src/core/Plot.js"
+import { registerAxisQuantityKind } from "../../src/axes/AxisQuantityKindRegistry.js"
+import { register2DColorscale }     from "../../src/colorscales/ColorscaleRegistry.js"
+import "../../src/layers/PointsLayer.js"
+import "../../src/colorscales/MatplotlibColorscales.js"
+// Deliberately NOT importing BivariateColorscales.js — register only moreland_5x5 below.
+
+// Register ONLY moreland_5x5: the most complex 2D colorscale.
+// 25 nested if/else-if branches with int indexing — the most HLSL-compiler-intensive function.
+register2DColorscale("moreland_5x5", `
+vec4 colorscale_2d_moreland_5x5(vec2 t) {
+    float fx = clamp(t.x*4.0,0.0,4.0);
+    float fy = clamp(t.y*4.0,0.0,4.0);
+    int ix = int(fx);
+    int iy = int(fy);
+    vec3 rgb;
+    if(ix==0 && iy==0) rgb = vec3(0.230,0.299,0.754);
+    else if(ix==1 && iy==0) rgb = vec3(0.375,0.544,0.837);
+    else if(ix==2 && iy==0) rgb = vec3(0.625,0.732,0.941);
+    else if(ix==3 && iy==0) rgb = vec3(0.843,0.867,0.996);
+    else if(ix==4 && iy==0) rgb = vec3(0.980,0.957,0.996);
+    else if(ix==0 && iy==1) rgb = vec3(0.266,0.353,0.819);
+    else if(ix==1 && iy==1) rgb = vec3(0.420,0.585,0.876);
+    else if(ix==2 && iy==1) rgb = vec3(0.666,0.762,0.961);
+    else if(ix==3 && iy==1) rgb = vec3(0.876,0.888,0.996);
+    else if(ix==4 && iy==1) rgb = vec3(0.992,0.969,0.996);
+    else if(ix==0 && iy==2) rgb = vec3(0.305,0.407,0.875);
+    else if(ix==1 && iy==2) rgb = vec3(0.466,0.625,0.911);
+    else if(ix==2 && iy==2) rgb = vec3(0.710,0.791,0.976);
+    else if(ix==3 && iy==2) rgb = vec3(0.905,0.908,0.996);
+    else if(ix==4 && iy==2) rgb = vec3(0.996,0.980,0.996);
+    else if(ix==0 && iy==3) rgb = vec3(0.349,0.460,0.926);
+    else if(ix==1 && iy==3) rgb = vec3(0.514,0.664,0.944);
+    else if(ix==2 && iy==3) rgb = vec3(0.753,0.817,0.988);
+    else if(ix==3 && iy==3) rgb = vec3(0.933,0.926,0.996);
+    else if(ix==4 && iy==3) rgb = vec3(0.996,0.988,0.996);
+    else if(ix==0 && iy==4) rgb = vec3(0.403,0.509,0.965);
+    else if(ix==1 && iy==4) rgb = vec3(0.563,0.700,0.972);
+    else if(ix==2 && iy==4) rgb = vec3(0.796,0.843,0.996);
+    else if(ix==3 && iy==4) rgb = vec3(0.960,0.944,0.996);
+    else rgb = vec3(1.000,1.000,1.000);
+    return vec4(rgb,1.0);
+}
+`)
+
+registerAxisQuantityKind("temperature_K",   { label: "Temp (K)",          scale: "linear", colorscale: "coolwarm" })
+registerAxisQuantityKind("reflectance_au",  { label: "Reflectance (a.u)", scale: "linear", colorscale: "magma"   })
+
+const logEl = document.getElementById('log')
+function log(msg) { logEl.textContent += msg + '\n'; console.log(msg) }
+
+const t0 = performance.now()
+const plot = new Plot(document.getElementById('p1'))
+
+const config = {
+  layers: [],
+  axes: {
+    xaxis_bottom: { min: 0, max: 1 },
+    yaxis_left:   { min: 0, max: 1 },
+    temperature_K:  { min: 0, max: 1, colorscale: "coolwarm", colorbar: "none" },
+    reflectance_au: { min: 0, max: 1, colorscale: "magma",    colorbar: "none" },
+  },
+  colorbars: [{ xAxis: "reflectance_au", yAxis: "temperature_K", colorscale: "moreland_5x5" }]
+}
+
+log('Calling plot.update() with ONLY moreland_5x5 registered...')
+try {
+  await plot.update({ config, data: {} })
+  log(`Done in ${((performance.now()-t0)/1000).toFixed(2)}s — no crash!`)
+} catch (e) {
+  log(`ERROR: ${e.message}`)
+  console.error(e)
+}
+</script>
+</body>
+</html>

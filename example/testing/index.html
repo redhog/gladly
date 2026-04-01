@@ -57,6 +57,22 @@
     <a href="11-many-contexts.html">11 — 8 WebGL contexts created simultaneously, updated sequentially</a><br>
     <span class="desc">Creates 8 Plot objects (WebGL contexts) all at once, then calls plot.update() on each one at a time. Separates context-creation cost from rendering cost. Compare with test 07 (concurrent updates).</span>
   </li>
+  <li>
+    <a href="12-colorbar2d-only.html">12 — ONLY a 2D colorbar, no scatter (isolates ColorbarLayer2d shader)</a><br>
+    <span class="desc">No scatter layers — only a ColorbarLayer2d float. ColorbarLayer2d always has colorAxes2d set, so all 9 registered 2D colorscale functions are reachable in its shader. If this crashes, the ColorbarLayer2d shader alone is the culprit.</span>
+  </li>
+  <li>
+    <a href="13-bivariate-scatter-no-colorbar2d.html">13 — Bivariate scatter (vData2) with 1D colorbars only, no 2D colorbar</a><br>
+    <span class="desc">Scatter with both vData and vData2, colorbars: []. Because vData2 is present, colorAxis2dQuantityKinds is set on the layer (ScatterShared.js:30), making map_color_s_2d and all 9 2D colorscale functions reachable in the scatter shader — even though both cs_a and cs_b are 1D indices at runtime.</span>
+  </li>
+  <li>
+    <a href="14-one-simple-2d-colorscale.html">14 — Only bilinear4corner registered (simplest 2D colorscale, no branches)</a><br>
+    <span class="desc">Does NOT import src/index.js. Registers ONLY bilinear4corner (pure bilinear math, no if-branches). The ColorbarLayer2d shader has just 1 2D colorscale function. If this crashes, any 2D colorscale at all is enough to trigger the D3D11 HLSL failure.</span>
+  </li>
+  <li>
+    <a href="15-one-complex-2d-colorscale.html">15 — Only moreland_5x5 registered (most complex 2D colorscale, 25 branches)</a><br>
+    <span class="desc">Same as 14 but registers moreland_5x5 instead (25 nested if/else-if branches with int indexing). Compare with 14: if 14 passes but 15 crashes, it is GLSL complexity (not mere presence of 2D functions) that kills the D3D11 compiler.</span>
+  </li>
 </ul>
 </body>
 </html>

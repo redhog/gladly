@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html>
+<head><title>Test 14: Only bilinear4corner (1 simple 2D colorscale)</title></head>
+<body>
+<h2>Test 14: 2D colorbar with ONLY bilinear4corner registered</h2>
+<p>Does NOT import <code>src/index.js</code> — imports gladly components individually to avoid
+auto-registering all 9 bivariate colorscales. Registers only <strong>bilinear4corner</strong>
+(the simplest: 4 corner colors, pure bilinear math, no branches).</p>
+<p><strong>Theory tested:</strong> If this crashes, even 1 simple 2D colorscale function in the
+shader is enough to cause the D3D11 HLSL compiler failure. If it passes, compare with test 15
+(the most complex 2D colorscale) and test 08 (all 9) to isolate whether it is count or complexity.</p>
+<div id="p1" style="width:480px;height:360px;border:1px solid #888;position:relative"></div>
+<pre id="log" style="background:#111;color:#bfb;padding:1em;font-size:13px"></pre>
+
+<script type="importmap">
+{
+  "imports": {
+    "d3-selection":   "../../node_modules/d3-selection/src/index.js",
+    "d3-zoom":        "../../node_modules/d3-zoom/src/index.js",
+    "d3-scale":       "../../node_modules/d3-scale/src/index.js",
+    "d3-axis":        "../../node_modules/d3-axis/src/index.js",
+    "d3-dispatch":    "../../node_modules/d3-dispatch/src/index.js",
+    "d3-drag":        "../../node_modules/d3-drag/src/index.js",
+    "d3-interpolate": "../../node_modules/d3-interpolate/src/index.js",
+    "d3-transition":  "../../node_modules/d3-transition/src/index.js",
+    "d3-array":       "../../node_modules/d3-array/src/index.js",
+    "d3-format":      "../../node_modules/d3-format/src/index.js",
+    "d3-time":        "../../node_modules/d3-time/src/index.js",
+    "d3-time-format": "../../node_modules/d3-time-format/src/index.js",
+    "d3-color":       "../../node_modules/d3-color/src/index.js",
+    "d3-ease":        "../../node_modules/d3-ease/src/index.js",
+    "d3-timer":       "../../node_modules/d3-timer/src/index.js",
+    "internmap":      "../../node_modules/internmap/src/index.js",
+    "projnames":      "../../node_modules/projnames/index.mjs",
+    "regl":           "../vendor/regl.js",
+    "proj4":          "../vendor/proj4.js",
+    "@json-editor/json-editor": "../vendor/json-editor.js"
+  }
+}
+</script>
+<script src="../../node_modules/regl/dist/regl.js"></script>
+<script src="../../node_modules/proj4/dist/proj4.js"></script>
+
+<script type="module">
+// Import components individually — do NOT use src/index.js which auto-registers all 9 bivariate colorscales.
+import { Plot }                     from "../../src/core/Plot.js"
+import { PlotGroup }                from "../../src/core/PlotGroup.js"
+import { registerAxisQuantityKind } from "../../src/axes/AxisQuantityKindRegistry.js"
+import { register2DColorscale }     from "../../src/colorscales/ColorscaleRegistry.js"
+import "../../src/layers/PointsLayer.js"
+import "../../src/colorscales/MatplotlibColorscales.js"  // registers all 64 1D colorscales
+// Deliberately NOT importing BivariateColorscales.js — register only 1 manually below.
+
+// Register ONLY bilinear4corner: the simplest possible 2D colorscale (no branches, pure bilinear math).
+register2DColorscale("bilinear4corner", `
+vec4 colorscale_2d_bilinear4corner(vec2 t) {
+    vec3 c00 = vec3(0.0, 0.0, 1.0);
+    vec3 c10 = vec3(1.0, 0.0, 0.0);
+    vec3 c01 = vec3(0.0, 1.0, 0.0);
+    vec3 c11 = vec3(1.0, 1.0, 0.0);
+    vec3 rgb = (1.0 - t.x)*(1.0 - t.y)*c00 +
+               t.x*(1.0 - t.y)*c10 +
+               (1.0 - t.x)*t.y*c01 +
+               t.x*t.y*c11;
+    return vec4(rgb,1.0);
+}
+`)
+
+registerAxisQuantityKind("temperature_K",   { label: "Temp (K)",          scale: "linear", colorscale: "coolwarm" })
+registerAxisQuantityKind("reflectance_au",  { label: "Reflectance (a.u)", scale: "linear", colorscale: "magma"   })
+
+const logEl = document.getElementById('log')
+function log(msg) { logEl.textContent += msg + '\n'; console.log(msg) }
+
+const t0 = performance.now()
+const plot = new Plot(document.getElementById('p1'))
+
+// Only 1 2D colorscale (bilinear4corner) in the shader — map_color_2d has just 1 branch.
+const config = {
+  layers: [],
+  axes: {
+    xaxis_bottom: { min: 0, max: 1 },
+    yaxis_left:   { min: 0, max: 1 },
+    temperature_K:  { min: 0, max: 1, colorscale: "coolwarm", colorbar: "none" },
+    reflectance_au: { min: 0, max: 1, colorscale: "magma",    colorbar: "none" },
+  },
+  colorbars: [{ xAxis: "reflectance_au", yAxis: "temperature_K", colorscale: "bilinear4corner" }]
+}
+
+log('Calling plot.update() with ONLY bilinear4corner registered...')
+try {
+  await plot.update({ config, data: {} })
+  log(`Done in ${((performance.now()-t0)/1000).toFixed(2)}s — no crash!`)
+} catch (e) {
+  log(`ERROR: ${e.message}`)
+  console.error(e)
+}
+</script>
+</body>
+</html>

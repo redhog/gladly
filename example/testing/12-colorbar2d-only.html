@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head><title>Test 12: 2D colorbar only (no scatter)</title></head>
+<body>
+<h2>Test 12: ONLY a 2D colorbar, no scatter layers</h2>
+<p>Creates a single plot with <strong>no scatter layers</strong>, only a 2D colorbar float
+using <code>bilinear4corner</code>. All 9 bivariate colorscales are registered (via index.js).</p>
+<p><strong>Theory tested:</strong> If this crashes, the ColorbarLayer2d shader alone (which always
+has <code>colorAxes2d</code> set, making all 9 2D colorscale functions reachable) is the culprit.
+If it passes, the bivariate scatter shader is also needed.</p>
+<div id="p1" style="width:480px;height:360px;border:1px solid #888;position:relative"></div>
+<pre id="log" style="background:#111;color:#bfb;padding:1em;font-size:13px"></pre>
+
+<script type="importmap">
+{
+  "imports": {
+    "d3-selection":   "../../node_modules/d3-selection/src/index.js",
+    "d3-zoom":        "../../node_modules/d3-zoom/src/index.js",
+    "d3-scale":       "../../node_modules/d3-scale/src/index.js",
+    "d3-axis":        "../../node_modules/d3-axis/src/index.js",
+    "d3-dispatch":    "../../node_modules/d3-dispatch/src/index.js",
+    "d3-drag":        "../../node_modules/d3-drag/src/index.js",
+    "d3-interpolate": "../../node_modules/d3-interpolate/src/index.js",
+    "d3-transition":  "../../node_modules/d3-transition/src/index.js",
+    "d3-array":       "../../node_modules/d3-array/src/index.js",
+    "d3-format":      "../../node_modules/d3-format/src/index.js",
+    "d3-time":        "../../node_modules/d3-time/src/index.js",
+    "d3-time-format": "../../node_modules/d3-time-format/src/index.js",
+    "d3-color":       "../../node_modules/d3-color/src/index.js",
+    "d3-ease":        "../../node_modules/d3-ease/src/index.js",
+    "d3-timer":       "../../node_modules/d3-timer/src/index.js",
+    "internmap":      "../../node_modules/internmap/src/index.js",
+    "projnames":      "../../node_modules/projnames/index.mjs",
+    "regl":           "../vendor/regl.js",
+    "proj4":          "../vendor/proj4.js",
+    "@json-editor/json-editor": "../vendor/json-editor.js"
+  }
+}
+</script>
+<script src="../../node_modules/regl/dist/regl.js"></script>
+<script src="../../node_modules/proj4/dist/proj4.js"></script>
+
+<script type="module">
+import { Plot, registerAxisQuantityKind } from "../../src/index.js"
+import "../../src/layers/PointsLayer.js"
+
+registerAxisQuantityKind("temperature_K",   { label: "Temp (K)",          scale: "linear", colorscale: "coolwarm" })
+registerAxisQuantityKind("reflectance_au",  { label: "Reflectance (a.u)", scale: "linear", colorscale: "magma"   })
+
+const logEl = document.getElementById('log')
+function log(msg) { logEl.textContent += msg + '\n'; console.log(msg) }
+
+const t0 = performance.now()
+const plot = new Plot(document.getElementById('p1'))
+
+// No scatter layers — only a 2D colorbar float.
+// ColorbarLayer2d always has colorAxes2d set, making all 9 registered 2D colorscale
+// functions reachable in its fragment shader's call graph.
+const config = {
+  layers: [],
+  axes: {
+    xaxis_bottom: { min: 0, max: 1 },
+    yaxis_left:   { min: 0, max: 1 },
+    temperature_K:  { min: 0, max: 1, colorscale: "coolwarm", colorbar: "none" },
+    reflectance_au: { min: 0, max: 1, colorscale: "magma",    colorbar: "none" },
+  },
+  colorbars: [{ xAxis: "reflectance_au", yAxis: "temperature_K", colorscale: "bilinear4corner" }]
+}
+
+log('Calling plot.update() with only a 2D colorbar, no scatter...')
+try {
+  await plot.update({ config, data: {} })
+  log(`Done in ${((performance.now()-t0)/1000).toFixed(2)}s — no crash!`)
+} catch (e) {
+  log(`ERROR: ${e.message}`)
+  console.error(e)
+}
+</script>
+</body>
+</html>
