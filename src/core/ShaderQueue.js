@@ -21,16 +21,17 @@ export function enqueueRegl(regl, config) {
   if (!regl._shaderQueue) regl._shaderQueue = []
 
   let realCmd = null
-  const handle = (props) => realCmd(props)
+  // Guard: silently skip if called before compilation resolves the handle
+  const handle = (props) => realCmd && realCmd(props)
   handle._config = config
   handle._resolve = (cmd) => { realCmd = cmd }
   regl._shaderQueue.push(handle)
   return handle
 }
 
-export async function compileEnqueuedShaders(regl) {
-  const { tdrYield } = await import('../tdr.js')
+const yieldToEventLoop = () => new Promise(r => setTimeout(r, 0))
 
+export async function compileEnqueuedShaders(regl) {
   const queue = regl._shaderQueue ?? []
   regl._shaderQueue = null
 
@@ -38,7 +39,8 @@ export async function compileEnqueuedShaders(regl) {
 
   const gl = regl._gl
 
-  // Phase 1: start all compilations without checking status
+  // Phase 1: start all compilations without checking status (no yield — must be atomic
+  // so all shaders are submitted to the GPU before any status check)
   const precompiled = queue.map(({ _config: { vert, frag } }) => {
     const vs = gl.createShader(gl.VERTEX_SHADER)
     gl.shaderSource(vs, vert)
@@ -56,7 +58,10 @@ export async function compileEnqueuedShaders(regl) {
     return { prog, vs, fs }
   })
 
-  // Phase 2: wait for all (they've been compiling in parallel), yielding between each
+  // Phase 2: check status and clean up, yielding between programs so the browser
+  // stays responsive. Each getProgramParameter() may block briefly (GPU sync point),
+  // but TDR is not triggered by compile time — only by GPU execution time.
+  // Unresolved handles are guarded (no-op) so renders that fire during yields are safe.
   for (const { prog, vs, fs } of precompiled) {
     if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
       console.warn('[gladly] Shader pre-compilation failed; regl will report the detailed error')
@@ -66,12 +71,13 @@ export async function compileEnqueuedShaders(regl) {
     gl.deleteShader(vs)
     gl.deleteShader(fs)
     gl.deleteProgram(prog)
-    await tdrYield()
+    await yieldToEventLoop()
   }
 
-  // Phase 3: create real regl commands (driver binary cache hit), yielding between each
+  // Phase 3: create real regl commands (driver binary cache hit), yielding between
+  // each so a batch of many shaders doesn't monopolise the main thread.
   for (const handle of queue) {
     handle._resolve(regl(handle._config))
-    await tdrYield()
+    await yieldToEventLoop()
   }
 }
