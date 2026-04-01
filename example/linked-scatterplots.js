@@ -248,6 +248,9 @@ function attachPickHandler(plot) {
   plot.on('error', (e) => {
     showStatus(status, e.message, { error: true })
   })
+  plot.on('no-error', () => {
+    showStatus(status, '')
+  })
 }
 attachPickHandler(plot1)
 attachPickHandler(plot2)

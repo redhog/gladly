@@ -224,6 +224,9 @@ createEditor(currentPlotConfig)
 plot.on('error', (e) => {
   showStatus(document.getElementById('tab4-pick-status'), e.message, { error: true })
 })
+plot.on('no-error', () => {
+  showStatus(document.getElementById('tab4-pick-status'), '')
+})
 
 plot.onZoomEnd(() => {
   const config = plot.getConfig()

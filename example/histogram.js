@@ -166,6 +166,9 @@ plot.on('mouseup', (e) => {
 plot.on('error', (e) => {
   showStatus(document.getElementById('tab5-pick-status'), e.message, { error: true })
 })
+plot.on('no-error', () => {
+  showStatus(document.getElementById('tab5-pick-status'), '')
+})
 
 createEditor(currentPlotConfig)
 

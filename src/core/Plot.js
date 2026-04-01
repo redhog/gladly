@@ -183,6 +183,9 @@ export class Plot extends GlBase {
     this._renderCallbacks = new Set()
     this._zoomEndCallbacks = new Set()
     this._errorListeners = new Set()
+    this._noErrorListeners = new Set()
+    this._hasError = false
+    this._currentRenderHasError = false
     this._dirty = false
     this._rafId = null
     this._rendering = false
@@ -854,6 +857,8 @@ void main() {
   }
 
   _emitError(error) {
+    this._hasError = true
+    this._currentRenderHasError = true
     console.error('[gladly]', error)
     const event = { type: 'error', error, message: error.message }
     for (const cb of this._errorListeners) {
@@ -927,6 +932,8 @@ void main() {
 
   async render() {
     this._dirty = false
+    const hadError = this._hasError
+    this._currentRenderHasError = false
 
     // Validate axis domains once per render (warn only when domain is still
     // the D3 default, i.e. was never set — indicates a missing ensureAxis call)
@@ -1093,6 +1100,14 @@ void main() {
       }
     }
     for (const cb of this._renderCallbacks) cb()
+
+    if (hadError && !this._currentRenderHasError) {
+      this._hasError = false
+      const event = { type: 'no-error' }
+      for (const cb of this._noErrorListeners) {
+        try { cb(event) } catch (e) { console.error('[gladly] Error in no-error listener:', e) }
+      }
+    }
   }
 
   lookup(x, y) {
@@ -1120,6 +1135,10 @@ void main() {
     if (eventType === 'error') {
       this._errorListeners.add(callback)
       return { remove: () => this._errorListeners.delete(callback) }
+    }
+    if (eventType === 'no-error') {
+      this._noErrorListeners.add(callback)
+      return { remove: () => this._noErrorListeners.delete(callback) }
     }
     const handler = (e) => {
       if (!this.container.contains(e.target)) return

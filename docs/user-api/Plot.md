@@ -97,25 +97,61 @@ Each active axis contributes two keys — the axis name (e.g. `"xaxis_bottom"`) 
 
 ### `on(eventType, callback)`
 
-Registers an event listener that fires for any DOM event originating within the plot container, calling `callback` with both the raw event and the data coordinates at the mouse position.
+Registers an event listener. Returns `{ remove() }` to unregister.
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `eventType` | string | Any DOM event name: `"mousemove"`, `"mousedown"`, `"mouseup"`, `"click"`, `"dblclick"`, etc. |
-| `callback` | function | `(event, coords) => void` — receives the raw DOM event and the result of `lookup()` at the cursor position |
+#### DOM events
 
-Returns `{ remove() }` to unregister the listener.
+For any standard DOM event name (`"mousemove"`, `"mousedown"`, `"mouseup"`, `"click"`, `"dblclick"`, etc.), the callback receives the raw DOM event and the data coordinates at the cursor position:
 
 ```javascript
 const handle = plot.on('mousemove', (e, coords) => {
   console.log(coords.xaxis_bottom, coords.yaxis_left)
 })
 
-// Later:
 handle.remove()
 ```
 
 > **Note:** Listeners are registered on `window` in the capture phase so that they fire before D3 zoom's internal handlers (which call `stopImmediatePropagation` on `mouseup` for left-click pan gestures). Events are filtered to those whose `target` is inside the plot container, so multiple plots on the same page do not interfere.
+
+#### Synthetic plot events
+
+Two special event types report rendering errors. They do not correspond to DOM events and have no `coords` argument.
+
+---
+
+**`"error"`** — fired whenever a layer or transform fails (during initialisation or rendering). The failed item is skipped; all other layers continue to render normally.
+
+```javascript
+plot.on('error', (e) => {
+  console.log(e.type)    // "error"
+  console.log(e.message) // human-readable description
+  console.log(e.error)   // the original Error object (with full stack)
+})
+```
+
+---
+
+**`"no-error"`** — fired once after a complete render cycle with no errors, but only if there was a prior error. Fires at most once per error episode — will not fire again unless a new error first occurs.
+
+```javascript
+plot.on('no-error', (e) => {
+  console.log(e.type) // "no-error"
+  // clear any error UI
+})
+```
+
+Typical usage — show a red error banner that clears itself when the plot recovers:
+
+```javascript
+plot.on('error', (e) => {
+  statusBar.textContent = e.message
+  statusBar.style.background = 'red'
+})
+plot.on('no-error', () => {
+  statusBar.textContent = ''
+  statusBar.style.background = ''
+})
+```
 
 ---
 
