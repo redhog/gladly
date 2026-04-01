@@ -1,6 +1,7 @@
 import { Plot } from "../src/index.js"
 import { JSONEditor } from '@json-editor/json-editor'
 import { } from "./layer-types/RectLayer.js"
+import { showStatus } from "./shared.js"
 
 // Generate demo data: 1M bars with randomly-spaced x positions. Two tiers of
 // large gaps: ~5 "wide bars" (~1/10 of plot width each) and ~3 "holes" (exceed
@@ -162,11 +163,15 @@ plot.on('mouseup', (e) => {
   const rect = plot.container.getBoundingClientRect()
   const result = plot.pick(e.clientX - rect.left, e.clientY - rect.top)
   const status = document.getElementById('tab3-pick-status')
-  if (!result) { status.textContent = ''; return }
+  if (!result) { showStatus(status, ''); return }
   const { configLayerIndex, dataIndex, layer } = result
   const isInstanced = layer.instanceCount !== null
   const row = Object.fromEntries(Object.entries(layer.attributes).filter(([k]) => !isInstanced || (layer.attributeDivisors[k] ?? 0) === 1).map(([k, v]) => [k, v[dataIndex]]))
-  status.textContent = `layer=${configLayerIndex} index=${dataIndex} ${JSON.stringify(row)}`
+  showStatus(status, `layer=${configLayerIndex} index=${dataIndex} ${JSON.stringify(row)}`)
+})
+
+plot.on('error', (e) => {
+  showStatus(document.getElementById('tab3-pick-status'), e.message, { error: true })
 })
 
 createEditor(currentPlotConfig)

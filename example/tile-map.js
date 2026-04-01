@@ -1,5 +1,6 @@
 import { Plot, registerAxisQuantityKind } from '../src/index.js'
 import { JSONEditor } from '@json-editor/json-editor'
+import { showStatus } from './shared.js'
 
 registerAxisQuantityKind('pop_density', {
   label: 'Population density',
@@ -219,6 +220,10 @@ async function updatePlot(plotConfig) {
 await updatePlot(currentPlotConfig)
 
 createEditor(currentPlotConfig)
+
+plot.on('error', (e) => {
+  showStatus(document.getElementById('tab4-pick-status'), e.message, { error: true })
+})
 
 plot.onZoomEnd(() => {
   const config = plot.getConfig()

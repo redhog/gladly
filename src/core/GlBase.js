@@ -99,17 +99,28 @@ export class GlBase {
   // No-op in base class. Overridden by Plot to schedule a WebGL render frame.
   scheduleRender() {}
 
+  // Re-throws by default. Overridden by Plot to log + dispatch to error listeners.
+  _emitError(error) {
+    throw error
+  }
+
   async _processTransforms(transforms, epoch) {
     if (!transforms || transforms.length === 0) return
 
     const TDR_STEP_MS = 500
     for (const { name, transform: spec } of transforms) {
       const entries = Object.entries(spec)
-      if (entries.length !== 1) throw new Error(`Transform '${name}' must have exactly one key`)
+      if (entries.length !== 1) {
+        this._emitError(new Error(`Transform '${name}' must have exactly one key`))
+        continue
+      }
       const [className, params] = entries[0]
 
       const computedData = getComputedData(className)
-      if (!computedData) throw new Error(`Unknown computed data type: '${className}'`)
+      if (!computedData) {
+        this._emitError(new Error(`Unknown computed data type: '${className}'`))
+        continue
+      }
 
       const filterAxes = computedData.filterAxes(params, this.currentData)
       for (const quantityKind of Object.values(filterAxes)) {
@@ -121,7 +132,8 @@ export class GlBase {
       try {
         await node._initialize(this.regl, this.currentData, this)
       } catch (e) {
-        throw new Error(`Transform '${name}' (${className}) failed to initialize: ${e.message}`, { cause: e })
+        this._emitError(new Error(`Transform '${name}' (${className}) failed to initialize: ${e.message}`, { cause: e }))
+        continue
       }
       if (performance.now() - stepStart > TDR_STEP_MS)
         await new Promise(r => requestAnimationFrame(r))

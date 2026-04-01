@@ -1,6 +1,6 @@
 import { Plot } from "../src/index.js"
 import { JSONEditor } from '@json-editor/json-editor'
-import { data as dataPromise } from "./shared.js"
+import { data as dataPromise, showStatus } from "./shared.js"
 
 {
   const panel = document.createElement('div')
@@ -169,17 +169,21 @@ plot.on('mouseup', (e) => {
   const rect = plot.container.getBoundingClientRect()
   const result = plot.pick(e.clientX - rect.left, e.clientY - rect.top)
   const status = document.getElementById('tab2-pick-status')
-  if (!result) { status.textContent = ''; return }
+  if (!result) { showStatus(status, ''); return }
   const { configLayerIndex, dataIndex, layer } = result
   const getRow = (idx) => Object.fromEntries(
     Object.entries(data.data).map(([k, v]) => [k, v[idx]]).filter(([, v]) => v !== undefined)
   )
   if (layer.instanceCount !== null) {
     // Lines: dataIndex is a segment index; source points are at dataIndex and dataIndex+1
-    status.textContent = `layer=${configLayerIndex} segment=${dataIndex} start=${JSON.stringify(getRow(dataIndex))} end=${JSON.stringify(getRow(dataIndex + 1))}`
+    showStatus(status, `layer=${configLayerIndex} segment=${dataIndex} start=${JSON.stringify(getRow(dataIndex))} end=${JSON.stringify(getRow(dataIndex + 1))}`)
   } else {
-    status.textContent = `layer=${configLayerIndex} index=${dataIndex} ${JSON.stringify(getRow(dataIndex))}`
+    showStatus(status, `layer=${configLayerIndex} index=${dataIndex} ${JSON.stringify(getRow(dataIndex))}`)
   }
+})
+
+plot.on('error', (e) => {
+  showStatus(document.getElementById('tab2-pick-status'), e.message, { error: true })
 })
 
 createEditor(currentPlotConfig)

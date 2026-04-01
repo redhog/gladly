@@ -6,6 +6,22 @@ import { } from "./layer-types/MultiLineLayer.js"
 
 export { data } from "./data/sampleData.js"
 
+export function showStatus(statusEl, text, { error = false } = {}) {
+  if (!text) {
+    statusEl.innerHTML = ''
+    return
+  }
+  const inner = document.createElement('div')
+  if (error) {
+    inner.style.background = '#c00'
+    inner.style.color = '#fff'
+    inner.style.padding = '2px 6px'
+  }
+  inner.textContent = text
+  statusEl.innerHTML = ''
+  statusEl.appendChild(inner)
+}
+
 registerAxisQuantityKind("voltage_V",            { label: "Voltage (V)",           scale: "linear", colorscale: "viridis"   })
 registerAxisQuantityKind("distance_m",           { label: "Distance (m)",          scale: "linear", colorscale: "plasma"    })
 registerAxisQuantityKind("current_A",            { label: "Current (A)",           scale: "linear", colorscale: "inferno"   })

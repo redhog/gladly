@@ -182,6 +182,7 @@ export class Plot extends GlBase {
     this.colorAxisRegistry = null
     this._renderCallbacks = new Set()
     this._zoomEndCallbacks = new Set()
+    this._errorListeners = new Set()
     this._dirty = false
     this._rafId = null
     this._rendering = false
@@ -706,12 +707,16 @@ void main() {
       const layerSpec = layersConfig[configLayerIndex]
       const entries = Object.entries(layerSpec)
       if (entries.length !== 1) {
-        throw new Error("Each layer specification must have exactly one layer type key")
+        this._emitError(new Error("Each layer specification must have exactly one layer type key"))
+        continue
       }
 
       const [layerTypeName, parameters] = entries[0]
       const layerType = getLayerType(layerTypeName)
-      if (!layerType) throw new Error(`Unknown layer type '${layerTypeName}'`)
+      if (!layerType) {
+        this._emitError(new Error(`Unknown layer type '${layerTypeName}'`))
+        continue
+      }
 
       // Resolve axis config once per layer spec for registration (independent of draw call count).
       const ac = layerType.resolveAxisConfig(parameters, data)
@@ -738,7 +743,8 @@ void main() {
       try {
         gpuLayers = await layerType.createLayer(this.regl, parameters, data, this)
       } catch (e) {
-        throw new Error(`Layer '${layerTypeName}' (index ${configLayerIndex}) failed to create: ${e.message}`, { cause: e })
+        this._emitError(new Error(`Layer '${layerTypeName}' (index ${configLayerIndex}) failed to create: ${e.message}`, { cause: e }))
+        continue
       }
       if (this._initEpoch !== epoch) return
       for (const layer of gpuLayers) {
@@ -747,7 +753,8 @@ void main() {
         try {
           layer.draw = await this._compileLayerDraw(layer)
         } catch (e) {
-          throw new Error(`Layer '${layerTypeName}' (index ${configLayerIndex}) failed to build draw command: ${e.message}`, { cause: e })
+          this._emitError(new Error(`Layer '${layerTypeName}' (index ${configLayerIndex}) failed to build draw command: ${e.message}`, { cause: e }))
+          continue
         }
         if (this._initEpoch !== epoch) return
         if (performance.now() - stepStart > TDR_STEP_MS)
@@ -844,6 +851,14 @@ void main() {
 
   static schema(data, config) {
     return buildPlotSchema(data, config)
+  }
+
+  _emitError(error) {
+    console.error('[gladly]', error)
+    const event = { type: 'error', error, message: error.message }
+    for (const cb of this._errorListeners) {
+      try { cb(event) } catch (e) { console.error('[gladly] Error in error listener:', e) }
+    }
   }
 
   scheduleRender(sourcePlot = null) {
@@ -972,16 +987,23 @@ void main() {
       try {
         await node.refreshIfNeeded(this)
       } catch (e) {
-        throw new Error(`Transform refresh failed: ${e.message}`, { cause: e })
+        this._emitError(new Error(`Transform refresh failed: ${e.message}`, { cause: e }))
       }
       if (performance.now() - stepStart > TDR_STEP_MS)
         await new Promise(r => requestAnimationFrame(r))
     }
 
+    const failedLayers = new Set()
     for (const layer of this.layers) {
       for (const col of layer._dataColumns ?? []) {
         const stepStart = performance.now()
-        await col.refresh(this)
+        try {
+          await col.refresh(this)
+        } catch (e) {
+          this._emitError(new Error(`Layer '${layer.type?.name ?? 'unknown'}' (config index ${layer.configLayerIndex}): column refresh failed: ${e.message}`, { cause: e }))
+          failedLayers.add(layer)
+          break
+        }
         if (performance.now() - stepStart > TDR_STEP_MS)
           await new Promise(r => requestAnimationFrame(r))
       }
@@ -1043,7 +1065,13 @@ void main() {
         props[`filter_scale_type_${pk}`] = this._getScaleTypeFloat(qk)
       }
 
-      layer.draw(props)
+      if (!failedLayers.has(layer)) {
+        try {
+          layer.draw(props)
+        } catch (e) {
+          this._emitError(new Error(`Layer '${layer.type?.name ?? 'unknown'}' (config index ${layer.configLayerIndex}): draw failed: ${e.message}`, { cause: e }))
+        }
+      }
     }
 
     // Render all registered spatial axes via WebGL (axis lines + tick marks + labels).
@@ -1089,6 +1117,10 @@ void main() {
   }
 
   on(eventType, callback) {
+    if (eventType === 'error') {
+      this._errorListeners.add(callback)
+      return { remove: () => this._errorListeners.delete(callback) }
+    }
     const handler = (e) => {
       if (!this.container.contains(e.target)) return
       const rect = this.container.getBoundingClientRect()

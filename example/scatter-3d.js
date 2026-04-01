@@ -1,6 +1,6 @@
 import { Plot } from "../src/index.js"
 import { JSONEditor } from '@json-editor/json-editor'
-import { data as dataPromise } from "./shared.js"
+import { data as dataPromise, showStatus } from "./shared.js"
 
 {
   const panel = document.createElement('div')
@@ -161,12 +161,16 @@ plot.on('mouseup', (e) => {
   const rect = plot.container.getBoundingClientRect()
   const result = plot.pick(e.clientX - rect.left, e.clientY - rect.top)
   const status = document.getElementById('tab6-pick-status')
-  if (!result) { status.textContent = ''; return }
+  if (!result) { showStatus(status, ''); return }
   const { configLayerIndex, dataIndex } = result
   const getRow = (idx) => Object.fromEntries(
     Object.entries(data.data).map(([k, v]) => [k, v[idx]]).filter(([, v]) => v !== undefined)
   )
-  status.textContent = `layer=${configLayerIndex} index=${dataIndex} ${JSON.stringify(getRow(dataIndex))}`
+  showStatus(status, `layer=${configLayerIndex} index=${dataIndex} ${JSON.stringify(getRow(dataIndex))}`)
+})
+
+plot.on('error', (e) => {
+  showStatus(document.getElementById('tab6-pick-status'), e.message, { error: true })
 })
 
 createEditor(currentPlotConfig)

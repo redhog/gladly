@@ -1,7 +1,7 @@
 import { Plot, registerAxisQuantityKind } from "../src/index.js"
 import "../src/layers/BarsLayer.js"
 import { JSONEditor } from '@json-editor/json-editor'
-import { data as dataPromise } from "./shared.js"
+import { data as dataPromise, showStatus } from "./shared.js"
 
 // Register the count axis so the y-axis gets a sensible label.
 registerAxisQuantityKind("count", { label: "Count", scale: "linear" })
@@ -158,9 +158,13 @@ plot.on('mouseup', (e) => {
   const rect = plot.container.getBoundingClientRect()
   const result = plot.pick(e.clientX - rect.left, e.clientY - rect.top)
   const status = document.getElementById('tab5-pick-status')
-  if (!result) { status.textContent = ''; return }
+  if (!result) { showStatus(status, ''); return }
   const { configLayerIndex, dataIndex } = result
-  status.textContent = `layer=${configLayerIndex}  bin=${dataIndex}`
+  showStatus(status, `layer=${configLayerIndex}  bin=${dataIndex}`)
+})
+
+plot.on('error', (e) => {
+  showStatus(document.getElementById('tab5-pick-status'), e.message, { error: true })
 })
 
 createEditor(currentPlotConfig)
