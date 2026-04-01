@@ -41,6 +41,22 @@
     <a href="07-gladly-multiplot.html">07 — Gladly 5 concurrent plot initializations</a><br>
     <span class="desc">Creates 5 plots simultaneously (3 scatter + 2 histograms with 1 M additive-blend scatter each). If 06 passes but 07 crashes, the bug is concurrent GPU command pile-up across multiple plots/contexts.</span>
   </li>
+  <li>
+    <a href="08-plot-group-bivariate.html">08 — PlotGroup + bivariate colorscale (mirrors tab1)</a><br>
+    <span class="desc">PlotGroup with 2 linked scatter plots using 1 M points and a 2D bivariate colorscale. This is the ONLY plot that runs immediately at main-example page load — if this crashes, tab1 is the culprit.</span>
+  </li>
+  <li>
+    <a href="09-tile-layer.html">09 — TileLayer + 1 M scatter overlay (mirrors tab4)</a><br>
+    <span class="desc">OSM XYZ tile background (EPSG:3857→4326 reprojection) plus 1 M-point scatter. Tests tile HTTP fetch + texture creation + tessellated quad rendering. If 07 passes but 09 crashes, TileLayer is the culprit.</span>
+  </li>
+  <li>
+    <a href="10-lines-multiline.html">10 — LinesLayer + MultiLineLayer (mirrors tab2)</a><br>
+    <span class="desc">Scatter + multi-line layer with 1 M data points and a filterbar axis. Tests instanced segment rendering — a different GPU workload from scatter. If 07 passes but 10 crashes, LinesLayer is the culprit.</span>
+  </li>
+  <li>
+    <a href="11-many-contexts.html">11 — 8 WebGL contexts created simultaneously, updated sequentially</a><br>
+    <span class="desc">Creates 8 Plot objects (WebGL contexts) all at once, then calls plot.update() on each one at a time. Separates context-creation cost from rendering cost. Compare with test 07 (concurrent updates).</span>
+  </li>
 </ul>
 </body>
 </html>

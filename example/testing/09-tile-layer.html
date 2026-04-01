@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+<head><title>Test 09: TileLayer + scatter overlay</title></head>
+<body>
+<h2>Test 09: TileLayer — OSM XYZ tiles (EPSG:3857 → 4326 reprojection) + 1 M-point scatter</h2>
+<p>Mirrors <code>tile-map.js</code> (tab4): a single plot with a tile background layer and a
+1 M-point scatter overlay. The tile layer fetches map tiles over HTTP, reprojects them
+from EPSG:3857 to EPSG:4326, and renders them as tessellated quads — very different GPU
+workload from scatter. If this crashes but test 07 does not, TileLayer is the culprit.</p>
+<div id="plot" style="width:800px;height:500px;border:1px solid #888;margin:8px;position:relative"></div>
+<pre id="log" style="background:#111;color:#bfb;padding:1em;font-size:13px"></pre>
+
+<script type="importmap">
+{
+  "imports": {
+    "d3-selection":   "/node_modules/d3-selection/src/index.js",
+    "d3-zoom":        "/node_modules/d3-zoom/src/index.js",
+    "d3-scale":       "/node_modules/d3-scale/src/index.js",
+    "d3-axis":        "/node_modules/d3-axis/src/index.js",
+    "d3-dispatch":    "/node_modules/d3-dispatch/src/index.js",
+    "d3-drag":        "/node_modules/d3-drag/src/index.js",
+    "d3-interpolate": "/node_modules/d3-interpolate/src/index.js",
+    "d3-transition":  "/node_modules/d3-transition/src/index.js",
+    "d3-array":       "/node_modules/d3-array/src/index.js",
+    "d3-format":      "/node_modules/d3-format/src/index.js",
+    "d3-time":        "/node_modules/d3-time/src/index.js",
+    "d3-time-format": "/node_modules/d3-time-format/src/index.js",
+    "d3-color":       "/node_modules/d3-color/src/index.js",
+    "d3-ease":        "/node_modules/d3-ease/src/index.js",
+    "d3-timer":       "/node_modules/d3-timer/src/index.js",
+    "internmap":      "/node_modules/internmap/src/index.js",
+    "projnames":      "/node_modules/projnames/index.mjs",
+    "regl":           "/example/vendor/regl.js",
+    "proj4":          "/example/vendor/proj4.js",
+    "@json-editor/json-editor": "/example/vendor/json-editor.js"
+  }
+}
+</script>
+<script src="/node_modules/regl/dist/regl.js"></script>
+<script src="/node_modules/proj4/dist/proj4.js"></script>
+
+<script type="module">
+import { Plot, registerAxisQuantityKind } from "../../src/index.js"
+import "../../src/layers/PointsLayer.js"
+import "../../src/layers/TileLayer.js"
+
+registerAxisQuantityKind('pop_density', { label: 'Population density', scale: 'linear', colorscale: 'hot' })
+
+const logEl = document.getElementById('log')
+function log(msg) { logEl.textContent += msg + '\n'; console.log(msg) }
+
+// Identical data generation to tile-map.js — 12 cities × 289×289 grid ≈ 1 M points
+log('Generating 1 M synthetic geo points (CPU)...')
+const t0 = performance.now()
+
+const cityCoords = [
+  [-74.006,  40.714], [ -0.118,  51.509], [139.691,  35.690], [151.209, -33.868],
+  [  2.349,  48.864], [-43.173, -22.908], [ 28.048, -26.204], [121.474,  31.228],
+  [-87.629,  41.878], [ 37.618,  55.751], [ 77.209,  28.614], [ 18.424, -33.925],
+]
+const cityParams = [
+  [1.00,1.4,1.1],[0.90,0.8,0.8],[1.00,1.1,0.9],[0.60,1.2,0.9],
+  [0.85,0.7,0.7],[0.65,1.3,1.0],[0.50,1.1,0.9],[0.95,1.0,0.9],
+  [0.80,1.4,1.1],[0.75,1.2,1.0],[1.00,1.0,0.8],[0.55,0.9,0.7],
+]
+const gridN = 289, spread = 3.0
+const lonArr = [], latArr = [], densArr = []
+cityCoords.forEach(([cLon, cLat], ci) => {
+  const [peak, sigLon, sigLat] = cityParams[ci]
+  for (let gy = 0; gy < gridN; gy++) {
+    const dLat = (gy / (gridN - 1) - 0.5) * 2 * spread
+    for (let gx = 0; gx < gridN; gx++) {
+      const dLon = (gx / (gridN - 1) - 0.5) * 2 * spread
+      densArr.push(Math.max(0, peak * Math.exp(-(dLon*dLon)/(2*sigLon*sigLon) - (dLat*dLat)/(2*sigLat*sigLat)) + 0.015 * Math.random()))
+      lonArr.push(cLon + dLon)
+      latArr.push(cLat + dLat)
+    }
+  }
+})
+const lon = new Float32Array(lonArr), lat = new Float32Array(latArr), popDens = new Float32Array(densArr)
+log(`  ${lon.length} points generated in ${((performance.now()-t0)/1000).toFixed(2)}s`)
+
+const data = {
+  data: { lon, lat, popDens },
+  quantity_kinds: { lon: 'epsg_4326_x', lat: 'epsg_4326_y', popDens: 'pop_density' }
+}
+
+const plotConfig = {
+  layers: [
+    {
+      tile: {
+        source: { xyz: { url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', subdomains: ['a','b','c'], maxZoom: 19 } },
+        tileCrs: 'EPSG:3857', plotCrs: 'EPSG:4326', tessellation: 8, opacity: 0.9
+      }
+    },
+    { points: { xData: 'input.lon', yData: 'input.lat', vData: 'input.popDens', xAxis: 'xaxis_bottom', yAxis: 'yaxis_left' } }
+  ],
+  axes: {
+    xaxis_bottom: { min: -180, max: 180 },
+    yaxis_left:   { min: -80,  max: 80  },
+    pop_density:  { colorbar: 'vertical', colorscale: 'hot', min: 0, max: 1, alpha_blend: 1.0 }
+  }
+}
+
+log('Calling plot.update()...')
+const plot = new Plot(document.getElementById('plot'))
+const t1 = performance.now()
+try {
+  await plot.update({ config: plotConfig, data: { input: data } })
+  log(`  done in ${((performance.now()-t1)/1000).toFixed(2)}s — no crash!`)
+} catch (e) {
+  log(`  ERROR: ${e.message}`)
+  console.error(e)
+}
+</script>
+</body>
+</html>
