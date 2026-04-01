@@ -759,7 +759,7 @@ void main() {
       }
     }
     if (this._initEpoch !== epoch) return
-    compileEnqueuedShaders(this.regl)
+    await compileEnqueuedShaders(this.regl)
   }
 
   async _compileLayerDraw(layer) {

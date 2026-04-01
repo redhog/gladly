@@ -217,20 +217,32 @@ async function updatePlot(plotConfig) {
   }
 }
 
-await updatePlot(currentPlotConfig)
+const _doInit_tab4 = async () => {
+  await updatePlot(currentPlotConfig)
 
-createEditor(currentPlotConfig)
+  createEditor(currentPlotConfig)
 
-plot.on('error', (e) => {
-  showStatus(document.getElementById('tab4-pick-status'), e.message, { error: true })
-})
-plot.on('no-error', () => {
-  showStatus(document.getElementById('tab4-pick-status'), '')
-})
+  plot.on('error', (e) => {
+    showStatus(document.getElementById('tab4-pick-status'), e.message, { error: true })
+  })
+  plot.on('no-error', () => {
+    showStatus(document.getElementById('tab4-pick-status'), '')
+  })
 
-plot.onZoomEnd(() => {
-  const config = plot.getConfig()
-  currentPlotConfig = config
-  editor.setValue(config)
-  lastEditorValue = JSON.stringify(editor.getValue())
-})
+  plot.onZoomEnd(() => {
+    const config = plot.getConfig()
+    currentPlotConfig = config
+    editor.setValue(config)
+    lastEditorValue = JSON.stringify(editor.getValue())
+  })
+}
+
+const _panel_tab4 = document.getElementById('tab4')
+if (_panel_tab4.style.display !== 'none') {
+  _doInit_tab4()
+} else {
+  const _obs_tab4 = new MutationObserver(() => {
+    if (_panel_tab4.style.display !== 'none') { _obs_tab4.disconnect(); _doInit_tab4() }
+  })
+  _obs_tab4.observe(_panel_tab4, { attributes: true, attributeFilter: ['style'] })
+}

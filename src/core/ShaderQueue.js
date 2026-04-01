@@ -28,7 +28,9 @@ export function enqueueRegl(regl, config) {
   return handle
 }
 
-export function compileEnqueuedShaders(regl) {
+export async function compileEnqueuedShaders(regl) {
+  const { tdrYield } = await import('../tdr.js')
+
   const queue = regl._shaderQueue ?? []
   regl._shaderQueue = null
 
@@ -54,7 +56,7 @@ export function compileEnqueuedShaders(regl) {
     return { prog, vs, fs }
   })
 
-  // Phase 2: wait for all (they've been compiling in parallel)
+  // Phase 2: wait for all (they've been compiling in parallel), yielding between each
   for (const { prog, vs, fs } of precompiled) {
     if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
       console.warn('[gladly] Shader pre-compilation failed; regl will report the detailed error')
@@ -64,10 +66,12 @@ export function compileEnqueuedShaders(regl) {
     gl.deleteShader(vs)
     gl.deleteShader(fs)
     gl.deleteProgram(prog)
+    await tdrYield()
   }
 
-  // Phase 3: create real regl commands (driver binary cache hit)
+  // Phase 3: create real regl commands (driver binary cache hit), yielding between each
   for (const handle of queue) {
     handle._resolve(regl(handle._config))
+    await tdrYield()
   }
 }
