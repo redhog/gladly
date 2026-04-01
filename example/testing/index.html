@@ -73,6 +73,10 @@
     <a href="15-one-complex-2d-colorscale.html">15 — Only moreland_5x5 registered (most complex 2D colorscale, 25 branches)</a><br>
     <span class="desc">Same as 14 but registers moreland_5x5 instead (25 nested if/else-if branches with int indexing). Compare with 14: if 14 passes but 15 crashes, it is GLSL complexity (not mere presence of 2D functions) that kills the D3D11 compiler.</span>
   </li>
+  <li>
+    <a href="16-merged-vs-separate-2d.html">16 — Merged vs separate 2D colorscale functions (raw WebGL2 compile test)</a><br>
+    <span class="desc">Compiles two variants of the full ColorbarLayer2d-equivalent shader using raw WebGL2 (bypasses regl/gladly). Variant A: 9 separate colorscale_2d_NAME functions + dispatch (current structure). Variant B: all 9 bodies inlined as if/else branches in a single map_color_2d. If A fails and B passes, merging is a viable fix. Reports compile time for both.</span>
+  </li>
 </ul>
 </body>
 </html>

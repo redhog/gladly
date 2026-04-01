@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html>
+<head><title>Test 16: Merged vs separate 2D colorscale functions</title></head>
+<body>
+<h2>Test 16: Merged vs separate 2D colorscale functions in one shader</h2>
+<p>Compiles two variants of the full ColorbarLayer2d-equivalent fragment shader using raw WebGL2
+(bypassing regl/gladly) to measure timing and success/failure directly.</p>
+<ul>
+  <li><strong>Variant A — current (separate):</strong> 9 individually-defined
+      <code>colorscale_2d_NAME(vec2 t)</code> functions + <code>map_color_2d</code> that calls
+      them by index. Same as the failing test 12.</li>
+  <li><strong>Variant B — merged:</strong> No separate function definitions. All 9 colorscale
+      bodies inlined directly into a single <code>map_color_2d(int cs, vec2 t)</code>
+      function as <code>if/else</code> branches. Identical total GLSL code, but only
+      one function definition instead of 10.</li>
+</ul>
+<p><strong>If A fails and B passes:</strong> it is the COUNT of function definitions, not
+the amount of code. Merging is a viable fix.</p>
+<p><strong>If both fail or both pass:</strong> it is the total code amount; merging does not help.</p>
+<canvas id="c" width="1" height="1" style="display:none"></canvas>
+<pre id="log" style="background:#111;color:#bfb;padding:1em;font-size:13px"></pre>
+
+<script type="importmap">
+{
+  "imports": {
+    "d3-selection":   "../../node_modules/d3-selection/src/index.js",
+    "d3-zoom":        "../../node_modules/d3-zoom/src/index.js",
+    "d3-scale":       "../../node_modules/d3-scale/src/index.js",
+    "d3-axis":        "../../node_modules/d3-axis/src/index.js",
+    "d3-dispatch":    "../../node_modules/d3-dispatch/src/index.js",
+    "d3-drag":        "../../node_modules/d3-drag/src/index.js",
+    "d3-interpolate": "../../node_modules/d3-interpolate/src/index.js",
+    "d3-transition":  "../../node_modules/d3-transition/src/index.js",
+    "d3-array":       "../../node_modules/d3-array/src/index.js",
+    "d3-format":      "../../node_modules/d3-format/src/index.js",
+    "d3-time":        "../../node_modules/d3-time/src/index.js",
+    "d3-time-format": "../../node_modules/d3-time-format/src/index.js",
+    "d3-color":       "../../node_modules/d3-color/src/index.js",
+    "d3-ease":        "../../node_modules/d3-ease/src/index.js",
+    "d3-timer":       "../../node_modules/d3-timer/src/index.js",
+    "internmap":      "../../node_modules/internmap/src/index.js",
+    "projnames":      "../../node_modules/projnames/index.mjs",
+    "regl":           "../vendor/regl.js",
+    "proj4":          "../vendor/proj4.js",
+    "@json-editor/json-editor": "../vendor/json-editor.js"
+  }
+}
+</script>
+
+<script type="module">
+import { buildColorGlsl, getRegistered2DColorscales } from "../../src/colorscales/ColorscaleRegistry.js"
+import "../../src/colorscales/MatplotlibColorscales.js"
+import "../../src/colorscales/BivariateColorscales.js"
+
+const logEl = document.getElementById('log')
+function log(msg) { logEl.textContent += msg + '\n'; console.log(msg) }
+
+// --- Build both GLSL variants ---
+
+// Variant A: what buildColorGlsl() currently produces — 9 separate function
+// definitions + a dispatch that calls them.
+const glslA = buildColorGlsl()
+
+// Variant B: same total code, but the 9 function bodies are inlined directly
+// into map_color_2d as if/else branches. No separate function definitions.
+function extractBody(glslFn) {
+  // Find matching braces of the outermost function body.
+  const start = glslFn.indexOf('{')
+  let depth = 0, end = -1
+  for (let i = start; i < glslFn.length; i++) {
+    if (glslFn[i] === '{') depth++
+    else if (glslFn[i] === '}') { if (--depth === 0) { end = i; break } }
+  }
+  return glslFn.slice(start + 1, end).trim()
+}
+
+function buildMergedGlsl() {
+  const cs2d = getRegistered2DColorscales()
+
+  // Take the output of buildColorGlsl and strip out everything 2D-related:
+  // the separate function definitions and the existing map_color_2d dispatch.
+  // Then append our merged map_color_2d instead.
+  let base = glslA
+
+  // Remove each colorscale_2d_NAME function definition
+  for (const [name] of cs2d) {
+    // Match "vec4 colorscale_2d_NAME(vec2 t) { ... }" across multiple lines
+    const re = new RegExp(`vec4\\s+colorscale_2d_${name}\\s*\\(vec2[^)]*\\)\\s*\\{`, 'g')
+    let match
+    while ((match = re.exec(base)) !== null) {
+      // Find the matching closing brace
+      let depth = 0, end = -1
+      for (let i = match.index; i < base.length; i++) {
+        if (base[i] === '{') depth++
+        else if (base[i] === '}') { if (--depth === 0) { end = i; break } }
+      }
+      if (end !== -1) {
+        base = base.slice(0, match.index) + base.slice(end + 1)
+        re.lastIndex = 0  // restart after mutation
+      }
+    }
+  }
+
+  // Remove existing map_color_2d dispatch function
+  const dispatchRe = /vec4\s+map_color_2d\s*\(int[^)]*\)\s*\{/g
+  let m2
+  while ((m2 = dispatchRe.exec(base)) !== null) {
+    let depth = 0, end = -1
+    for (let i = m2.index; i < base.length; i++) {
+      if (base[i] === '{') depth++
+      else if (base[i] === '}') { if (--depth === 0) { end = i; break } }
+    }
+    if (end !== -1) {
+      base = base.slice(0, m2.index) + base.slice(end + 1)
+      dispatchRe.lastIndex = 0
+    }
+  }
+
+  // Build merged map_color_2d with all bodies inlined
+  const parts = ['vec4 map_color_2d(int cs, vec2 t) {']
+  let idx = 0
+  for (const [name, glslFn] of cs2d) {
+    const body = extractBody(glslFn)
+    if (idx === 0) parts.push(`  if (cs == ${idx}) {`)
+    else           parts.push(`  } else if (cs == ${idx}) {`)
+    // Indent body lines
+    for (const line of body.split('\n')) parts.push(`    ${line}`)
+    idx++
+  }
+  parts.push('  }')
+  parts.push('  return vec4(0.5, 0.5, 0.5, 1.0);')
+  parts.push('}')
+
+  return base + '\n' + parts.join('\n')
+}
+
+const glslB = buildMergedGlsl()
+
+log(`Variant A length: ${glslA.length} chars`)
+log(`Variant B length: ${glslB.length} chars`)
+log(`(should be similar — same code, different structure)`)
+log('')
+
+// --- Raw WebGL2 shader compilation test ---
+
+const gl = document.getElementById('c').getContext('webgl2')
+if (!gl) { log('ERROR: WebGL2 not available'); throw new Error() }
+
+// Minimal vertex shader
+const vertSrc = `#version 300 es
+precision mediump float;
+in vec2 a_pos;
+out vec2 tval_x_var;
+out vec2 tval_y_var;
+void main() { gl_Position = vec4(a_pos, 0, 1); }`
+
+// Minimal fragment main that exercises the 2D color path (same as ColorbarLayer2d)
+const fragMain = `
+precision mediump float;
+uniform int colorscale_a;
+uniform vec2 color_range_a;
+uniform float color_scale_type_a;
+uniform float alpha_blend_a;
+uniform int colorscale_b;
+uniform vec2 color_range_b;
+uniform float color_scale_type_b;
+uniform float alpha_blend_b;
+in float tval_x;
+in float tval_y;
+out vec4 fragColor;
+vec4 gladly_apply_color(vec4 c) { return c; }
+vec4 map_color_2d_(vec2 values) {
+  return map_color_s_2d(colorscale_a, color_range_a, values.x, color_scale_type_a, alpha_blend_a,
+                        colorscale_b, color_range_b, values.y, color_scale_type_b, alpha_blend_b);
+}
+void main() { fragColor = map_color_2d_(vec2(0.5, 0.5)); }
+`
+
+function tryCompile(label, colorGlsl) {
+  const fragSrc = `#version 300 es\n${colorGlsl}\n${fragMain}`
+
+  const t0 = performance.now()
+
+  const vs = gl.createShader(gl.VERTEX_SHADER)
+  gl.shaderSource(vs, vertSrc); gl.compileShader(vs)
+
+  const fs = gl.createShader(gl.FRAGMENT_SHADER)
+  gl.shaderSource(fs, fragSrc); gl.compileShader(fs)
+
+  const prog = gl.createProgram()
+  gl.attachShader(prog, vs); gl.attachShader(prog, fs)
+  gl.linkProgram(prog)
+
+  const ms = (performance.now() - t0).toFixed(0)
+  const ok = gl.getProgramParameter(prog, gl.LINK_STATUS)
+  const vsLog  = gl.getShaderInfoLog(vs)  || ''
+  const fsLog  = gl.getShaderInfoLog(fs)  || ''
+  const pLog   = gl.getProgramInfoLog(prog) || ''
+
+  gl.detachShader(prog, vs); gl.detachShader(prog, fs)
+  gl.deleteShader(vs); gl.deleteShader(fs); gl.deleteProgram(prog)
+
+  if (ok) {
+    log(`${label}: OK in ${ms}ms`)
+  } else {
+    log(`${label}: FAILED in ${ms}ms`)
+    if (vsLog) log(`  vert: ${vsLog.slice(0, 300)}`)
+    if (fsLog) log(`  frag: ${fsLog.slice(0, 300)}`)
+    if (pLog)  log(`  prog: ${pLog.slice(0, 300)}`)
+  }
+
+  return ok
+}
+
+log('Testing Variant A (9 separate functions + dispatch)...')
+const okA = tryCompile('Variant A', glslA)
+
+log('')
+if (gl.isContextLost()) {
+  log('Context lost after Variant A — skipping Variant B.')
+} else {
+  log('Testing Variant B (all bodies merged into single map_color_2d)...')
+  tryCompile('Variant B', glslB)
+}
+</script>
+</body>
+</html>
