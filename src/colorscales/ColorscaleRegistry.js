@@ -46,6 +46,11 @@ export function buildColorGlsl() {
 
   const parts = []
 
+  // Safe NaN constant — uintBitsToFloat is a defined bitcast in GLSL ES 3.0 (§8.3).
+  // 0x7FC00000 is a standard IEEE 754 quiet NaN.  Using this instead of 0.0/0.0
+  // which is undefined behaviour and rejected by ANGLE on D3D11.
+  parts.push('const float GLADLY_NAN = uintBitsToFloat(0x7FC00000u);')
+
   // 1D colorscale functions
   for (const glslFn of colorscales.values()) {
     parts.push(glslFn)

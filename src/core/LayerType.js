@@ -310,10 +310,10 @@ export class LayerType {
         `}`,
         `vec4 map_color_2d_x_${fnSuffix(suffix)}(float value) {`,
         `  return map_color_s_2d(colorscale${suffix}, color_range${suffix}, value, color_scale_type${suffix}, alpha_blend${suffix},`,
-        `                        colorscale${suffix}, color_range${suffix}, 0.0/0.0, color_scale_type${suffix}, 0.0);`,
+        `                        colorscale${suffix}, color_range${suffix}, GLADLY_NAN, color_scale_type${suffix}, 0.0);`,
         `}`,
         `vec4 map_color_2d_y_${fnSuffix(suffix)}(float value) {`,
-        `  return map_color_s_2d(colorscale${suffix}, color_range${suffix}, 0.0/0.0, color_scale_type${suffix}, 0.0,`,
+        `  return map_color_s_2d(colorscale${suffix}, color_range${suffix}, GLADLY_NAN, color_scale_type${suffix}, 0.0,`,
         `                        colorscale${suffix}, color_range${suffix}, value, color_scale_type${suffix}, alpha_blend${suffix});`,
         `}`
       )
