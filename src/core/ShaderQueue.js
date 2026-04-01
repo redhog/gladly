@@ -62,9 +62,21 @@ export async function compileEnqueuedShaders(regl) {
   // stays responsive. Each getProgramParameter() may block briefly (GPU sync point),
   // but TDR is not triggered by compile time — only by GPU execution time.
   // Unresolved handles are guarded (no-op) so renders that fire during yields are safe.
-  for (const { prog, vs, fs } of precompiled) {
+  const failed = new Set()
+  for (let i = 0; i < precompiled.length; i++) {
+    const { prog, vs, fs } = precompiled[i]
     if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
-      console.warn('[gladly] Shader pre-compilation failed; regl will report the detailed error')
+      // Capture error logs NOW, before context loss makes them null.
+      const vsLog = gl.getShaderInfoLog(vs) ?? '(log unavailable — context may be lost)'
+      const fsLog = gl.getShaderInfoLog(fs) ?? '(log unavailable — context may be lost)'
+      const progLog = gl.getProgramInfoLog(prog) ?? '(log unavailable — context may be lost)'
+      console.error(
+        '[gladly] Shader pre-compilation failed (will skip creating regl command).\n' +
+        `  vertex log:  ${vsLog}\n` +
+        `  fragment log: ${fsLog}\n` +
+        `  program log: ${progLog}`
+      )
+      failed.add(i)
     }
     gl.detachShader(prog, vs)
     gl.detachShader(prog, fs)
@@ -76,8 +88,11 @@ export async function compileEnqueuedShaders(regl) {
 
   // Phase 3: create real regl commands (driver binary cache hit), yielding between
   // each so a batch of many shaders doesn't monopolise the main thread.
-  for (const handle of queue) {
-    handle._resolve(regl(handle._config))
+  // Skip handles whose pre-compilation failed — regl would crash on a lost context.
+  for (let i = 0; i < queue.length; i++) {
+    if (!failed.has(i)) {
+      queue[i]._resolve(regl(queue[i]._config))
+    }
     await yieldToEventLoop()
   }
 }

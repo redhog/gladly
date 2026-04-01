@@ -116,8 +116,8 @@ export function buildColorGlsl() {
   parts.push('vec4 map_color_s_2d(int cs_a, vec2 range_a, float v_a, float type_a, float useAlpha_a,')
   parts.push('                    int cs_b, vec2 range_b, float v_b, float type_b, float useAlpha_b) {')
 
-  parts.push('  bool a_nan = isnan(v_a);')
-  parts.push('  bool b_nan = isnan(v_b);')
+  parts.push('  bool a_nan = (v_a != v_a);')
+  parts.push('  bool b_nan = (v_b != v_b);')
   parts.push('  vec4 c;')
 
   parts.push('  if (cs_a < 0 && cs_a == cs_b) {')
