@@ -156,7 +156,6 @@ void main() { gl_Position = vec4(a_pos, 0, 1); }`
 
 // Minimal fragment main that exercises the 2D color path (same as ColorbarLayer2d)
 const fragMain = `
-precision mediump float;
 uniform int colorscale_a;
 uniform vec2 color_range_a;
 uniform float color_scale_type_a;
@@ -177,7 +176,7 @@ void main() { fragColor = map_color_2d_(vec2(0.5, 0.5)); }
 `
 
 function tryCompile(label, colorGlsl) {
-  const fragSrc = `#version 300 es\n${colorGlsl}\n${fragMain}`
+  const fragSrc = `#version 300 es\nprecision mediump float;\n${colorGlsl}\n${fragMain}`
 
   const t0 = performance.now()
 
