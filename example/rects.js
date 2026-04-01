@@ -157,31 +157,43 @@ async function updatePlot(cfg) {
   }
 }
 
-await updatePlot(currentPlotConfig)
+const _doInit_tab3 = async () => {
+  await updatePlot(currentPlotConfig)
 
-plot.on('mouseup', (e) => {
-  const rect = plot.container.getBoundingClientRect()
-  const result = plot.pick(e.clientX - rect.left, e.clientY - rect.top)
-  const status = document.getElementById('tab3-pick-status')
-  if (!result) { showStatus(status, ''); return }
-  const { configLayerIndex, dataIndex, layer } = result
-  const isInstanced = layer.instanceCount !== null
-  const row = Object.fromEntries(Object.entries(layer.attributes).filter(([k]) => !isInstanced || (layer.attributeDivisors[k] ?? 0) === 1).map(([k, v]) => [k, v[dataIndex]]))
-  showStatus(status, `layer=${configLayerIndex} index=${dataIndex} ${JSON.stringify(row)}`)
-})
+  plot.on('mouseup', (e) => {
+    const rect = plot.container.getBoundingClientRect()
+    const result = plot.pick(e.clientX - rect.left, e.clientY - rect.top)
+    const status = document.getElementById('tab3-pick-status')
+    if (!result) { showStatus(status, ''); return }
+    const { configLayerIndex, dataIndex, layer } = result
+    const isInstanced = layer.instanceCount !== null
+    const row = Object.fromEntries(Object.entries(layer.attributes).filter(([k]) => !isInstanced || (layer.attributeDivisors[k] ?? 0) === 1).map(([k, v]) => [k, v[dataIndex]]))
+    showStatus(status, `layer=${configLayerIndex} index=${dataIndex} ${JSON.stringify(row)}`)
+  })
 
-plot.on('error', (e) => {
-  showStatus(document.getElementById('tab3-pick-status'), e.message, { error: true })
-})
-plot.on('no-error', () => {
-  showStatus(document.getElementById('tab3-pick-status'), '')
-})
+  plot.on('error', (e) => {
+    showStatus(document.getElementById('tab3-pick-status'), e.message, { error: true })
+  })
+  plot.on('no-error', () => {
+    showStatus(document.getElementById('tab3-pick-status'), '')
+  })
 
-createEditor(currentPlotConfig)
+  createEditor(currentPlotConfig)
 
-plot.onZoomEnd(() => {
-  const config = plot.getConfig()
-  currentPlotConfig = config
-  editor.setValue(config)
-  lastEditorValue = JSON.stringify(editor.getValue())
-})
+  plot.onZoomEnd(() => {
+    const config = plot.getConfig()
+    currentPlotConfig = config
+    editor.setValue(config)
+    lastEditorValue = JSON.stringify(editor.getValue())
+  })
+}
+
+const _panel_tab3 = document.getElementById('tab3')
+if (_panel_tab3.style.display !== 'none') {
+  _doInit_tab3()
+} else {
+  const _obs_tab3 = new MutationObserver(() => {
+    if (_panel_tab3.style.display !== 'none') { _obs_tab3.disconnect(); _doInit_tab3() }
+  })
+  _obs_tab3.observe(_panel_tab3, { attributes: true, attributeFilter: ['style'] })
+}

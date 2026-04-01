@@ -13,12 +13,7 @@ import { computationSchema, buildTransformSchema, getComputedData } from "../com
 import { DataGroup, normalizeData } from "../data/Data.js"
 import { enqueueRegl, compileEnqueuedShaders } from "./ShaderQueue.js"
 import { GlBase } from "./GlBase.js"
-
-// If a single compute step (ComputedData refresh or TextureColumn refresh) takes
-// longer than this on the CPU, yield to the browser before the next step.
-// This prevents submitting an unbounded burst of GPU commands in one synchronous
-// block, which can trigger the Windows TDR watchdog (~2 s GPU timeout).
-const TDR_STEP_MS = 500
+import { tdrYield } from "../tdr.js"
 
 // Throttle linked-plot renders when the source plot's "blocked lag" is high.
 // Blocked lag = max(0, RAF_wait - own_render_time): high when other plots' renders
@@ -705,7 +700,6 @@ void main() {
   }
 
   async _processLayers(layersConfig, data, epoch) {
-    const TDR_STEP_MS = 500
     for (let configLayerIndex = 0; configLayerIndex < layersConfig.length; configLayerIndex++) {
       const layerSpec = layersConfig[configLayerIndex]
       const entries = Object.entries(layerSpec)
@@ -752,7 +746,6 @@ void main() {
       if (this._initEpoch !== epoch) return
       for (const layer of gpuLayers) {
         layer.configLayerIndex = configLayerIndex
-        const stepStart = performance.now()
         try {
           layer.draw = await this._compileLayerDraw(layer)
         } catch (e) {
@@ -760,8 +753,7 @@ void main() {
           continue
         }
         if (this._initEpoch !== epoch) return
-        if (performance.now() - stepStart > TDR_STEP_MS)
-          await new Promise(r => requestAnimationFrame(r))
+        await tdrYield()
         if (this._initEpoch !== epoch) return
         this.layers.push(layer)
       }
@@ -990,20 +982,17 @@ void main() {
     // Any TDR-yield RAF pauses happen here while the previous frame is still visible.
     // Yield between steps when a step is expensive to avoid triggering the Windows TDR watchdog.
     for (const node of this._dataTransformNodes) {
-      const stepStart = performance.now()
       try {
         await node.refreshIfNeeded(this)
       } catch (e) {
         this._emitError(new Error(`Transform refresh failed: ${e.message}`, { cause: e }))
       }
-      if (performance.now() - stepStart > TDR_STEP_MS)
-        await new Promise(r => requestAnimationFrame(r))
+      await tdrYield()
     }
 
     const failedLayers = new Set()
     for (const layer of this.layers) {
       for (const col of layer._dataColumns ?? []) {
-        const stepStart = performance.now()
         try {
           await col.refresh(this)
         } catch (e) {
@@ -1011,13 +1000,14 @@ void main() {
           failedLayers.add(layer)
           break
         }
-        if (performance.now() - stepStart > TDR_STEP_MS)
-          await new Promise(r => requestAnimationFrame(r))
+        await tdrYield()
       }
     }
 
     // Phase 2 — synchronous draw: all data is ready; clear once then draw every layer.
-    // No async yields from here to the end of render() so the canvas is never blank mid-frame.
+    // Yield before touching the canvas so the GPU can complete any pending work from
+    // other plots or the previous frame before we submit new draw commands.
+    await tdrYield()
     this.regl.clear({ color: [1,1,1,1], depth:1 })
 
     for (const layer of this.layers) {

@@ -152,31 +152,43 @@ async function updatePlot(config) {
   }
 }
 
-await updatePlot(currentPlotConfig)
+const _doInit_tab5 = async () => {
+  await updatePlot(currentPlotConfig)
 
-plot.on('mouseup', (e) => {
-  const rect = plot.container.getBoundingClientRect()
-  const result = plot.pick(e.clientX - rect.left, e.clientY - rect.top)
-  const status = document.getElementById('tab5-pick-status')
-  if (!result) { showStatus(status, ''); return }
-  const { configLayerIndex, dataIndex } = result
-  showStatus(status, `layer=${configLayerIndex}  bin=${dataIndex}`)
-})
+  plot.on('mouseup', (e) => {
+    const rect = plot.container.getBoundingClientRect()
+    const result = plot.pick(e.clientX - rect.left, e.clientY - rect.top)
+    const status = document.getElementById('tab5-pick-status')
+    if (!result) { showStatus(status, ''); return }
+    const { configLayerIndex, dataIndex } = result
+    showStatus(status, `layer=${configLayerIndex}  bin=${dataIndex}`)
+  })
 
-plot.on('error', (e) => {
-  showStatus(document.getElementById('tab5-pick-status'), e.message, { error: true })
-})
-plot.on('no-error', () => {
-  showStatus(document.getElementById('tab5-pick-status'), '')
-})
+  plot.on('error', (e) => {
+    showStatus(document.getElementById('tab5-pick-status'), e.message, { error: true })
+  })
+  plot.on('no-error', () => {
+    showStatus(document.getElementById('tab5-pick-status'), '')
+  })
 
-createEditor(currentPlotConfig)
+  createEditor(currentPlotConfig)
 
-plot.onZoomEnd(() => {
-  const config = plot.getConfig()
-  currentPlotConfig = config
-  editor.setValue(config)
-  lastEditorValue = JSON.stringify(editor.getValue())
-})
+  plot.onZoomEnd(() => {
+    const config = plot.getConfig()
+    currentPlotConfig = config
+    editor.setValue(config)
+    lastEditorValue = JSON.stringify(editor.getValue())
+  })
+}
+
+const _panel_tab5 = document.getElementById('tab5')
+if (_panel_tab5.style.display !== 'none') {
+  _doInit_tab5()
+} else {
+  const _obs_tab5 = new MutationObserver(() => {
+    if (_panel_tab5.style.display !== 'none') { _obs_tab5.disconnect(); _doInit_tab5() }
+  })
+  _obs_tab5.observe(_panel_tab5, { attributes: true, attributeFilter: ['style'] })
+}
 
 }) // dataPromise.then

@@ -163,39 +163,51 @@ async function updatePlot(plotConfig) {
   }
 }
 
-await updatePlot(currentPlotConfig)
+const _doInit_tab2 = async () => {
+  await updatePlot(currentPlotConfig)
 
-plot.on('mouseup', (e) => {
-  const rect = plot.container.getBoundingClientRect()
-  const result = plot.pick(e.clientX - rect.left, e.clientY - rect.top)
-  const status = document.getElementById('tab2-pick-status')
-  if (!result) { showStatus(status, ''); return }
-  const { configLayerIndex, dataIndex, layer } = result
-  const getRow = (idx) => Object.fromEntries(
-    Object.entries(data.data).map(([k, v]) => [k, v[idx]]).filter(([, v]) => v !== undefined)
-  )
-  if (layer.instanceCount !== null) {
-    // Lines: dataIndex is a segment index; source points are at dataIndex and dataIndex+1
-    showStatus(status, `layer=${configLayerIndex} segment=${dataIndex} start=${JSON.stringify(getRow(dataIndex))} end=${JSON.stringify(getRow(dataIndex + 1))}`)
-  } else {
-    showStatus(status, `layer=${configLayerIndex} index=${dataIndex} ${JSON.stringify(getRow(dataIndex))}`)
-  }
-})
+  plot.on('mouseup', (e) => {
+    const rect = plot.container.getBoundingClientRect()
+    const result = plot.pick(e.clientX - rect.left, e.clientY - rect.top)
+    const status = document.getElementById('tab2-pick-status')
+    if (!result) { showStatus(status, ''); return }
+    const { configLayerIndex, dataIndex, layer } = result
+    const getRow = (idx) => Object.fromEntries(
+      Object.entries(data.data).map(([k, v]) => [k, v[idx]]).filter(([, v]) => v !== undefined)
+    )
+    if (layer.instanceCount !== null) {
+      // Lines: dataIndex is a segment index; source points are at dataIndex and dataIndex+1
+      showStatus(status, `layer=${configLayerIndex} segment=${dataIndex} start=${JSON.stringify(getRow(dataIndex))} end=${JSON.stringify(getRow(dataIndex + 1))}`)
+    } else {
+      showStatus(status, `layer=${configLayerIndex} index=${dataIndex} ${JSON.stringify(getRow(dataIndex))}`)
+    }
+  })
 
-plot.on('error', (e) => {
-  showStatus(document.getElementById('tab2-pick-status'), e.message, { error: true })
-})
-plot.on('no-error', () => {
-  showStatus(document.getElementById('tab2-pick-status'), '')
-})
+  plot.on('error', (e) => {
+    showStatus(document.getElementById('tab2-pick-status'), e.message, { error: true })
+  })
+  plot.on('no-error', () => {
+    showStatus(document.getElementById('tab2-pick-status'), '')
+  })
 
-createEditor(currentPlotConfig)
+  createEditor(currentPlotConfig)
 
-plot.onZoomEnd(() => {
-  const config = plot.getConfig()
-  currentPlotConfig = config
-  editor.setValue(config)
-  lastEditorValue = JSON.stringify(editor.getValue())
-})
+  plot.onZoomEnd(() => {
+    const config = plot.getConfig()
+    currentPlotConfig = config
+    editor.setValue(config)
+    lastEditorValue = JSON.stringify(editor.getValue())
+  })
+}
+
+const _panel_tab2 = document.getElementById('tab2')
+if (_panel_tab2.style.display !== 'none') {
+  _doInit_tab2()
+} else {
+  const _obs_tab2 = new MutationObserver(() => {
+    if (_panel_tab2.style.display !== 'none') { _obs_tab2.disconnect(); _doInit_tab2() }
+  })
+  _obs_tab2.observe(_panel_tab2, { attributes: true, attributeFilter: ['style'] })
+}
 
 }) // dataPromise.then

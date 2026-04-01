@@ -37,6 +37,10 @@
     <a href="06-gladly-data-gen.html">06 — Gladly ComputePipeline data generation</a><br>
     <span class="desc">Runs the full 1 M-point GPU data generation (13 columns) and CPU readback in isolation — no plot rendering. Times each column readback individually to pinpoint which step causes crashes.</span>
   </li>
+  <li>
+    <a href="07-gladly-multiplot.html">07 — Gladly 5 concurrent plot initializations</a><br>
+    <span class="desc">Creates 5 plots simultaneously (3 scatter + 2 histograms with 1 M additive-blend scatter each). If 06 passes but 07 crashes, the bug is concurrent GPU command pile-up across multiple plots/contexts.</span>
+  </li>
 </ul>
 </body>
 </html>

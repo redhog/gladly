@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html>
+<head><title>Test 07: Gladly concurrent plot initialization</title></head>
+<body>
+<h2>Test 07: Gladly concurrent plot initialization (5 plots simultaneously)</h2>
+<p>Simulates the main example: creates 5 plots all calling <code>plot.update()</code>
+simultaneously after data loads, including a histogram (1 M additive-blend scatter).
+If this crashes but <a href="06-gladly-data-gen.html">test 06</a> does not, the bug is
+in concurrent rendering / GPU command pile-up, NOT in data generation.</p>
+<div style="display:flex;flex-wrap:wrap;gap:8px;padding:8px">
+  <div id="p1" style="width:320px;height:240px;border:1px solid #888;position:relative"></div>
+  <div id="p2" style="width:320px;height:240px;border:1px solid #888;position:relative"></div>
+  <div id="p3" style="width:320px;height:240px;border:1px solid #888;position:relative"></div>
+  <div id="p4" style="width:320px;height:240px;border:1px solid #888;position:relative"></div>
+  <div id="p5" style="width:320px;height:240px;border:1px solid #888;position:relative"></div>
+</div>
+<pre id="log" style="background:#111;color:#bfb;padding:1em;font-size:13px"></pre>
+
+<script type="importmap">
+{
+  "imports": {
+    "d3-selection":   "/node_modules/d3-selection/src/index.js",
+    "d3-zoom":        "/node_modules/d3-zoom/src/index.js",
+    "d3-scale":       "/node_modules/d3-scale/src/index.js",
+    "d3-axis":        "/node_modules/d3-axis/src/index.js",
+    "d3-dispatch":    "/node_modules/d3-dispatch/src/index.js",
+    "d3-drag":        "/node_modules/d3-drag/src/index.js",
+    "d3-interpolate": "/node_modules/d3-interpolate/src/index.js",
+    "d3-transition":  "/node_modules/d3-transition/src/index.js",
+    "d3-array":       "/node_modules/d3-array/src/index.js",
+    "d3-format":      "/node_modules/d3-format/src/index.js",
+    "d3-time":        "/node_modules/d3-time/src/index.js",
+    "d3-time-format": "/node_modules/d3-time-format/src/index.js",
+    "d3-color":       "/node_modules/d3-color/src/index.js",
+    "d3-ease":        "/node_modules/d3-ease/src/index.js",
+    "d3-timer":       "/node_modules/d3-timer/src/index.js",
+    "internmap":      "/node_modules/internmap/src/index.js",
+    "projnames":      "/node_modules/projnames/index.mjs",
+    "regl":           "/example/vendor/regl.js",
+    "proj4":          "/example/vendor/proj4.js",
+    "@json-editor/json-editor": "/example/vendor/json-editor.js"
+  }
+}
+</script>
+<script src="/node_modules/regl/dist/regl.js"></script>
+<script src="/node_modules/proj4/dist/proj4.js"></script>
+
+<script type="module">
+import { Plot, registerAxisQuantityKind } from "../../src/index.js"
+import "../../src/layers/PointsLayer.js"
+import "../../src/layers/BarsLayer.js"
+import { data as dataPromise } from "../data/sampleData.js"
+
+registerAxisQuantityKind("count",      { label: "Count",       scale: "linear" })
+registerAxisQuantityKind("voltage_V",  { label: "Voltage (V)", scale: "linear", colorscale: "viridis" })
+registerAxisQuantityKind("distance_m", { label: "Distance (m)",scale: "linear", colorscale: "plasma"  })
+registerAxisQuantityKind("current_A",  { label: "Current (A)", scale: "linear", colorscale: "inferno" })
+registerAxisQuantityKind("temperature_K", { label: "Temp (K)", scale: "linear", colorscale: "coolwarm" })
+
+const logEl = document.getElementById('log')
+function log(msg) { logEl.textContent += msg + '\n'; console.log(msg) }
+
+const data = await dataPromise
+
+log('Data ready. Starting 5 plot.update() calls simultaneously...')
+const t0 = performance.now()
+
+// 5 plots: scatter, scatter, scatter, histogram, histogram
+// All start simultaneously — exactly the scenario that can overwhelm the GPU.
+
+const plots = [
+  new Plot(document.getElementById('p1')),
+  new Plot(document.getElementById('p2')),
+  new Plot(document.getElementById('p3')),
+  new Plot(document.getElementById('p4')),
+  new Plot(document.getElementById('p5')),
+]
+
+const configs = [
+  {
+    layers: [{ points: { xData: "input.x1", yData: "input.y1", vData: "input.v1" } }],
+    axes: { distance_m: {}, voltage_V: {}, reflectance_au: { colorbar: "vertical" } }
+  },
+  {
+    layers: [{ points: { xData: "input.x2", yData: "input.y2", vData: "input.v2" } }],
+    axes: { distance_m: {}, current_A: {}, temperature_K: { colorbar: "vertical" } }
+  },
+  {
+    layers: [{ points: { xData: "input.x1", yData: "input.v1" } }],
+    axes: { distance_m: {}, voltage_V: {} }
+  },
+  // Histogram with 1M additive-blend scatter — the most GPU-intensive tab
+  {
+    transforms: [
+      { name: "hist", transform: { HistogramData: { input: "input.y1", bins: 0, filter: "input.f1" } } }
+    ],
+    layers: [{ bars: { xData: "hist.binCenters", yData: "hist.counts", xAxis: "xaxis_bottom", yAxis: "yaxis_left" } }],
+    axes: { voltage_V: {}, count: {} }
+  },
+  // Second histogram
+  {
+    transforms: [
+      { name: "hist", transform: { HistogramData: { input: "input.y2", bins: 0, filter: "input.f2" } } }
+    ],
+    layers: [{ bars: { xData: "hist.binCenters", yData: "hist.counts", xAxis: "xaxis_bottom", yAxis: "yaxis_left" } }],
+    axes: { current_A: {}, count: {} }
+  },
+]
+
+// Start all 5 simultaneously — do NOT await before starting the next.
+const promises = plots.map((plot, i) =>
+  plot.update({ config: configs[i], data: { input: data } })
+    .then(() => { log(`  plot ${i+1} ready in ${((performance.now()-t0)/1000).toFixed(2)}s`) })
+    .catch(e => { log(`  plot ${i+1} ERROR: ${e.message}`) })
+)
+
+await Promise.all(promises)
+log(`All 5 plots initialized in ${((performance.now()-t0)/1000).toFixed(2)}s — no crash!`)
+</script>
+</body>
+</html>

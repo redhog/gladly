@@ -144,47 +144,59 @@ async function updatePlot(plotConfig) {
   }
 }
 
-await plot.update({ config: currentPlotConfig, data: plotData })
-await updatePlot(currentPlotConfig)
+const _doInit_tab6 = async () => {
+  await plot.update({ config: currentPlotConfig, data: plotData })
+  await updatePlot(currentPlotConfig)
 
-let mousedownPos = null
-plot.on('mousedown', (e) => {
-  mousedownPos = [e.clientX, e.clientY]
-})
-plot.on('mouseup', (e) => {
-  if (!mousedownPos) return
-  const dx = e.clientX - mousedownPos[0]
-  const dy = e.clientY - mousedownPos[1]
-  mousedownPos = null
-  if (dx*dx + dy*dy > 25) return  // drag, not click
+  let mousedownPos = null
+  plot.on('mousedown', (e) => {
+    mousedownPos = [e.clientX, e.clientY]
+  })
+  plot.on('mouseup', (e) => {
+    if (!mousedownPos) return
+    const dx = e.clientX - mousedownPos[0]
+    const dy = e.clientY - mousedownPos[1]
+    mousedownPos = null
+    if (dx*dx + dy*dy > 25) return  // drag, not click
 
-  const rect = plot.container.getBoundingClientRect()
-  const result = plot.pick(e.clientX - rect.left, e.clientY - rect.top)
-  const status = document.getElementById('tab6-pick-status')
-  if (!result) { showStatus(status, ''); return }
-  const { configLayerIndex, dataIndex } = result
-  const getRow = (idx) => Object.fromEntries(
-    Object.entries(data.data).map(([k, v]) => [k, v[idx]]).filter(([, v]) => v !== undefined)
-  )
-  showStatus(status, `layer=${configLayerIndex} index=${dataIndex} ${JSON.stringify(getRow(dataIndex))}`)
-})
+    const rect = plot.container.getBoundingClientRect()
+    const result = plot.pick(e.clientX - rect.left, e.clientY - rect.top)
+    const status = document.getElementById('tab6-pick-status')
+    if (!result) { showStatus(status, ''); return }
+    const { configLayerIndex, dataIndex } = result
+    const getRow = (idx) => Object.fromEntries(
+      Object.entries(data.data).map(([k, v]) => [k, v[idx]]).filter(([, v]) => v !== undefined)
+    )
+    showStatus(status, `layer=${configLayerIndex} index=${dataIndex} ${JSON.stringify(getRow(dataIndex))}`)
+  })
 
-plot.on('error', (e) => {
-  showStatus(document.getElementById('tab6-pick-status'), e.message, { error: true })
-})
-plot.on('no-error', () => {
-  showStatus(document.getElementById('tab6-pick-status'), '')
-})
+  plot.on('error', (e) => {
+    showStatus(document.getElementById('tab6-pick-status'), e.message, { error: true })
+  })
+  plot.on('no-error', () => {
+    showStatus(document.getElementById('tab6-pick-status'), '')
+  })
 
-createEditor(currentPlotConfig)
+  createEditor(currentPlotConfig)
 
-plot.onZoomEnd(() => {
-  const config = plot.getConfig()
-  currentPlotConfig = config
-  if (editor) {
-    editor.setValue(config)
-    lastEditorValue = JSON.stringify(editor.getValue())
-  }
-})
+  plot.onZoomEnd(() => {
+    const config = plot.getConfig()
+    currentPlotConfig = config
+    if (editor) {
+      editor.setValue(config)
+      lastEditorValue = JSON.stringify(editor.getValue())
+    }
+  })
+}
+
+const _panel_tab6 = document.getElementById('tab6')
+if (_panel_tab6.style.display !== 'none') {
+  _doInit_tab6()
+} else {
+  const _obs_tab6 = new MutationObserver(() => {
+    if (_panel_tab6.style.display !== 'none') { _obs_tab6.disconnect(); _doInit_tab6() }
+  })
+  _obs_tab6.observe(_panel_tab6, { attributes: true, attributeFilter: ['style'] })
+}
 
 }) // dataPromise.then
