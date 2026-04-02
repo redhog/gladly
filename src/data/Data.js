@@ -257,6 +257,7 @@ export class Data {
   getData(col) {
     const entry = this._entry(col)
     if (!entry.data) return null
+    if (entry.data instanceof ArrayColumn) return entry.data
     return new ArrayColumn(entry.data, { domain: entry.domain ?? null, quantityKind: entry.quantityKind ?? null })
   }
 

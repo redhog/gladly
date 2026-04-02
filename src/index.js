@@ -27,7 +27,8 @@ export { tileLayerType, TileLayerType } from "./layers/TileLayer.js"
 export { barsLayerType } from "./layers/BarsLayer.js"
 export { registerEpsgDef, parseCrsCode, crsToQkX, crsToQkY, qkToEpsgCode, reproject } from "./geo/EpsgUtils.js"
 export { Computation, TextureComputation, GlslComputation, ComputedData } from "./data/Computation.js"
-export { EXPRESSION_REF, computationSchema, buildTransformSchema, registerTextureComputation, registerGlslComputation, registerComputedData, getComputedData } from "./compute/ComputationRegistry.js"
+export { ArrayColumn } from "./data/ColumnData.js"
+export { EXPRESSION_REF, computationSchema, buildTransformSchema, registerTextureComputation, registerGlslComputation, registerComputedData, getComputedData, resolveQuantityKind } from "./compute/ComputationRegistry.js"
 export { ComputedDataNode } from "./data/Data.js"
 
 // Register all matplotlib colorscales (side-effect import)
