@@ -230,9 +230,9 @@ plot2Config = plot2.getConfig()
 
 function attachPickHandler(plot) {
   const status = document.getElementById('tab1-pick-status')
-  plot.on('mouseup', (e) => {
+  plot.on('mouseup', async (e) => {
     const rect = plot.container.getBoundingClientRect()
-    const result = plot.pick(e.clientX - rect.left, e.clientY - rect.top)
+    const result = await plot.pick(e.clientX - rect.left, e.clientY - rect.top)
     if (!result) { showStatus(status, ''); return }
     const { configLayerIndex, dataIndex, layer } = result
     const getRow = (idx) => Object.fromEntries(
