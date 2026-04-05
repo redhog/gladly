@@ -1,5 +1,5 @@
 import { Layer } from "./Layer.js"
-import { buildColorGlsl } from "../colorscales/ColorscaleRegistry.js"
+import { buildColorGlsl, getRegisteredColorscales } from "../colorscales/ColorscaleRegistry.js"
 import { buildFilterGlsl } from "../axes/FilterAxisRegistry.js"
 import { resolveAttributeExpr } from "../compute/ComputationRegistry.js"
 import { SAMPLE_COLUMN_GLSL, SAMPLE_COLUMN_ND_GLSL } from "../data/ColumnData.js"
@@ -267,6 +267,9 @@ export class LayerType {
 
     const spatialGlsl = buildSpatialGlsl()
     const colorGlsl = (Object.keys(layer.colorAxes).length > 0 || Object.keys(layer.colorAxes2d).length > 0) ? buildColorGlsl() : ''
+    if (colorGlsl && getRegisteredColorscales().size > 0) {
+      uniforms['u_colorscale_tex'] = () => plot.colorscaleTexture
+    }
     const filterGlsl = Object.keys(layer.filterAxes).length > 0 ? buildFilterGlsl() : ''
     const pickVertDecls = `in float a_pickId;\nout float v_pickId;`
 

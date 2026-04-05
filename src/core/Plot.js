@@ -7,7 +7,7 @@ import { FilterAxisRegistry } from "../axes/FilterAxisRegistry.js"
 import { ZoomController } from "../axes/ZoomController.js"
 import { getLayerType, getRegisteredLayerTypes } from "./LayerTypeRegistry.js"
 import { getAxisQuantityKind, getScaleTypeFloat } from "../axes/AxisQuantityKindRegistry.js"
-import { getRegisteredColorscales, getRegistered2DColorscales } from "../colorscales/ColorscaleRegistry.js"
+import { getRegisteredColorscales, getRegistered2DColorscales, buildColorscaleTexture, getColorscalesVersion } from "../colorscales/ColorscaleRegistry.js"
 import { Float } from "../floats/Float.js"
 import { computationSchema, buildTransformSchema, getComputedData } from "../compute/ComputationRegistry.js"
 import { DataGroup, normalizeData } from "../data/Data.js"
@@ -369,6 +369,11 @@ export class Plot extends GlBase {
     this.colorAxisRegistry = new ColorAxisRegistry()
     this.filterAxisRegistry = new FilterAxisRegistry()
 
+    // Rebuild the colorscale texture on every _initialize so that colorscales
+    // registered after the previous update() are included (matches the GLSL
+    // rebuild cadence in createDrawCommand).
+    this._rebuildColorscaleTexture()
+
     await this._processTransforms(transforms, epoch)
     if (this._initEpoch !== epoch) return
     await this._processLayers(layers, this.currentData, epoch)
@@ -419,9 +424,47 @@ export class Plot extends GlBase {
     this.scheduleRender()
   }
 
+  _rebuildColorscaleTexture() {
+    const version = getColorscalesVersion()
+    if (this._colorscalesVersion === version) return
+    this._colorscalesVersion = version
+    const csTexData = buildColorscaleTexture()
+    if (!csTexData) return
+    if (this.colorscaleTexture) {
+      // Reuse the existing texture object — subimage upload avoids a GPU allocation
+      // if the dimensions haven't changed.
+      const prev = this.colorscaleTexture
+      if (prev.width === csTexData.width && prev.height === csTexData.height) {
+        prev.subimage({ data: csTexData.data, width: csTexData.width, height: csTexData.height })
+        return
+      }
+      prev.destroy()
+    }
+    this.colorscaleTexture = this.regl.texture({
+      width:  csTexData.width,
+      height: csTexData.height,
+      data:   csTexData.data,
+      format: 'rgba',
+      type:   'float',
+      mag:    'nearest',
+      min:    'nearest',
+      wrapS:  'clamp',
+      wrapT:  'clamp',
+    })
+  }
+
   // Compile the two regl commands shared across all axis rendering.
   // Called once after the first regl context is created.
   _initAxisCommands() {
+    const regl = this.regl
+    const gl = regl._gl
+    if (gl.isContextLost()) return
+    try { this._initAxisCommandsInner() } catch (e) {
+      console.error('[gladly] _initAxisCommands failed (context may be lost):', e)
+    }
+  }
+
+  _initAxisCommandsInner() {
     const regl = this.regl
 
     // Axis lines and tick marks (simple 3D line segments).
@@ -517,6 +560,7 @@ void main() {
         func: { srcRGB: 'src alpha', dstRGB: 'one minus src alpha', srcAlpha: 0, dstAlpha: 1 },
       },
     })
+
   }
 
   _setupResizeObserver() {

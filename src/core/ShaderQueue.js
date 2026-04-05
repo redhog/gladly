@@ -88,10 +88,14 @@ export async function compileEnqueuedShaders(regl) {
 
   // Phase 3: create real regl commands (driver binary cache hit), yielding between
   // each so a batch of many shaders doesn't monopolise the main thread.
-  // Skip handles whose pre-compilation failed — regl would crash on a lost context.
+  // Skip handles whose pre-compilation failed or whose context is lost.
   for (let i = 0; i < queue.length; i++) {
-    if (!failed.has(i)) {
-      queue[i]._resolve(regl(queue[i]._config))
+    if (!failed.has(i) && !gl.isContextLost()) {
+      try {
+        queue[i]._resolve(regl(queue[i]._config))
+      } catch (e) {
+        console.error('[gladly] Failed to create regl command (context may be lost):', e)
+      }
     }
     await yieldToEventLoop()
   }

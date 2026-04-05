@@ -1,26 +1,7 @@
 import { registerColorscale } from './ColorscaleRegistry.js'
 
-// Generate a GLSL vec4 colorscale_NAME(float t) function from an array of
-// [t, r, g, b] stops, using piecewise linear interpolation.
-function stopsToGlsl(name, stops) {
-  const f = n => n.toFixed(5)
-  const lines = [`vec4 colorscale_${name}(float t) {`]
-  lines.push('  t = clamp(t, 0.0, 1.0);')
-  for (let i = 0; i < stops.length - 1; i++) {
-    const [t0, r0, g0, b0] = stops[i]
-    const [t1, r1, g1, b1] = stops[i + 1]
-    const dt = t1 - t0
-    const isLast = i === stops.length - 2
-    const cond = isLast ? '' : `if (t < ${f(t1)}) `
-    const u = t0 === 0.0 ? `t / ${f(dt)}` : `(t - ${f(t0)}) / ${f(dt)}`
-    lines.push(`  ${cond}{ float u = ${u}; return vec4(mix(vec3(${f(r0)},${f(g0)},${f(b0)}), vec3(${f(r1)},${f(g1)},${f(b1)}), u), 1.0); }`)
-  }
-  lines.push('}')
-  return lines.join('\n')
-}
-
 function reg(name, stops) {
-  registerColorscale(name, stopsToGlsl(name, stops))
+  registerColorscale(name, stops)
 }
 
 // ---------------------------------------------------------------------------

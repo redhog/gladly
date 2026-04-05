@@ -1,8 +1,12 @@
-const colorscales = new Map()
-const colorscales2d = new Map()
+const colorscales = new Map()   // name → [[t, r, g, b], ...]
+const colorscales2d = new Map() // name → glslFn string
+let colorscalesVersion = 0
 
-export function registerColorscale(name, glslFn) {
-  colorscales.set(name, glslFn)
+export function getColorscalesVersion() { return colorscalesVersion }
+
+export function registerColorscale(name, stops) {
+  colorscales.set(name, stops)
+  colorscalesVersion++
 }
 
 export function register2DColorscale(name, glslFn) {
@@ -41,6 +45,58 @@ export function get2DColorscaleIndex(name) {
   return null
 }
 
+// Build the unified grid of all unique t positions and pre-evaluate every
+// colorscale at every grid point.  Returns { width, height, data } suitable
+// for passing directly to regl.texture(), or null if no 1D colorscales are
+// registered.  width = number of grid points, height = number of colorscales,
+// each texel = vec4(r, g, b, 1).
+export function buildColorscaleTexture() {
+  if (colorscales.size === 0) return null
+
+  const tSet = new Set()
+  for (const stops of colorscales.values()) {
+    for (const [t] of stops) tSet.add(t)
+  }
+  const gridT = Array.from(tSet).sort((a, b) => a - b)
+  const N = gridT.length
+  const numCs = colorscales.size
+
+  const data = new Float32Array(numCs * N * 4)
+
+  let csIdx = 0
+  for (const stops of colorscales.values()) {
+    for (let gi = 0; gi < N; gi++) {
+      const t = gridT[gi]
+      let r, g, b
+      if (t <= stops[0][0]) {
+        ;[, r, g, b] = stops[0]
+      } else if (t >= stops[stops.length - 1][0]) {
+        ;[, r, g, b] = stops[stops.length - 1]
+      } else {
+        for (let si = 0; si < stops.length - 1; si++) {
+          const [t0, r0, g0, b0] = stops[si]
+          const [t1, r1, g1, b1] = stops[si + 1]
+          if (t >= t0 && t <= t1) {
+            const u = (t - t0) / (t1 - t0)
+            r = r0 + u * (r1 - r0)
+            g = g0 + u * (g1 - g0)
+            b = b0 + u * (b1 - b0)
+            break
+          }
+        }
+      }
+      const idx = (csIdx * N + gi) * 4
+      data[idx + 0] = r
+      data[idx + 1] = g
+      data[idx + 2] = b
+      data[idx + 3] = 1.0
+    }
+    csIdx++
+  }
+
+  return { width: N, height: numCs, data }
+}
+
 export function buildColorGlsl() {
   if (colorscales.size === 0 && colorscales2d.size === 0) return ''
 
@@ -51,26 +107,39 @@ export function buildColorGlsl() {
   // which is undefined behaviour and rejected by ANGLE on D3D11.
   parts.push('const float GLADLY_NAN = uintBitsToFloat(0x7FC00000u);')
 
-  // 1D colorscale functions
-  for (const glslFn of colorscales.values()) {
-    parts.push(glslFn)
+  if (colorscales.size > 0) {
+    // Build unified t grid from all registered colorscales
+    const tSet = new Set()
+    for (const stops of colorscales.values()) {
+      for (const [t] of stops) tSet.add(t)
+    }
+    const gridT = Array.from(tSet).sort((a, b) => a - b)
+    const N = gridT.length
+    const f = t => t.toFixed(5)
+
+    // Constant array of grid t positions (used for interpolation)
+    parts.push(`const float CS_T[${N}] = float[${N}](${gridT.map(f).join(', ')});`)
+
+    // Texture sampler — one texel per (colorscale, grid point), rgb = color
+    parts.push('uniform sampler2D u_colorscale_tex;')
+
+    // Ternary chain: maps t ∈ [0,1] to segment index i ∈ [0, N-2]
+    // Segment i spans [CS_T[i], CS_T[i+1]].  The chain tests N-2 thresholds.
+    const chain = gridT.slice(1, -1).map((t, i) => `t < ${f(t)} ? ${i} :`).join(' ') + ` ${N - 2}`
+
+    parts.push('vec4 map_color(int cs, vec2 range, float value) {')
+    parts.push('  float t = clamp((value - range.x) / (range.y - range.x), 0.0, 1.0);')
+    parts.push(`  int i = ${chain};`)
+    parts.push('  vec3 c0 = texelFetch(u_colorscale_tex, ivec2(i,     cs), 0).rgb;')
+    parts.push('  vec3 c1 = texelFetch(u_colorscale_tex, ivec2(i + 1, cs), 0).rgb;')
+    parts.push('  return vec4(mix(c0, c1, (t - CS_T[i]) / (CS_T[i + 1] - CS_T[i])), 1.0);')
+    parts.push('}')
   }
 
   // 2D colorscale functions (fn signature: vec4 colorscale_2d_<name>(vec2 t))
   for (const glslFn of colorscales2d.values()) {
     parts.push(glslFn)
   }
-
-  // map_color — 1D dispatch, operates in already-transformed (possibly log) space
-  parts.push('vec4 map_color(int cs, vec2 range, float value) {')
-  parts.push('  float t = clamp((value - range.x) / (range.y - range.x), 0.0, 1.0);')
-  let idx = 0
-  for (const name of colorscales.keys()) {
-    parts.push(`  if (cs == ${idx}) return colorscale_${name}(t);`)
-    idx++
-  }
-  parts.push('  return vec4(0.5, 0.5, 0.5, 1.0);')
-  parts.push('}')
 
   // map_color_2d — 2D dispatch, takes normalized vec2 t in [0,1]x[0,1]
   parts.push('vec4 map_color_2d(int cs, vec2 t) {')
@@ -144,6 +213,6 @@ export function buildColorGlsl() {
 
   parts.push('  return gladly_apply_color(c);')
   parts.push('}')
-  
+
   return parts.join('\n')
 }
