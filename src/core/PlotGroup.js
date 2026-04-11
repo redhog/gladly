@@ -26,6 +26,7 @@ export class PlotGroup {
 
     for (const [name, plot] of Object.entries(plots)) {
       this._plots.set(name, plot)
+      plot._group = this
     }
 
     if (autoLink) this._updateAutoLinks()
@@ -34,6 +35,7 @@ export class PlotGroup {
   /** Add a named plot to the group. Re-runs auto-linking if enabled. */
   add(name, plot) {
     this._plots.set(name, plot)
+    plot._group = this
     if (this._autoLink) this._updateAutoLinks()
   }
 
@@ -41,6 +43,8 @@ export class PlotGroup {
   remove(name) {
     if (!this._plots.has(name)) return
     this._removeLinksForPlot(name)
+    const plot = this._plots.get(name)
+    if (plot._group === this) plot._group = null
     this._plots.delete(name)
   }
 

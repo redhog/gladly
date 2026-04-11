@@ -276,6 +276,7 @@ export class Plot extends GlBase {
     try {
       await this._applyUpdate({ config, data })
       this._validateLinks()
+      this._group?._updateAutoLinks()
     } catch (error) {
       this.currentConfig = previousConfig
       this._rawData = previousRawData
