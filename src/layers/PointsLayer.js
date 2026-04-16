@@ -120,3 +120,4 @@ class PointsLayerType extends ScatterLayerTypeBase {
 
 export const pointsLayerType = new PointsLayerType()
 registerLayerType("points", pointsLayerType)
+export { PointsLayerType }

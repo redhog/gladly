@@ -30,7 +30,7 @@ void main() { gl_Position = vec4(a_position, 0.0, 1.0); }`,
 // ─── linspace ─────────────────────────────────────────────────────────────────
 // Produces N values in ]0, 1[ : value[i] = (i + 0.5) / N  — fully on GPU.
 class LinspaceComputation extends TextureComputation {
-  compute(regl, inputs, _getAxisDomain) {
+  async compute(regl, inputs, _getAxisDomain) {
     const N = inputs.length
     return runFullscreenQuad(regl, N, w => `#version 300 es
 precision highp float;
@@ -66,7 +66,7 @@ registerTextureComputation('linspace', new LinspaceComputation())
 // ─── range ────────────────────────────────────────────────────────────────────
 // Produces N integer values: 0, 1, 2, ..., N-1  — fully on GPU.
 class RangeComputation extends TextureComputation {
-  compute(regl, inputs, _getAxisDomain) {
+  async compute(regl, inputs, _getAxisDomain) {
     const N = inputs.length
     return runFullscreenQuad(regl, N, w => `#version 300 es
 precision highp float;
@@ -146,7 +146,7 @@ registerGlslComputation('glslExpr', new GlslExprComputation())
 // All computation is done on the GPU via a fullscreen quad render pass.
 // Hash: 3-round xorshift-multiply (good avalanche, no trig, GLSL ES 300).
 class RandomComputation extends TextureComputation {
-  compute(regl, inputs, _getAxisDomain) {
+  async compute(regl, inputs, _getAxisDomain) {
     const N    = inputs.length
     const seed = (inputs.seed || 0) === 0 ? (Math.random() * 0x7fffffff) | 0 : inputs.seed
     return runFullscreenQuad(regl, N, w => `#version 300 es

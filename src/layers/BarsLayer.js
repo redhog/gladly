@@ -166,3 +166,4 @@ class BarsLayerType extends LayerType {
 
 export const barsLayerType = new BarsLayerType()
 registerLayerType("bars", barsLayerType)
+export { BarsLayerType }

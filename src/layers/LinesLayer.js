@@ -187,3 +187,4 @@ class LinesLayerType extends ScatterLayerTypeBase {
 
 export const linesLayerType = new LinesLayerType()
 registerLayerType("lines", linesLayerType)
+export { LinesLayerType }

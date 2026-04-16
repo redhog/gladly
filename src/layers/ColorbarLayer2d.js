@@ -1,27 +1,10 @@
 import { LayerType } from "../core/LayerType.js"
 import { registerLayerType } from "../core/LayerTypeRegistry.js"
 
-// Four vertices for a triangle-strip quad covering the entire clip space.
 const quadCx = new Float32Array([-1, 1, -1, 1])
 const quadCy = new Float32Array([-1, -1, 1, 1])
 
-export const colorbar2dLayerType = new LayerType({
-  name: "colorbar2d",
-  suppressWarnings: true,
-
-  getAxisConfig: function(parameters) {
-    const { xAxis, yAxis } = parameters
-    return {
-      xAxis: "xaxis_bottom",
-      xAxisQuantityKind: xAxis,
-      yAxis: "yaxis_left",
-      yAxisQuantityKind: yAxis,
-      colorAxisQuantityKinds: { '_a': xAxis, '_b': yAxis },
-      colorAxis2dQuantityKinds: { '': ['_a', '_b'] },
-    }
-  },
-
-  vert: `#version 300 es
+const COLORBAR2D_VERT = `#version 300 es
     precision mediump float;
     in float cx;
     in float cy;
@@ -32,14 +15,14 @@ export const colorbar2dLayerType = new LayerType({
       tval_x = (cx + 1.0) / 2.0;
       tval_y = (cy + 1.0) / 2.0;
     }
-  `,
+  `
 
-  // tval_x/tval_y are [0,1] positions in the colorbar quad. We convert them to actual data
-  // values in each axis's range (undoing the log transform if needed), then pass those raw
-  // values to map_color_s_2d which re-applies the scale type internally. The exp() call
-  // is the inverse of the log() that map_color_s_2d will apply, so log-scale roundtrips
-  // correctly and linear-scale is a no-op (exp(log(v)) == v, but for linear vt == v anyway).
-  frag: `#version 300 es
+// tval_x/tval_y are [0,1] positions in the colorbar quad. We convert them to actual data
+// values in each axis's range (undoing the log transform if needed), then pass those raw
+// values to map_color_s_2d which re-applies the scale type internally. The exp() call
+// is the inverse of the log() that map_color_s_2d will apply, so log-scale roundtrips
+// correctly and linear-scale is a no-op (exp(log(v)) == v, but for linear vt == v anyway).
+const COLORBAR2D_FRAG = `#version 300 es
     precision mediump float;
     uniform vec2 color_range_a;
     uniform float color_scale_type_a;
@@ -60,20 +43,38 @@ export const colorbar2dLayerType = new LayerType({
 
       fragColor = map_color_2d_(vec2(v_a, v_b));
     }
-  `,
+  `
 
-  schema: () => ({
-    $schema: "https://json-schema.org/draft/2020-12/schema",
-    type: "object",
-    properties: {
-      xAxis: { type: "string", description: "Quantity kind for the x axis (color axis A)" },
-      yAxis: { type: "string", description: "Quantity kind for the y axis (color axis B)" }
-    },
-    required: ["xAxis", "yAxis"]
-  }),
+class Colorbar2dLayerType extends LayerType {
+  constructor() {
+    super({ name: "colorbar2d", suppressWarnings: true, vert: COLORBAR2D_VERT, frag: COLORBAR2D_FRAG })
+  }
 
-  createLayer: function(regl, parameters) {
+  _getAxisConfig(parameters) {
     const { xAxis, yAxis } = parameters
+    return {
+      xAxis: "xaxis_bottom",
+      xAxisQuantityKind: xAxis,
+      yAxis: "yaxis_left",
+      yAxisQuantityKind: yAxis,
+      colorAxisQuantityKinds: { '_a': xAxis, '_b': yAxis },
+      colorAxis2dQuantityKinds: { '': ['_a', '_b'] },
+    }
+  }
+
+  schema() {
+    return {
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      type: "object",
+      properties: {
+        xAxis: { type: "string", description: "Quantity kind for the x axis (color axis A)" },
+        yAxis: { type: "string", description: "Quantity kind for the y axis (color axis B)" }
+      },
+      required: ["xAxis", "yAxis"]
+    }
+  }
+
+  _createLayer() {
     return [{
       attributes: { cx: quadCx, cy: quadCy },
       uniforms: {},
@@ -81,6 +82,8 @@ export const colorbar2dLayerType = new LayerType({
       vertexCount: 4,
     }]
   }
-})
+}
 
+export const colorbar2dLayerType = new Colorbar2dLayerType()
 registerLayerType("colorbar2d", colorbar2dLayerType)
+export { Colorbar2dLayerType }
