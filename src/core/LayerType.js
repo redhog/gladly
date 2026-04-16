@@ -1,6 +1,6 @@
 import { Layer } from "./Layer.js"
 import { buildColorGlsl, getRegisteredColorscales } from "../colorscales/ColorscaleRegistry.js"
-import { buildFilterGlsl } from "../axes/FilterAxisRegistry.js"
+import { buildFilterGlsl, buildColorFilterGlsl } from "../axes/FilterAxisRegistry.js"
 import { resolveAttributeExpr } from "../compute/ComputationRegistry.js"
 import { SAMPLE_COLUMN_GLSL, SAMPLE_COLUMN_ND_GLSL } from "../data/ColumnData.js"
 
@@ -243,10 +243,11 @@ export class LayerType {
 
     for (const [suffix, qk] of Object.entries(layer.colorAxes)) {
       const pk = qk.replace(/\./g, '_')
-      uniforms[`colorscale${suffix}`]       = regl.prop(`colorscale_${pk}`)
-      uniforms[`color_range${suffix}`]      = regl.prop(`color_range_${pk}`)
-      uniforms[`color_scale_type${suffix}`] = regl.prop(`color_scale_type_${pk}`)
-      uniforms[`alpha_blend${suffix}`]      = regl.prop(`alpha_blend_${pk}`)
+      uniforms[`colorscale${suffix}`]            = regl.prop(`colorscale_${pk}`)
+      uniforms[`color_range${suffix}`]           = regl.prop(`color_range_${pk}`)
+      uniforms[`color_scale_type${suffix}`]      = regl.prop(`color_scale_type_${pk}`)
+      uniforms[`alpha_blend${suffix}`]           = regl.prop(`alpha_blend_${pk}`)
+      uniforms[`color_filter_range${suffix}`]    = regl.prop(`color_filter_range_${pk}`)
     }
 
     for (const [suffix, qk] of Object.entries(layer.filterAxes)) {
@@ -350,9 +351,21 @@ export class LayerType {
     }
     const filterHelpers = filterHelperLines.join('\n')
 
+    const colorFilterGlsl = Object.keys(layer.colorAxes).length > 0 ? buildColorFilterGlsl() : ''
+    const colorFilterHelperLines = []
+    for (const [suffix] of Object.entries(layer.colorAxes)) {
+      colorFilterHelperLines.push(
+        `uniform vec4 color_filter_range${suffix};`,
+        `bool color_filter_${fnSuffix(suffix)}(float value) {`,
+        `  return color_filter_in_range(color_filter_range${suffix}, value);`,
+        `}`
+      )
+    }
+    const colorFilterHelpers = colorFilterHelperLines.join('\n')
+
     const clipFragDiscard = `if (u_is3D > 0.5 && (v_clip_pos.x < 0.0 || v_clip_pos.x > 1.0 || v_clip_pos.y < 0.0 || v_clip_pos.y > 1.0 || v_clip_pos.z < 0.0 || v_clip_pos.z > 1.0)) discard;`
     const drawConfig = {
-      vert: injectPickIdAssignment(injectInto(vertSrc, [spatialGlsl, filterGlsl, filterHelpers, columnHelpers, pickVertDecls])),
+      vert: injectPickIdAssignment(injectInto(vertSrc, [spatialGlsl, filterGlsl, filterHelpers, colorFilterGlsl, colorFilterHelpers, columnHelpers, pickVertDecls])),
       frag: injectIntoMainStart(injectInto(fragSrc, [buildApplyColorGlsl(), buildClipFragGlsl(), colorGlsl, colorHelpers, color2dHelpers, filterGlsl, filterHelpers, ndFragHelpers]), clipFragDiscard),
       attributes,
       uniforms,

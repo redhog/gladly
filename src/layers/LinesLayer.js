@@ -11,7 +11,7 @@ import { Data } from "../data/Data.js"
 import { registerLayerType } from "../core/LayerTypeRegistry.js"
 import { EXPRESSION_REF_OPT, resolveQuantityKind, resolveExprToColumn } from "../compute/ComputationRegistry.js"
 
-function makeLinesVert(hasFilter, hasSegIds, hasV, hasV2, hasZ) {
+function makeLinesVert(hasFilter, hasSegIds, hasV, hasV2, hasZ, hasColorFilter, hasColorFilter2) {
   return `#version 300 es
   precision mediump float;
   in float a_endPoint;
@@ -35,7 +35,9 @@ function makeLinesVert(hasFilter, hasSegIds, hasV, hasV2, hasZ) {
   out float v_t;
   void main() {
     float same_seg = ${hasSegIds ? 'abs(a_seg0 - a_seg1) < 0.5 ? 1.0 : 0.0' : '1.0'};
-    ${hasFilter ? 'if (!filter_(a_f0) || !filter_(a_f1)) same_seg = 0.0;' : ''}
+    ${hasFilter       ? 'if (!filter_(a_f0) || !filter_(a_f1)) same_seg = 0.0;'         : ''}
+    ${hasColorFilter  ? 'if (!color_filter_(a_v0) || !color_filter_(a_v1)) same_seg = 0.0;'    : ''}
+    ${hasColorFilter2 ? 'if (!color_filter_2(a_v20) || !color_filter_2(a_v21)) same_seg = 0.0;' : ''}
     float t = same_seg * a_endPoint;
     float x = mix(a_x0, a_x1, t);
     float y = mix(a_y0, a_y1, t);
@@ -168,14 +170,16 @@ class LinesLayerType extends ScatterLayerTypeBase {
   }
 
   async createDrawCommand(regl, layer, plot) {
-    const hasFilter  = Object.keys(layer.filterAxes).length > 0
-    const hasFirst   = '' in layer.colorAxes
-    const hasSecond  = '2' in layer.colorAxes
-    const hasSegIds  = 'a_seg0' in layer.attributes
-    const hasV       = 'a_v0'   in layer.attributes
-    const hasV2      = 'a_v20'  in layer.attributes
-    const hasZ       = 'a_z0'   in layer.attributes
-    this.vert = makeLinesVert(hasFilter, hasSegIds, hasV, hasV2, hasZ)
+    const hasFilter       = Object.keys(layer.filterAxes).length > 0
+    const hasFirst        = '' in layer.colorAxes
+    const hasSecond       = '2' in layer.colorAxes
+    const hasSegIds       = 'a_seg0' in layer.attributes
+    const hasV            = 'a_v0'   in layer.attributes
+    const hasV2           = 'a_v20'  in layer.attributes
+    const hasZ            = 'a_z0'   in layer.attributes
+    const hasColorFilter  = hasV
+    const hasColorFilter2 = hasV2
+    this.vert = makeLinesVert(hasFilter, hasSegIds, hasV, hasV2, hasZ, hasColorFilter, hasColorFilter2)
     this.frag = makeLinesFrag(hasFirst, hasSecond)
     return await super.createDrawCommand(regl, layer, plot)
   }

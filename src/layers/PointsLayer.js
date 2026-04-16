@@ -3,7 +3,7 @@ import { Data } from "../data/Data.js"
 import { registerLayerType } from "../core/LayerTypeRegistry.js"
 import { resolveQuantityKind } from "../compute/ComputationRegistry.js"
 
-function makePointsVert(hasFilter, hasZ) {
+function makePointsVert(hasFilter, hasZ, hasColorFilter, hasColorFilter2) {
   return `#version 300 es
   precision mediump float;
   in float x;
@@ -21,6 +21,8 @@ function makePointsVert(hasFilter, hasZ) {
   out float value2;
   void main() {
     ${hasFilter ? 'if (!filter_(filter_data)) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }' : ''}
+    ${hasColorFilter  ? 'if (!color_filter_(color_data))   { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }' : ''}
+    ${hasColorFilter2 ? 'if (!color_filter_2(color_data2)) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }' : ''}
     ${hasZ ? 'gl_Position = plot_pos_3d(vec3(x, y, z));' : 'gl_Position = plot_pos(vec2(x, y));'}
     gl_PointSize = u_pointSize;
     value = color_data;
@@ -104,11 +106,13 @@ class PointsLayerType extends ScatterLayerTypeBase {
   }
 
   async createDrawCommand(regl, layer, plot) {
-    const hasFilter = Object.keys(layer.filterAxes).length > 0
-    const hasFirst  = '' in layer.colorAxes
-    const hasSecond = '2' in layer.colorAxes
-    const hasZ      = 'z' in layer.attributes
-    this.vert = makePointsVert(hasFilter, hasZ)
+    const hasFilter       = Object.keys(layer.filterAxes).length > 0
+    const hasFirst        = '' in layer.colorAxes
+    const hasSecond       = '2' in layer.colorAxes
+    const hasZ            = 'z' in layer.attributes
+    const hasColorFilter  = hasFirst
+    const hasColorFilter2 = hasSecond
+    this.vert = makePointsVert(hasFilter, hasZ, hasColorFilter, hasColorFilter2)
     this.frag = makePointsFrag(hasFirst, hasSecond)
     return await super.createDrawCommand(regl, layer, plot)
   }

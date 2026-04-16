@@ -30,6 +30,71 @@ export class Colorbar2d extends Plot {
     // Re-render (with sync) whenever the target plot renders.
     this._syncCallback = () => this.render()
     targetPlot._renderCallbacks.add(this._syncCallback)
+
+    this._addCheckboxOverlays()
+  }
+
+  _addCheckboxOverlays() {
+    const makeLabel = (title) => {
+      const label = document.createElement('label')
+      Object.assign(label.style, {
+        position:      'absolute',
+        zIndex:        '3',
+        display:       'flex',
+        flexDirection: 'column',
+        alignItems:    'center',
+        gap:           '2px',
+        fontSize:      '11px',
+        color:         '#555',
+        cursor:        'pointer',
+        userSelect:    'none'
+      })
+      label.title = title
+      const cb = document.createElement('input')
+      cb.type = 'checkbox'
+      cb.checked = true
+      Object.assign(cb.style, { margin: '0', cursor: 'pointer' })
+      const span = document.createElement('span')
+      span.textContent = '∞'
+      label.appendChild(cb)
+      label.appendChild(span)
+      return label
+    }
+
+    this._xMinLabel = makeLabel('open x min bound')
+    this._xMaxLabel = makeLabel('open x max bound')
+    this._yMinLabel = makeLabel('open y min bound')
+    this._yMaxLabel = makeLabel('open y max bound')
+
+    this._xMinInput = this._xMinLabel.querySelector('input')
+    this._xMaxInput = this._xMaxLabel.querySelector('input')
+    this._yMinInput = this._yMinLabel.querySelector('input')
+    this._yMaxInput = this._yMaxLabel.querySelector('input')
+
+    // x axis runs horizontally: min bottom-left (shifted right to avoid y-min), max bottom-right
+    // y axis runs vertically: min bottom-left, max top-left
+    Object.assign(this._xMinLabel.style, { bottom: '2px', left: '30px' })
+    Object.assign(this._xMaxLabel.style, { bottom: '2px', right: '2px' })
+    Object.assign(this._yMinLabel.style, { bottom: '2px', left: '2px' })
+    Object.assign(this._yMaxLabel.style, { top: '2px',    left: '2px' })
+
+    this.container.appendChild(this._xMinLabel)
+    this.container.appendChild(this._xMaxLabel)
+    this.container.appendChild(this._yMinLabel)
+    this.container.appendChild(this._yMaxLabel)
+
+    this._xMinInput.addEventListener('change', () => this._onCheckboxChange())
+    this._xMaxInput.addEventListener('change', () => this._onCheckboxChange())
+    this._yMinInput.addEventListener('change', () => this._onCheckboxChange())
+    this._yMaxInput.addEventListener('change', () => this._onCheckboxChange())
+  }
+
+  _onCheckboxChange() {
+    const registry = this._targetPlot.colorAxisRegistry
+    if (!registry) return
+    registry.setClamp(this._xAxis, this._xMinInput.checked, this._xMaxInput.checked)
+    registry.setClamp(this._yAxis, this._yMinInput.checked, this._yMaxInput.checked)
+    this._targetPlot.scheduleRender()
   }
 
   _getScaleTypeFloat(quantityKind) {
@@ -56,6 +121,12 @@ export class Colorbar2d extends Plot {
         const scaleType = getScaleTypeFloat(colorAxisName, this._targetPlot.currentConfig?.axes) > 0.5 ? "log" : "linear"
         this.axisRegistry.setScaleType(spatialAxisId, scaleType)
       }
+
+      const reg = this._targetPlot.colorAxisRegistry
+      if (this._xMinInput) this._xMinInput.checked = reg?.getClampMin(this._xAxis) ?? true
+      if (this._xMaxInput) this._xMaxInput.checked = reg?.getClampMax(this._xAxis) ?? true
+      if (this._yMinInput) this._yMinInput.checked = reg?.getClampMin(this._yAxis) ?? true
+      if (this._yMaxInput) this._yMaxInput.checked = reg?.getClampMax(this._yAxis) ?? true
     }
     super.render()
   }

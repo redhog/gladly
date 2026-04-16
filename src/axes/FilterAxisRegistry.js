@@ -137,3 +137,21 @@ bool filter_in_range(vec4 range, float value) {
 }
 `
 }
+
+// Injects a GLSL helper used by layer vertex shaders to discard points whose
+// color-axis value falls outside the domain when clamping is disabled.
+//
+// color_filter_in_range(vec4 range, float value):
+//   range.xy = [domainMin, domainMax]
+//   range.zw = [filterMinFlag, filterMaxFlag] — 1.0 if filtering (not clamping) is active
+//   NaN values always pass through (they are rendered in the colorscale's NaN color).
+export function buildColorFilterGlsl() {
+  return `
+bool color_filter_in_range(vec4 range, float value) {
+  if (value != value) return true;
+  if (range.z > 0.5 && value < range.x) return false;
+  if (range.w > 0.5 && value > range.y) return false;
+  return true;
+}
+`
+}

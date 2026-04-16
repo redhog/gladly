@@ -1,11 +1,13 @@
-const colorscales = new Map()   // name → [[t, r, g, b], ...]
-const colorscales2d = new Map() // name → glslFn string
+const colorscales = new Map()         // name → [[t, r, g, b], ...]
+const colorscaleNanColors = new Map() // name → [r, g, b]
+const colorscales2d = new Map()       // name → glslFn string
 let colorscalesVersion = 0
 
 export function getColorscalesVersion() { return colorscalesVersion }
 
-export function registerColorscale(name, stops) {
+export function registerColorscale(name, stops, nanColor = [0.5, 0.5, 0.5]) {
   colorscales.set(name, stops)
+  colorscaleNanColors.set(name, nanColor)
   colorscalesVersion++
 }
 
@@ -61,10 +63,12 @@ export function buildColorscaleTexture() {
   const N = gridT.length
   const numCs = colorscales.size
 
-  const data = new Float32Array(numCs * N * 4)
+  // Extra column at index N stores the NaN color for each colorscale.
+  const width = N + 1
+  const data = new Float32Array(numCs * width * 4)
 
   let csIdx = 0
-  for (const stops of colorscales.values()) {
+  for (const [name, stops] of colorscales.entries()) {
     for (let gi = 0; gi < N; gi++) {
       const t = gridT[gi]
       let r, g, b
@@ -85,16 +89,22 @@ export function buildColorscaleTexture() {
           }
         }
       }
-      const idx = (csIdx * N + gi) * 4
+      const idx = (csIdx * width + gi) * 4
       data[idx + 0] = r
       data[idx + 1] = g
       data[idx + 2] = b
       data[idx + 3] = 1.0
     }
+    const [nr, ng, nb] = colorscaleNanColors.get(name) ?? [0.5, 0.5, 0.5]
+    const nanIdx = (csIdx * width + N) * 4
+    data[nanIdx + 0] = nr
+    data[nanIdx + 1] = ng
+    data[nanIdx + 2] = nb
+    data[nanIdx + 3] = 1.0
     csIdx++
   }
 
-  return { width: N, height: numCs, data }
+  return { width, height: numCs, data }
 }
 
 export function buildColorGlsl() {
@@ -119,6 +129,8 @@ export function buildColorGlsl() {
 
     // Constant array of grid t positions (used for interpolation)
     parts.push(`const float CS_T[${N}] = float[${N}](${gridT.map(f).join(', ')});`)
+    // Column N in the colorscale texture stores the NaN color for each colorscale.
+    parts.push(`const int CS_NAN_COL = ${N};`)
 
     // Texture sampler — one texel per (colorscale, grid point), rgb = color
     parts.push('uniform sampler2D u_colorscale_tex;')
@@ -128,6 +140,7 @@ export function buildColorGlsl() {
     const chain = gridT.slice(1, -1).map((t, i) => `t < ${f(t)} ? ${i} :`).join(' ') + ` ${N - 2}`
 
     parts.push('vec4 map_color(int cs, vec2 range, float value) {')
+    parts.push('  if (value != value) return texelFetch(u_colorscale_tex, ivec2(CS_NAN_COL, cs), 0);')
     parts.push('  float t = clamp((value - range.x) / (range.y - range.x), 0.0, 1.0);')
     parts.push(`  int i = ${chain};`)
     parts.push('  vec3 c0 = texelFetch(u_colorscale_tex, ivec2(i,     cs), 0).rgb;')
@@ -153,12 +166,13 @@ export function buildColorGlsl() {
 
   // map_color_s — 1D with scale type, alpha blending, and picking
   parts.push('vec4 map_color_s(int cs, vec2 range, float v, float scaleType, float useAlpha) {')
+  parts.push('  bool nan = (v != v);')
   parts.push('  float vt = scaleType > 0.5 ? log(v) : v;')
   parts.push('  float r0 = scaleType > 0.5 ? log(range.x) : range.x;')
   parts.push('  float r1 = scaleType > 0.5 ? log(range.y) : range.y;')
   parts.push('  float t = clamp((vt - r0) / (r1 - r0), 0.0, 1.0);')
   parts.push('  vec4 color = map_color(cs, vec2(r0, r1), vt);')
-  parts.push('  if (useAlpha > 0.5) color.a = t;')
+  parts.push('  if (!nan && useAlpha > 0.5) color.a = t;')
   parts.push('  return gladly_apply_color(color);')
   parts.push('}')
 

@@ -8,10 +8,39 @@ export class ColorAxisRegistry {
 
   ensureColorAxis(quantityKind, colorscaleOverride = null) {
     if (!this._axes.has(quantityKind)) {
-      this._axes.set(quantityKind, { colorscaleOverride, range: null, alphaBlend: 0.0 })
+      this._axes.set(quantityKind, { colorscaleOverride, range: null, alphaBlend: 0.0, clampMin: true, clampMax: true })
     } else if (colorscaleOverride !== null) {
       this._axes.get(quantityKind).colorscaleOverride = colorscaleOverride
     }
+  }
+
+  setClamp(quantityKind, clampMin, clampMax) {
+    if (!this._axes.has(quantityKind)) {
+      throw new Error(`Color axis '${quantityKind}' not found in registry`)
+    }
+    this._axes.get(quantityKind).clampMin = clampMin
+    this._axes.get(quantityKind).clampMax = clampMax
+  }
+
+  getClampMin(quantityKind) {
+    return this._axes.get(quantityKind)?.clampMin ?? true
+  }
+
+  getClampMax(quantityKind) {
+    return this._axes.get(quantityKind)?.clampMax ?? true
+  }
+
+  // Returns [domainMin, domainMax, filterMinFlag, filterMaxFlag] as a vec4.
+  // filterMinFlag = 1.0 means filter out (not clamp) values below domain min.
+  getColorFilterRangeUniform(quantityKind) {
+    const range = this.getRange(quantityKind) ?? [0, 1]
+    const entry = this._axes.get(quantityKind)
+    return [
+      range[0],
+      range[1],
+      entry && !entry.clampMin ? 1.0 : 0.0,
+      entry && !entry.clampMax ? 1.0 : 0.0,
+    ]
   }
 
   getAlphaBlend(quantityKind) {
@@ -58,6 +87,10 @@ export class ColorAxisRegistry {
         this.ensureColorAxis(quantityKind, override.colorscale)
       if (override?.alpha_blend !== undefined)
         this._axes.get(quantityKind).alphaBlend = override.alpha_blend
+      if (override?.clamp_min !== undefined)
+        this._axes.get(quantityKind).clampMin = !!override.clamp_min
+      if (override?.clamp_max !== undefined)
+        this._axes.get(quantityKind).clampMax = !!override.clamp_max
       
       let min = Infinity, max = -Infinity
 
