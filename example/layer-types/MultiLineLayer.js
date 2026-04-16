@@ -2,6 +2,7 @@ import { LayerType } from "../../src/core/LayerType.js"
 import { registerLayerType } from "../../src/core/LayerTypeRegistry.js"
 import { AXES } from "../../src/axes/AxisRegistry.js"
 import { Data } from "../../src/data/Data.js"
+import { parseCssColor } from "../../src/core/colorUtils.js"
 
 function makeMultiLineVert(hasFilter) {
   return `#version 300 es
@@ -84,12 +85,11 @@ export const multiLineLayerType = new LayerType({
           description: "Threshold above which filter column marks a segment as bad"
         },
         badColor: {
-          type: "array",
-          items: { type: "number" },
-          minItems: 4,
-          maxItems: 4,
-          default: [0.5, 0.5, 0.5, 1.0],
-          description: "RGBA color for bad (filtered) segments"
+          type: "string",
+          format: "color",
+          "x-format": "color",
+          default: "#808080",
+          description: "Colour for bad (filtered) segments as a CSS hex colour (#rgb, #rgba, #rrggbb, #rrggbbaa)"
         },
         xAxis: {
           type: "string",
@@ -112,7 +112,7 @@ export const multiLineLayerType = new LayerType({
       xData,
       filterData,
       cutoff = 0,
-      badColor = [0.5, 0.5, 0.5, 1.0],
+      badColor = "#808080",
     } = parameters
 
     const colX = d.getData(xData)
@@ -137,7 +137,7 @@ export const multiLineLayerType = new LayerType({
           } : {}),
         },
         uniforms: {
-          bad_color: badColor,
+          bad_color: parseCssColor(badColor),
           u_line_index: yColumns.length > 1 ? idx / (yColumns.length - 1) : 0.5,
           ...(colFilter ? { u_cutoff: cutoff } : {}),
         },

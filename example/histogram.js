@@ -50,7 +50,7 @@ const plotConfig = {
             "bars": {
                 "xData": "hist.binCenters",
                 "yData": "hist.counts",
-                "color": [0.2, 0.5, 0.8, 1.0],
+                "color": "#3380cc",
                 "xAxis": "xaxis_bottom",
                 "yAxis": "yaxis_left"
             }

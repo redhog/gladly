@@ -2,6 +2,7 @@ import { LayerType } from "../core/LayerType.js"
 import { Data } from "../data/Data.js"
 import { registerLayerType } from "../core/LayerTypeRegistry.js"
 import { AXES } from "../axes/AxisRegistry.js"
+import { parseCssColor } from "../core/colorUtils.js"
 
 // Generic instanced bar layer. Renders `instanceCount` bars using live texture refs
 // for bin center positions and bar lengths (counts).
@@ -88,12 +89,11 @@ class BarsLayerType extends LayerType {
           description: "Column name for bar heights (counts)"
         },
         color: {
-          type: "array",
-          items: { type: "number" },
-          minItems: 4,
-          maxItems: 4,
-          default: [0.2, 0.5, 0.8, 1.0],
-          description: "Bar colour as [R, G, B, A] in [0, 1]"
+          type: "string",
+          format: "color",
+          "x-format": "color",
+          default: "#3380cc",
+          description: "Bar colour as a CSS hex colour (#rgb, #rgba, #rrggbb, #rrggbbaa)"
         },
         orientation: {
           type: "string",
@@ -121,7 +121,7 @@ class BarsLayerType extends LayerType {
     const {
       xData,
       yData,
-      color = [0.2, 0.5, 0.8, 1.0],
+      color = "#3380cc",
       orientation = "vertical",
     } = parameters
 
@@ -150,7 +150,7 @@ class BarsLayerType extends LayerType {
       },
       uniforms: {
         u_binHalfWidth: binHalfWidth,
-        u_color: color,
+        u_color: parseCssColor(color),
         u_horizontal: orientation === "horizontal" ? 1.0 : 0.0,
       },
       vertexCount: 4,
