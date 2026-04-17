@@ -139,8 +139,9 @@ export class LayerType {
   async createDrawCommand(regl, layer, plot) {
     // --- Resolve attributes ---
     let vertSrc = this.vert
-    const bufferAttrs = {}         // name → Float32Array (fixed geometry)
-    const allTextures = {}         // uniformName → () => texture
+    const bufferAttrs = {}         // name → Float32Array (fixed geometry, tile 0 for tiled)
+    const tiledBufferAttrs = {}    // name → Float32Array[] (only for buffer-tiled attrs)
+    const allTextures = {}         // uniformName → fn[] (always arrays; length = nTiles)
     const allDataColumns = []      // ColumnData instances for refresh()
     const mainInjections = []      // float name = expr; injected inside main()
 
@@ -152,6 +153,9 @@ export class LayerType {
       const result = await resolveAttributeExpr(regl, expr, key, plot)
       if (result.kind === 'buffer') {
         bufferAttrs[key] = result.value
+      } else if (result.kind === 'buffer-tiled') {
+        bufferAttrs[key] = result.values[0]
+        tiledBufferAttrs[key] = result.values
       } else {
         vertSrc = removeAttributeDecl(vertSrc, key)
         Object.assign(allTextures, result.textures)
@@ -176,6 +180,19 @@ export class LayerType {
           )
         }
       }
+    }
+
+    // Detect tile count N and validate consistency across all tiled attributes.
+    let nTiles = 1
+    for (const [, fns] of Object.entries(allTextures)) {
+      const n = fns.length
+      if (nTiles === 1) nTiles = n
+      else if (nTiles !== n) throw new Error(`[gladly] Layer '${this.name}': tile count mismatch in texture columns (${nTiles} vs ${n})`)
+    }
+    for (const [key, values] of Object.entries(tiledBufferAttrs)) {
+      const n = values.length
+      if (nTiles === 1) nTiles = n
+      else if (nTiles !== n) throw new Error(`[gladly] Layer '${this.name}': tile count mismatch for attribute '${key}' (expected ${nTiles}, got ${n})`)
     }
 
     layer._dataColumns = allDataColumns
@@ -380,6 +397,25 @@ export class LayerType {
 
     if (layer.instanceCount !== null) {
       drawConfig.instances = regl.prop("instances")
+    }
+
+    // Build per-tile data when N > 1 and there are tiled buffer attributes.
+    if (nTiles > 1 && Object.keys(tiledBufferAttrs).length > 0) {
+      const firstKey = Object.keys(tiledBufferAttrs)[0]
+      const tileCounts = tiledBufferAttrs[firstKey].map(arr => arr.length)
+      const tileBufferOverrides = Array.from({ length: nTiles }, (_, t) => {
+        if (t === 0) return {}
+        const overrides = {}
+        for (const [k, values] of Object.entries(tiledBufferAttrs)) overrides[k] = values[t]
+        const tileSize = tiledBufferAttrs[firstKey][t].length
+        const tilePickIds = new Float32Array(tileSize)
+        for (let i = 0; i < tileSize; i++) tilePickIds[i] = i
+        overrides.a_pickId = tilePickIds
+        return overrides
+      })
+      drawConfig._tileData = { nTiles, tileCounts, tileBufferOverrides }
+    } else if (nTiles > 1) {
+      drawConfig._tileData = { nTiles, tileCounts: null, tileBufferOverrides: null }
     }
 
     return drawConfig

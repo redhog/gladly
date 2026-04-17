@@ -24,7 +24,7 @@ class ElementwiseData extends ComputedData {
 
     for (const { dst, src, quantityKind } of params.columns) {
       const col = await resolveExprToColumn(src, data, regl, plotProxy)
-      const tex = await col.toTexture(regl)
+      const tex = (await col.toTexture(regl))[0]
       tex._dataLength = N
       result[dst] = tex
       if (quantityKind) quantityKinds[dst] = quantityKind

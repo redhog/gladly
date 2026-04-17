@@ -152,7 +152,7 @@ export { filter1D, gaussianKernel, lowPass, highPass, bandPass }
 class Filter1DComputation extends TextureComputation {
   getQuantityKind(params, data) { return resolveQuantityKind(params.input, data) }
   async compute(regl, inputs, getAxisDomain) {
-    const inputTex = await inputs.input.toTexture(regl)
+    const inputTex = (await inputs.input.toTexture(regl))[0]
     const kernelArr = inputs.kernel instanceof ArrayColumn ? inputs.kernel.array : inputs.kernel
     return filter1D(regl, inputTex, kernelArr)
   }
@@ -172,7 +172,7 @@ class Filter1DComputation extends TextureComputation {
 class LowPassComputation extends TextureComputation {
   getQuantityKind(params, data) { return resolveQuantityKind(params.input, data) }
   async compute(regl, inputs, getAxisDomain) {
-    return lowPass(regl, await inputs.input.toTexture(regl), inputs.sigma, inputs.kernelSize)
+    return lowPass(regl, (await inputs.input.toTexture(regl))[0], inputs.sigma, inputs.kernelSize)
   }
   schema(data) {
     return {
@@ -191,7 +191,7 @@ class LowPassComputation extends TextureComputation {
 class HighPassComputation extends TextureComputation {
   getQuantityKind(params, data) { return resolveQuantityKind(params.input, data) }
   async compute(regl, inputs, getAxisDomain) {
-    return highPass(regl, await inputs.input.toTexture(regl), inputs.sigma, inputs.kernelSize)
+    return highPass(regl, (await inputs.input.toTexture(regl))[0], inputs.sigma, inputs.kernelSize)
   }
   schema(data) {
     return {
@@ -210,7 +210,7 @@ class HighPassComputation extends TextureComputation {
 class BandPassComputation extends TextureComputation {
   getQuantityKind(params, data) { return resolveQuantityKind(params.input, data) }
   async compute(regl, inputs, getAxisDomain) {
-    return bandPass(regl, await inputs.input.toTexture(regl), inputs.sigmaLow, inputs.sigmaHigh)
+    return bandPass(regl, (await inputs.input.toTexture(regl))[0], inputs.sigmaLow, inputs.sigmaHigh)
   }
   schema(data) {
     return {

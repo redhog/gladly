@@ -218,9 +218,9 @@ class Scatter2dInterpolateData extends ComputedData {
     const pickIds = new Float32Array(N)
     for (let i = 0; i < N; i++) pickIds[i] = i
 
-    const xTex    = await xCol.toTexture(regl)
-    const yTex    = await yCol.toTexture(regl)
-    const valTex  = await valCol.toTexture(regl)
+    const xTex    = (await xCol.toTexture(regl))[0]
+    const yTex    = (await yCol.toTexture(regl))[0]
+    const valTex  = (await valCol.toTexture(regl))[0]
 
     const xDomain = colDomain(xCol)
     const yDomain = colDomain(yCol)

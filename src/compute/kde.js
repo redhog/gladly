@@ -92,7 +92,7 @@ export default async function smoothKDE(regl, histTex, options = {}) {
 
 class KdeComputation extends TextureComputation {
   async compute(regl, inputs, getAxisDomain) {
-    const inputTex = await inputs.input.toTexture(regl)
+    const inputTex = (await inputs.input.toTexture(regl))[0]
     return smoothKDE(regl, inputTex, { bins: inputs.bins, bandwidth: inputs.bandwidth })
   }
 

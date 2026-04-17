@@ -125,7 +125,7 @@ class HistogramComputation extends TextureComputation {
       normalizedTex = uploadToTexture(regl, normalized)
     } else {
       // Already a GPU texture — assume values are in [0,1]
-      normalizedTex = await inputCol.toTexture(regl)
+      normalizedTex = (await inputCol.toTexture(regl))[0]
     }
 
     return makeHistogram(regl, normalizedTex, { bins })

@@ -52,11 +52,13 @@ export class ColumnData {
   get ndim()         { return this.shape.length }
   get totalLength()  { return this.shape.reduce((a, b) => a * b, 1) }
 
-  // Returns { glslExpr: string, textures: { uniformName: () => reglTexture } }
+  // Returns { glslExpr: string, textures: { uniformName: [() => reglTexture, ...] } }
+  // textures values are always arrays (length = number of tiles, minimum 1).
+  // glslExpr is a single string shared across all tiles.
   // path must be a valid GLSL identifier fragment (no dots or special chars)
   resolve(path, regl) { throw new Error('Not implemented') }
 
-  // Returns a regl texture (4 values per texel, RGBA, 2D layout).
+  // Returns texture[] — one regl texture per tile (minimum one element).
   // May run a GPU render pass for GlslColumn.
   toTexture(regl) { throw new Error('Not implemented') }
 
@@ -99,12 +101,12 @@ export class ArrayColumn extends ColumnData {
     const uName = `u_col_${path}`
     const shape = this.shape
     if (shape.length === 1) {
-      return { glslExpr: `sampleColumn(${uName}, a_pickId)`, textures: { [uName]: () => ref.texture }, shape }
+      return { glslExpr: `sampleColumn(${uName}, a_pickId)`, textures: { [uName]: [() => ref.texture] }, shape }
     }
-    return { glslExpr: null, textures: { [uName]: () => ref.texture }, shape }
+    return { glslExpr: null, textures: { [uName]: [() => ref.texture] }, shape }
   }
 
-  toTexture(regl) { return this._upload(regl).texture }
+  toTexture(regl) { return [this._upload(regl).texture] }
 }
 
 // ─── TextureColumn ────────────────────────────────────────────────────────────
@@ -135,16 +137,16 @@ export class TextureColumn extends ColumnData {
     }
     const shape = this.shape
     if (shape.length === 1) {
-      return { glslExpr: `sampleColumn(${uName}, a_pickId)`, textures: { [uName]: texFn }, shape }
+      return { glslExpr: `sampleColumn(${uName}, a_pickId)`, textures: { [uName]: [texFn] }, shape }
     }
-    return { glslExpr: null, textures: { [uName]: texFn }, shape }
+    return { glslExpr: null, textures: { [uName]: [texFn] }, shape }
   }
 
   toTexture(regl) {
     if (!this._ref.texture) {
       throw new Error(`[gladly] TextureColumn.toTexture(): texture is null — the column was not properly initialized`)
     }
-    return this._ref.texture
+    return [this._ref.texture]
   }
 
   async refresh(plot) {
@@ -194,6 +196,11 @@ export class GlslColumn extends ColumnData {
     const w = Math.min(nTexels, regl.limits.maxTextureSize)
     const h = Math.ceil(nTexels / w)
     const { glslExpr, textures } = this.resolve('glsl_mat', regl)
+
+    const nTiles = Object.values(textures).length > 0
+      ? Math.max(...Object.values(textures).map(v => v.length))
+      : 1
+
     const samplerDecls = Object.keys(textures).map(n => `uniform sampler2D ${n};`).join('\n')
     const vert = `#version 300 es
 precision highp float;
@@ -219,20 +226,28 @@ void main() {
   float v3 = base + 3 < ${N} ? gladly_eval(float(base + 3)) : 0.0;
   fragColor = vec4(v0, v1, v2, v3);
 }`
-    const outputTex = regl.texture({ width: w, height: h, type: 'float', format: 'rgba' })
-    const outputFBO = regl.framebuffer({ color: outputTex, depth: false, stencil: false })
-    const uniforms = {}
-    for (const [k, fn] of Object.entries(textures)) uniforms[k] = fn
-    regl({
-      framebuffer: outputFBO, vert, frag,
+    const samplerProps = Object.fromEntries(Object.keys(textures).map(k => [k, regl.prop(k)]))
+    const cmd = regl({
+      vert, frag,
+      framebuffer: regl.prop('_fbo'),
       attributes: { a_position: [[-1, -1], [1, -1], [-1, 1], [1, 1]] },
-      uniforms,
+      uniforms: samplerProps,
       count: 4,
       primitive: 'triangle strip'
-    })()
-    outputTex._dataLength = N
-    await tdrYield()
-    return outputTex
+    })
+
+    const results = []
+    for (let t = 0; t < nTiles; t++) {
+      const outputTex = regl.texture({ width: w, height: h, type: 'float', format: 'rgba' })
+      const outputFBO = regl.framebuffer({ color: outputTex, depth: false, stencil: false })
+      const tileProps = { _fbo: outputFBO }
+      for (const [k, fns] of Object.entries(textures)) tileProps[k] = fns[t]()
+      cmd(tileProps)
+      outputTex._dataLength = N
+      await tdrYield()
+      results.push(outputTex)
+    }
+    return results
   }
 
   refresh(plot) {

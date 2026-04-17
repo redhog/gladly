@@ -40,7 +40,7 @@ class ReadableColumn extends ColumnData {
 
   async getArray() {
     if (this._col instanceof ArrayColumn) return this._col.array
-    const tex = await this._col.toTexture(this._regl)
+    const tex = (await this._col.toTexture(this._regl))[0]
     return readTextureToArray(this._regl, tex)
   }
 }

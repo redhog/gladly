@@ -816,6 +816,9 @@ void main() {
 
     const shaderKey = drawConfig.vert + '\0' + drawConfig.frag
 
+    // fn[] in uniforms whose first element is a function = tiled texture closures.
+    const isTiledTexClosure = (v) => Array.isArray(v) && v.length > 0 && typeof v[0] === 'function'
+
     if (!this._shaderCache.has(shaderKey)) {
       // Build a version of the draw config where all layer-specific data
       // (attribute buffers and texture closures) is replaced with regl.prop()
@@ -838,7 +841,8 @@ void main() {
 
       const propUniforms = {}
       for (const [key, val] of Object.entries(drawConfig.uniforms)) {
-        propUniforms[key] = typeof val === 'function' ? this.regl.prop(key) : val
+        propUniforms[key] = (typeof val === 'function' || isTiledTexClosure(val))
+          ? this.regl.prop(key) : val
       }
 
       const propConfig = { ...drawConfig, attributes: propAttrs, uniforms: propUniforms }
@@ -858,21 +862,54 @@ void main() {
       }
     }
 
+    // Separate single-tile closures (fn) from tiled closures (fn[]).
     const textureClosures = {}
+    const tiledTextureClosures = {}
     for (const [key, val] of Object.entries(drawConfig.uniforms)) {
-      if (typeof val === 'function') textureClosures[key] = val
+      if (isTiledTexClosure(val)) tiledTextureClosures[key] = val
+      else if (typeof val === 'function') textureClosures[key] = val
     }
 
     layer._bufferProps = bufferProps
     layer._textureClosures = textureClosures
 
-    return (runtimeProps) => {
-      // Resolve texture closures at draw time so live texture swaps are picked up.
-      const textureProps = {}
-      for (const [key, fn] of Object.entries(textureClosures)) {
-        textureProps[key] = fn()
+    const nTiles = drawConfig._tileData?.nTiles ?? 1
+
+    // Create per-tile GPU buffers for tiled buffer attributes (tiles 1..N-1).
+    let tileGpuBufs = null
+    let tileCounts = null
+    if (drawConfig._tileData?.tileBufferOverrides) {
+      tileGpuBufs = drawConfig._tileData.tileBufferOverrides.map(overrides => {
+        const gpuBufs = {}
+        for (const [key, arr] of Object.entries(overrides)) {
+          gpuBufs[`attr_${key}`] = this.regl.buffer(arr)
+        }
+        return gpuBufs
+      })
+      tileCounts = drawConfig._tileData.tileCounts
+      for (let t = 0; t < nTiles; t++) {
+        for (const [k, gpuBuf] of Object.entries(tileGpuBufs[t])) {
+          layer._bufferProps[`_tile${t}_${k}`] = gpuBuf
+        }
       }
-      cmd({ ...bufferProps, ...textureProps, ...runtimeProps })
+    }
+
+    return (runtimeProps) => {
+      // Resolve single-tile texture closures once (same for every tile).
+      const baseTextureProps = {}
+      for (const [key, fn] of Object.entries(textureClosures)) {
+        baseTextureProps[key] = fn()
+      }
+      for (let t = 0; t < nTiles; t++) {
+        const tileProps = tileGpuBufs?.[t] ? { ...tileGpuBufs[t] } : {}
+        for (const [key, fns] of Object.entries(tiledTextureClosures)) {
+          tileProps[key] = fns[t]()
+        }
+        const callProps = tileCounts
+          ? { ...bufferProps, ...baseTextureProps, ...tileProps, ...runtimeProps, count: tileCounts[t] }
+          : { ...bufferProps, ...baseTextureProps, ...tileProps, ...runtimeProps }
+        cmd(callProps)
+      }
     }
   }
 
