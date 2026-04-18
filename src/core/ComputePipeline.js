@@ -1,5 +1,5 @@
 import { GlBase } from "./GlBase.js"
-import { FilterAxisRegistry } from "../axes/FilterAxisRegistry.js"
+import { AxisRegistry } from "../axes/AxisRegistry.js"
 import { DataGroup, normalizeData } from "../data/Data.js"
 import { ColumnData, ArrayColumn } from "../data/ColumnData.js"
 import { tdrYield } from "../tdr.js"
@@ -96,7 +96,7 @@ export class ComputePipeline extends GlBase {
       ? new OffscreenCanvas(1, 1)
       : document.createElement('canvas')
     this._initRegl(canvas)
-    this.filterAxisRegistry = new FilterAxisRegistry()
+    this.axisRegistry = new AxisRegistry()
   }
 
   // Runs the given transforms over data and returns a ComputeOutput.
@@ -111,7 +111,7 @@ export class ComputePipeline extends GlBase {
     }
 
     this._dataTransformNodes = []
-    this.filterAxisRegistry = new FilterAxisRegistry()
+    this.axisRegistry = new AxisRegistry()
 
     if (this._rawData != null) {
       const fresh = new DataGroup({})
@@ -128,8 +128,8 @@ export class ComputePipeline extends GlBase {
 
     // Apply axes config to set filter ranges on any registered filter axis.
     for (const [axisId, axisConfig] of Object.entries(axes)) {
-      if (this.filterAxisRegistry.hasAxis(axisId)) {
-        this.filterAxisRegistry.setRange(
+      if (this.axisRegistry.hasFilterAxis(axisId)) {
+        this.axisRegistry.setFilterBounds(
           axisId,
           axisConfig.min !== undefined ? axisConfig.min : null,
           axisConfig.max !== undefined ? axisConfig.max : null

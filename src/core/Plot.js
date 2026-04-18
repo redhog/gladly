@@ -2,8 +2,6 @@ import { AXES, AXES_2D, AXIS_GEOMETRY, AxisRegistry } from "../axes/AxisRegistry
 import { Camera } from "../axes/Camera.js"
 import { TickLabelAtlas } from "../axes/TickLabelAtlas.js"
 import { mat4Identity, mat4Multiply } from "../math/mat4.js"
-import { ColorAxisRegistry } from "../axes/ColorAxisRegistry.js"
-import { FilterAxisRegistry } from "../axes/FilterAxisRegistry.js"
 import { ZoomController } from "../axes/ZoomController.js"
 import { getLayerType, getRegisteredLayerTypes } from "./LayerTypeRegistry.js"
 import { getAxisQuantityKind, getScaleTypeFloat } from "../axes/AxisQuantityKindRegistry.js"
@@ -174,7 +172,6 @@ export class Plot extends GlBase {
     this._lastRawDataArg = undefined
     this.layers = []
     this.axisRegistry = null
-    this.colorAxisRegistry = null
     this._renderCallbacks = new Set()
     this._zoomEndCallbacks = new Set()
     this._errorListeners = new Set()
@@ -296,38 +293,35 @@ export class Plot extends GlBase {
         const scale = this.axisRegistry.getScale(axisId)
         if (scale) {
           const [min, max] = scale.domain()
-          const qk    = this.axisRegistry.axisQuantityKinds[axisId]
+          const qk    = this.axisRegistry.getQkForSlot(axisId)
           const qkDef = qk ? getAxisQuantityKind(qk) : {}
           axes[axisId] = { ...qkDef, ...(axes[axisId] ?? {}), min, max, ...(qk ? { quantity_kind: qk } : {}) }
         }
       }
     }
 
-    if (this.colorAxisRegistry) {
-      for (const quantityKind of this.colorAxisRegistry.getQuantityKinds()) {
-        const range = this.colorAxisRegistry.getRange(quantityKind)
+    if (this.axisRegistry) {
+      for (const quantityKind of this.axisRegistry.getColorQuantityKinds()) {
+        const domain = this.axisRegistry.getDomain(quantityKind)
         const qkDef = getAxisQuantityKind(quantityKind)
         const existing = axes[quantityKind] ?? {}
         axes[quantityKind] = {
           colorbar: "none",
           ...qkDef,
           ...existing,
-          ...(range ? { min: range[0], max: range[1] } : {}),
+          ...(domain ? { min: domain[0], max: domain[1] } : {}),
         }
       }
-    }
-
-    if (this.filterAxisRegistry) {
-      for (const quantityKind of this.filterAxisRegistry.getQuantityKinds()) {
-        const range = this.filterAxisRegistry.getRange(quantityKind)
+      for (const quantityKind of this.axisRegistry.getFilterQuantityKinds()) {
+        const bounds = this.axisRegistry.getFilterBounds(quantityKind)
         const qkDef = getAxisQuantityKind(quantityKind)
         const existing = axes[quantityKind] ?? {}
         axes[quantityKind] = {
           filterbar: "none",
           ...qkDef,
           ...existing,
-          ...(range && range.min !== null ? { min: range.min } : {}),
-          ...(range && range.max !== null ? { max: range.max } : {})
+          ...(bounds?.min !== null && bounds?.min !== undefined ? { min: bounds.min } : {}),
+          ...(bounds?.max !== null && bounds?.max !== undefined ? { max: bounds.max } : {}),
         }
       }
     }
@@ -367,8 +361,6 @@ export class Plot extends GlBase {
     }
 
     this.axisRegistry = new AxisRegistry(this.plotWidth, this.plotHeight)
-    this.colorAxisRegistry = new ColorAxisRegistry()
-    this.filterAxisRegistry = new FilterAxisRegistry()
 
     // Rebuild the colorscale texture on every _initialize so that colorscales
     // registered after the previous update() are included (matches the GLSL
@@ -387,7 +379,7 @@ export class Plot extends GlBase {
     for (const axisId of AXES) {
       const cfg = cleanAxes[axisId]
       if (cfg?.quantity_kind != null &&
-          cfg.quantity_kind !== this.axisRegistry.axisQuantityKinds[axisId]) {
+          cfg.quantity_kind !== this.axisRegistry.getQkForSlot(axisId)) {
         delete cleanAxes[axisId]
       }
     }
@@ -416,9 +408,8 @@ export class Plot extends GlBase {
     // the true-2D colorscale path in map_color_s_2d.
     for (const entry of colorbars) {
       if (!entry.colorscale || entry.colorscale == "none") continue
-      console.log("FROM colorbars");
-      if (entry.xAxis) this.colorAxisRegistry.ensureColorAxis(entry.xAxis, entry.colorscale)
-      if (entry.yAxis) this.colorAxisRegistry.ensureColorAxis(entry.yAxis, entry.colorscale)
+      if (entry.xAxis) this.axisRegistry.ensureColorAxis(entry.xAxis, entry.colorscale)
+      if (entry.yAxis) this.axisRegistry.ensureColorAxis(entry.yAxis, entry.colorscale)
     }
 
     if (!this._zoomController) this._zoomController = new ZoomController(this)
@@ -595,7 +586,7 @@ void main() {
   // For color axes, the axis ID IS the quantity kind.
   getAxisQuantityKind(axisId) {
     if (Object.prototype.hasOwnProperty.call(AXIS_GEOMETRY, axisId)) {
-      return this.axisRegistry ? this.axisRegistry.axisQuantityKinds[axisId] : null
+      return this.axisRegistry ? this.axisRegistry.getQkForSlot(axisId) : null
     }
     return axisId
   }
@@ -606,30 +597,29 @@ void main() {
       const scale = this.axisRegistry?.getScale(axisId)
       return scale ? scale.domain() : null
     }
-    if (this.colorAxisRegistry?.hasAxis(axisId)) {
-      return this.colorAxisRegistry.getRange(axisId)
+    if (this.axisRegistry?.hasFilterAxis(axisId)) {
+      const bounds = this.axisRegistry.getFilterBounds(axisId)
+      if (bounds !== null) return [bounds.min, bounds.max]
     }
-    const filterRange = this.filterAxisRegistry?.getRange(axisId)
-    if (filterRange) return [filterRange.min, filterRange.max]
-    return null
+    return this.axisRegistry?.getDomain(axisId) ?? null
   }
 
   // Unified domain setter for spatial, color, and filter axes.
   setAxisDomain(axisId, domain) {
     if (Object.prototype.hasOwnProperty.call(AXIS_GEOMETRY, axisId)) {
-      const scale = this.axisRegistry?.getScale(axisId)
-      if (scale) {
-        scale.domain(domain)
+      const qk = this.axisRegistry?.getQkForSlot(axisId)
+      if (qk) {
+        this.axisRegistry.setDomain(qk, domain)
         // Keep currentConfig in sync so update() skips _initialize() when only domains changed.
         if (this.currentConfig) {
           const axes = this.currentConfig.axes ?? {}
           this.currentConfig = { ...this.currentConfig, axes: { ...axes, [axisId]: { ...(axes[axisId] ?? {}), min: domain[0], max: domain[1] } } }
         }
       }
-    } else if (this.colorAxisRegistry?.hasAxis(axisId)) {
-      this.colorAxisRegistry.setRange(axisId, domain[0], domain[1])
-    } else if (this.filterAxisRegistry?.hasAxis(axisId)) {
-      this.filterAxisRegistry.setRange(axisId, domain[0], domain[1])
+    } else if (this.axisRegistry?.hasFilterAxis(axisId)) {
+      this.axisRegistry.setFilterBounds(axisId, domain[0], domain[1])
+    } else if (this.axisRegistry?.hasAxis(axisId)) {
+      this.axisRegistry.setDomain(axisId, domain)
     }
   }
 
@@ -654,7 +644,7 @@ void main() {
         if (factoryDef) desired.set(tag, { factoryDef, opts: { axisName, orientation: cb }, y: 10 })
       }
       // Filterbars declared inline on axes: axes[qk].filterbar = "horizontal"|"vertical"
-      if (this.filterAxisRegistry?.hasAxis(axisName)) {
+      if (this.axisRegistry?.hasFilterAxis(axisName)) {
         const fb = axisConfig.filterbar
         if (fb === "vertical" || fb === "horizontal") {
           const tag = `filterbar:${axisName}:${fb}`
@@ -766,18 +756,18 @@ void main() {
 
       // Register spatial axes (null means no axis for that direction).
       // Pass any scale override from config (e.g. "log") so the D3 scale is created correctly.
-      if (ac.xAxis) this.axisRegistry.ensureAxis(ac.xAxis, ac.xAxisQuantityKind, axesConfig[ac.xAxis]?.scale ?? axesConfig[ac.xAxisQuantityKind]?.scale)
-      if (ac.yAxis) this.axisRegistry.ensureAxis(ac.yAxis, ac.yAxisQuantityKind, axesConfig[ac.yAxis]?.scale ?? axesConfig[ac.yAxisQuantityKind]?.scale)
-      if (ac.zAxis) this.axisRegistry.ensureAxis(ac.zAxis, ac.zAxisQuantityKind, axesConfig[ac.zAxis]?.scale ?? axesConfig[ac.zAxisQuantityKind]?.scale)
+      if (ac.xAxis) this.axisRegistry.ensureSpatialSlot(ac.xAxis, ac.xAxisQuantityKind, axesConfig[ac.xAxis]?.scale ?? axesConfig[ac.xAxisQuantityKind]?.scale)
+      if (ac.yAxis) this.axisRegistry.ensureSpatialSlot(ac.yAxis, ac.yAxisQuantityKind, axesConfig[ac.yAxis]?.scale ?? axesConfig[ac.yAxisQuantityKind]?.scale)
+      if (ac.zAxis) this.axisRegistry.ensureSpatialSlot(ac.zAxis, ac.zAxisQuantityKind, axesConfig[ac.zAxis]?.scale ?? axesConfig[ac.zAxisQuantityKind]?.scale)
 
       // Register color axes (colorscale comes from config or quantity kind registry, not from here)
       for (const quantityKind of Object.values(ac.colorAxisQuantityKinds)) {
-        this.colorAxisRegistry.ensureColorAxis(quantityKind)
+        this.axisRegistry.ensureColorAxis(quantityKind)
       }
 
       // Register filter axes
       for (const quantityKind of Object.values(ac.filterAxisQuantityKinds)) {
-        this.filterAxisRegistry.ensureFilterAxis(quantityKind)
+        this.axisRegistry.ensureFilterAxis(quantityKind)
       }
 
       // Create one draw command per GPU config returned by the layer type.
@@ -911,8 +901,6 @@ void main() {
 
   _setDomains(axesOverrides) {
     this.axisRegistry.applyAutoDomainsFromLayers(this.layers, axesOverrides)
-    this.colorAxisRegistry.applyAutoDomainsFromLayers(this.layers, axesOverrides)
-    this.filterAxisRegistry.applyAutoDomainsFromLayers(this.layers, axesOverrides)
   }
 
   // Thin wrapper so subclasses (e.g. Colorbar) can override scale-type lookup
@@ -1127,17 +1115,17 @@ void main() {
 
       for (const qk of Object.values(layer.colorAxes)) {
         const pk = qk.replace(/\./g, '_')
-        props[`colorscale_${pk}`] = this.colorAxisRegistry.getColorscaleIndex(qk)
-        const range = this.colorAxisRegistry.getRange(qk)
-        props[`color_range_${pk}`] = range ?? [0, 1]
+        props[`colorscale_${pk}`] = this.axisRegistry.getColorscaleIndex(qk)
+        const domain = this.axisRegistry.getDomain(qk)
+        props[`color_range_${pk}`] = domain ?? [0, 1]
         props[`color_scale_type_${pk}`] = this._getScaleTypeFloat(qk)
-        props[`alpha_blend_${pk}`] = this.colorAxisRegistry.getAlphaBlend(qk)
-        props[`color_filter_range_${pk}`] = this.colorAxisRegistry.getColorFilterRangeUniform(qk)
+        props[`alpha_blend_${pk}`] = this.axisRegistry.getAlphaBlend(qk)
+        props[`color_filter_range_${pk}`] = this.axisRegistry.getColorFilterRangeUniform(qk)
       }
 
       for (const qk of Object.values(layer.filterAxes)) {
         const pk = qk.replace(/\./g, '_')
-        props[`filter_range_${pk}`] = this.filterAxisRegistry.getRangeUniform(qk)
+        props[`filter_range_${pk}`] = this.axisRegistry.getFilterRangeUniform(qk)
         props[`filter_scale_type_${pk}`] = this._getScaleTypeFloat(qk)
       }
 
@@ -1187,7 +1175,7 @@ void main() {
     for (const axisId of AXES) {
       const scale = this.axisRegistry.getScale(axisId)
       if (!scale) continue
-      const qk = this.axisRegistry.axisQuantityKinds[axisId]
+      const qk = this.axisRegistry.getQkForSlot(axisId)
       const value = axisId.includes('y') ? scale.invert(plotY) : scale.invert(plotX)
       result[axisId] = value
       if (qk) result[qk] = value
@@ -1278,16 +1266,16 @@ void main() {
         if (layer.instanceCount !== null) props.instances = layer.instanceCount
         for (const qk of Object.values(layer.colorAxes)) {
           const pk = qk.replace(/\./g, '_')
-          props[`colorscale_${pk}`] = this.colorAxisRegistry.getColorscaleIndex(qk)
-          const range = this.colorAxisRegistry.getRange(qk)
-          props[`color_range_${pk}`] = range ?? [0, 1]
+          props[`colorscale_${pk}`] = this.axisRegistry.getColorscaleIndex(qk)
+          const domain = this.axisRegistry.getDomain(qk)
+          props[`color_range_${pk}`] = domain ?? [0, 1]
           props[`color_scale_type_${pk}`] = this._getScaleTypeFloat(qk)
-          props[`alpha_blend_${pk}`] = this.colorAxisRegistry.getAlphaBlend(qk)
-          props[`color_filter_range_${pk}`] = this.colorAxisRegistry.getColorFilterRangeUniform(qk)
+          props[`alpha_blend_${pk}`] = this.axisRegistry.getAlphaBlend(qk)
+          props[`color_filter_range_${pk}`] = this.axisRegistry.getColorFilterRangeUniform(qk)
         }
         for (const qk of Object.values(layer.filterAxes)) {
           const pk = qk.replace(/\./g, '_')
-          props[`filter_range_${pk}`] = this.filterAxisRegistry.getRangeUniform(qk)
+          props[`filter_range_${pk}`] = this.axisRegistry.getFilterRangeUniform(qk)
           props[`filter_scale_type_${pk}`] = this._getScaleTypeFloat(qk)
         }
         layer.draw(props)

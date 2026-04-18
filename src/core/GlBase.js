@@ -1,5 +1,5 @@
 import reglInit from "regl"
-import { FilterAxisRegistry } from "../axes/FilterAxisRegistry.js"
+import { AxisRegistry } from "../axes/AxisRegistry.js"
 import { Axis } from "../axes/Axis.js"
 import { DataGroup, ComputedDataNode } from "../data/Data.js"
 import { getComputedData } from "../compute/ComputationRegistry.js"
@@ -10,7 +10,7 @@ export class GlBase {
     this.currentData = null
     this._rawData = null
     this._dataTransformNodes = []
-    this.filterAxisRegistry = null
+    this.axisRegistry = null
     this._axisCache = new Map()
     this._axesProxy = null
     this._initEpoch = 0
@@ -83,16 +83,19 @@ export class GlBase {
   }
 
   // Default: filter axes only. Overridden by Plot to add spatial + color axes.
+  // Returns [min|null, max|null] for filter axes so transforms see open bounds as null.
   getAxisDomain(axisId) {
-    const filterRange = this.filterAxisRegistry?.getRange(axisId)
-    if (filterRange) return [filterRange.min, filterRange.max]
-    return null
+    if (this.axisRegistry?.hasFilterAxis(axisId)) {
+      const bounds = this.axisRegistry.getFilterBounds(axisId)
+      if (bounds !== null) return [bounds.min, bounds.max]
+    }
+    return this.axisRegistry?.getDomain(axisId) ?? null
   }
 
   // Default: filter axes only. Overridden by Plot to add spatial + color axes.
   setAxisDomain(axisId, domain) {
-    if (this.filterAxisRegistry?.hasAxis(axisId)) {
-      this.filterAxisRegistry.setRange(axisId, domain[0], domain[1])
+    if (this.axisRegistry?.hasFilterAxis(axisId)) {
+      this.axisRegistry.setFilterBounds(axisId, domain[0], domain[1])
     }
   }
 
@@ -124,7 +127,7 @@ export class GlBase {
 
       const filterAxes = computedData.filterAxes(params, this.currentData)
       for (const quantityKind of Object.values(filterAxes)) {
-        this.filterAxisRegistry.ensureFilterAxis(quantityKind)
+        this.axisRegistry.ensureFilterAxis(quantityKind)
       }
 
       const node = new ComputedDataNode(computedData, params)
@@ -141,8 +144,8 @@ export class GlBase {
 
       const filterDataExtents = node._meta?.filterDataExtents ?? {}
       for (const [qk, extent] of Object.entries(filterDataExtents)) {
-        if (this.filterAxisRegistry.hasAxis(qk)) {
-          this.filterAxisRegistry.setDataExtent(qk, extent[0], extent[1])
+        if (this.axisRegistry.hasFilterAxis(qk)) {
+          this.axisRegistry.setDataExtent(qk, extent[0], extent[1])
         }
       }
 

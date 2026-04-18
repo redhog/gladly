@@ -1,6 +1,6 @@
 import { Layer } from "./Layer.js"
 import { buildColorGlsl, getRegisteredColorscales } from "../colorscales/ColorscaleRegistry.js"
-import { buildFilterGlsl, buildColorFilterGlsl } from "../axes/FilterAxisRegistry.js"
+import { buildFilterGlsl, buildColorFilterGlsl } from "../axes/AxisRegistry.js"
 import { resolveAttributeExpr } from "../compute/ComputationRegistry.js"
 import { SAMPLE_COLUMN_GLSL, SAMPLE_COLUMN_ND_GLSL } from "../data/ColumnData.js"
 

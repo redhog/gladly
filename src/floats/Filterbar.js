@@ -84,10 +84,10 @@ export class Filterbar extends Plot {
   }
 
   _onCheckboxChange() {
-    const registry = this._targetPlot.filterAxisRegistry
+    const registry = this._targetPlot.axisRegistry
     if (!registry) return
 
-    const range   = registry.getRange(this._filterAxisName)
+    const bounds  = registry.getFilterBounds(this._filterAxisName)
     const current = this.getAxisDomain(this._spatialAxis)
     const extent  = registry.getDataExtent(this._filterAxisName)
 
@@ -96,10 +96,10 @@ export class Filterbar extends Plot {
 
     // When closing an open bound, use the current filterbar view edge so
     // unchecking ∞ restores whatever the filterbar is currently displaying.
-    const currentMin = range?.min ?? current?.[0] ?? (extent ? extent[0] : 0)
-    const currentMax = range?.max ?? current?.[1] ?? (extent ? extent[1] : 1)
+    const currentMin = bounds?.min ?? current?.[0] ?? (extent ? extent[0] : 0)
+    const currentMax = bounds?.max ?? current?.[1] ?? (extent ? extent[1] : 1)
 
-    registry.setRange(
+    registry.setFilterBounds(
       this._filterAxisName,
       minOpen ? null : currentMin,
       maxOpen ? null : currentMax
@@ -109,22 +109,22 @@ export class Filterbar extends Plot {
 
   render() {
     if (this.axisRegistry && this._targetPlot) {
-      const registry = this._targetPlot.filterAxisRegistry
+      const registry = this._targetPlot.axisRegistry
       if (registry) {
-        const range  = registry.getRange(this._filterAxisName)
+        const bounds = registry.getFilterBounds(this._filterAxisName)
         const extent = registry.getDataExtent(this._filterAxisName)
-        if (range) {
+        if (bounds !== null) {
           // For open bounds, keep the current axis edge so toggling ∞ does not
           // shift the filterbar's view. Fall back to data extent only on the
           // initial render when the axis has no domain yet.
           const current = this.getAxisDomain(this._spatialAxis)
-          const displayMin = range.min ?? current?.[0] ?? (extent ? extent[0] : 0)
-          const displayMax = range.max ?? current?.[1] ?? (extent ? extent[1] : 1)
+          const displayMin = bounds.min ?? current?.[0] ?? (extent ? extent[0] : 0)
+          const displayMax = bounds.max ?? current?.[1] ?? (extent ? extent[1] : 1)
           if (displayMin < displayMax) {
             this.setAxisDomain(this._spatialAxis, [displayMin, displayMax])
           }
-          if (this._minInput) this._minInput.checked = range.min === null
-          if (this._maxInput) this._maxInput.checked = range.max === null
+          if (this._minInput) this._minInput.checked = bounds.min === null
+          if (this._maxInput) this._maxInput.checked = bounds.max === null
         }
       }
       const scaleType = getScaleTypeFloat(this._filterAxisName, this._targetPlot.currentConfig?.axes) > 0.5 ? "log" : "linear"

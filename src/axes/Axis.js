@@ -118,7 +118,7 @@ export class Axis {
     const ticks     = this._computeTicks(scale, tickCount)
     atlas.markLabels(ticks.map(t => formatTick(t)))
 
-    const qk = axisRegistry.axisQuantityKinds[this._name]
+    const qk = axisRegistry.getQkForSlot(this._name)
     if (qk) {
       const axisConfig = currentConfig?.axes?.[this._name] ?? {}
       const unitLabel  = axisConfig.label ?? getAxisQuantityKind(qk).label
@@ -330,7 +330,7 @@ export class Axis {
     }
 
     // ── 4. Axis title ───────────────────────────────────────────────────────
-    const qk        = axisRegistry.axisQuantityKinds[this._name]
+    const qk        = axisRegistry.getQkForSlot(this._name)
     if (!qk) return
     const axisConfig = currentConfig?.axes?.[this._name] ?? {}
     const unitLabel  = axisConfig.label ?? getAxisQuantityKind(qk).label

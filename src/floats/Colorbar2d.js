@@ -90,7 +90,7 @@ export class Colorbar2d extends Plot {
   }
 
   _onCheckboxChange() {
-    const registry = this._targetPlot.colorAxisRegistry
+    const registry = this._targetPlot.axisRegistry
     if (!registry) return
     registry.setClamp(this._xAxis, this._xMinInput.checked, this._xMaxInput.checked)
     registry.setClamp(this._yAxis, this._yMinInput.checked, this._yMaxInput.checked)
@@ -106,23 +106,23 @@ export class Colorbar2d extends Plot {
 
   render() {
     // Sync range, colorscale, and scale type for both color axes from the target plot.
-    if (this.colorAxisRegistry && this.axisRegistry && this._targetPlot) {
+    if (this.axisRegistry && this._targetPlot) {
       for (const [colorAxisName, spatialAxisId] of [
         [this._xAxis, "xaxis_bottom"],
         [this._yAxis, "yaxis_left"]
       ]) {
-        const range = this._targetPlot.getAxisDomain(colorAxisName)
-        if (range) {
-          this.setAxisDomain(spatialAxisId, range)
-          this.setAxisDomain(colorAxisName, range)
+        const domain = this._targetPlot.getAxisDomain(colorAxisName)
+        if (domain) {
+          this.setAxisDomain(spatialAxisId, domain)
+          this.setAxisDomain(colorAxisName, domain)
         }
-        const colorscale = this._targetPlot.colorAxisRegistry?.getColorscale(colorAxisName)
-        if (colorscale) this.colorAxisRegistry.ensureColorAxis(colorAxisName, colorscale)
+        const colorscale = this._targetPlot.axisRegistry?.getColorscale(colorAxisName)
+        if (colorscale) this.axisRegistry.ensureColorAxis(colorAxisName, colorscale)
         const scaleType = getScaleTypeFloat(colorAxisName, this._targetPlot.currentConfig?.axes) > 0.5 ? "log" : "linear"
         this.axisRegistry.setScaleType(spatialAxisId, scaleType)
       }
 
-      const reg = this._targetPlot.colorAxisRegistry
+      const reg = this._targetPlot.axisRegistry
       if (this._xMinInput) this._xMinInput.checked = reg?.getClampMin(this._xAxis) ?? true
       if (this._xMaxInput) this._xMaxInput.checked = reg?.getClampMax(this._xAxis) ?? true
       if (this._yMinInput) this._yMinInput.checked = reg?.getClampMin(this._yAxis) ?? true

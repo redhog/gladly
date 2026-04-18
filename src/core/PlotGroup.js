@@ -129,17 +129,12 @@ export class PlotGroup {
         }
       }
 
-      // Color axes (axisId === quantityKind for non-spatial axes)
-      if (plot.colorAxisRegistry) {
-        for (const qk of plot.colorAxisRegistry.getQuantityKinds()) {
-          _push(qkAxes, qk, { plotName, axisId: qk })
-        }
-      }
-
-      // Filter axes
-      if (plot.filterAxisRegistry) {
-        for (const qk of plot.filterAxisRegistry.getQuantityKinds()) {
-          _push(qkAxes, qk, { plotName, axisId: qk })
+      // Color and filter axes (axisId === quantityKind for non-spatial axes)
+      if (plot.axisRegistry) {
+        for (const qk of plot.axisRegistry.getQuantityKinds()) {
+          if (plot.axisRegistry.hasColorAxis(qk) || plot.axisRegistry.hasFilterAxis(qk)) {
+            _push(qkAxes, qk, { plotName, axisId: qk })
+          }
         }
       }
     }
