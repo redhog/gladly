@@ -869,7 +869,7 @@ Each element in the array:
 {
   // GPU attribute values — keyed by GLSL attribute name.
   // Each value is one of:
-  //   - Float32Array: uploaded directly as a vertex buffer attribute (single tile).
+  //   - Float32Array: vertex buffer for a single tile (wrapped to [Float32Array] internally).
   //   - Float32Array[]: one typed array per tile — enables tiled rendering (N draw calls).
   //   - string: a column name resolved from the plot's current data to ColumnData.
   //   - ColumnData: (ArrayColumn / TextureColumn / GlslColumn) — resolved to GPU texture or GLSL expr.

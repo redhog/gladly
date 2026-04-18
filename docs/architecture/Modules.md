@@ -499,8 +499,7 @@ The `compute/` directory implements the **computed attribute system**: a class-b
 
 **Attribute resolution:**
 - `resolveAttributeExpr(regl, expr, attrShaderName, plot)` — entry point called by `LayerType.createDrawCommand`; returns:
-  - `{ kind: 'buffer', value }` for a plain `Float32Array` (single-tile vertex buffer)
-  - `{ kind: 'buffer-tiled', values }` for a `Float32Array[]` (one typed array per tile)
+  - `{ kind: 'buffer-tiled', values }` for a `Float32Array` (wrapped as `[expr]`) or `Float32Array[]` (one typed array per tile)
   - `{ kind: 'computed', glslExpr, textures, col }` for column expressions. `textures` values are `fn[]` arrays (one per tile). `col` is a `ColumnData` instance stored in `layer._dataColumns` for per-frame refresh.
 
 **Axis-reactive recomputation:** when a `TextureComputation.compute()` calls `getAxisDomain(axisId)`, the registry registers that axis as a dependency. A `refreshFn` closure is attached to the resulting `TextureColumn`. On each render, `Plot` calls `col.refresh(plot)` on all `ColumnData` in `layer._dataColumns`; the texture is recomputed in-place if any tracked axis domain has changed.

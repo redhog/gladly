@@ -5,19 +5,15 @@
 Any `ColumnData` column can produce **N tiles** of data. A layer whose attributes
 include tiled columns is rendered as **N sequential draw calls** — one per tile —
 using the same compiled shader but different GPU bindings each time.  Tile count
-N = 1 produces exactly one draw call, identical to the pre-tiling behaviour.
+N = 1 produces exactly one draw call.
 
 ---
 
-## API Changes
+## Column API
 
 ### `ColumnData.resolve(path, regl)`
 
-Return type changes from:
-```js
-{ glslExpr: string, textures: { uniformName: () => texture } }
-```
-to:
+Returns:
 ```js
 { glslExpr: string, textures: { uniformName: [() => texture, ...] } }
 ```
@@ -36,8 +32,8 @@ and only mutates the `glslExpr` string.
 
 ### `ColumnData.toTexture(regl)`
 
-Return type changes from `texture` to `texture[]`.  A single-tile column returns
-`[texture]`.  A tiled column returns one texture per tile.
+Returns `texture[]` — one regl texture per tile.  A single-tile column returns
+`[texture]`.
 
 `GlslColumn.toTexture()` detects tiling from its input textures, runs one GPU
 render pass per tile, and returns `texture[]`.
@@ -46,10 +42,11 @@ render pass per tile, and returns `texture[]`.
 
 ## Buffer Attribute Tiling
 
-A `_createLayer` gpuConfig attribute value may be `Float32Array[]` (one typed
-array per tile) instead of a plain `Float32Array`.  Tiled buffer attributes drive
-per-tile GPU buffer bindings, per-tile vertex counts, and per-tile `a_pickId`
-arrays.
+A `_createLayer` gpuConfig attribute value may be a plain `Float32Array` (single
+tile, wrapped internally to `[Float32Array]`) or `Float32Array[]` (one typed array
+per tile).  Both produce `{ kind: 'buffer-tiled', values }` inside
+`resolveAttributeExpr`.  Tiled buffer attributes drive per-tile GPU buffer
+bindings, per-tile vertex counts, and per-tile `a_pickId` arrays.
 
 ---
 
@@ -58,13 +55,12 @@ arrays.
 All tiled things in **one layer** must agree on N.  Concretely:
 
 * Every `fn[]` value across all resolved texture columns must have the same length.
-* Every `Float32Array[]` attribute must have the same length.
+* Every buffer attribute produces `values` whose length sets or must match N.
 * The above must also agree with each other.
 
 Validation happens inside `LayerType.createDrawCommand`; a mismatch throws.
 
-A non-tiled column (`fn[]` of length 1, or a plain `Float32Array`) is simply
-a special case of N = 1 — it is not "broadcast" to match a larger N.  All
+N = 1 is not a special case — it is simply a layer with one tile.  All
 columns in a layer must share the same N.
 
 ---

@@ -66,8 +66,8 @@ Plot._initialize()
   │           ├─> Inject filter_in_range() GLSL if filter axes present
   │           ├─> For each attribute value:
   │           │   └─> resolveAttributeExpr(regl, expr, name, plot)
-  │           │       ├─> Float32Array   → { kind: 'buffer', value }       (single-tile vertex buffer)
-  │           │       ├─> Float32Array[] → { kind: 'buffer-tiled', values } (N per-tile vertex buffers)
+  │           │       ├─> Float32Array   → { kind: 'buffer-tiled', values: [expr] } (wrapped as single-tile list)
+  │           │       ├─> Float32Array[] → { kind: 'buffer-tiled', values }          (N per-tile vertex buffers)
   │           │       └─> string / ColumnData / expression → { kind: 'computed', glslExpr, textures, col }
   │           │           ├─> string → resolveExprToColumn → ColumnData (ArrayColumn or TextureColumn)
   │           │           ├─> { computationName: params } → TextureComputation.createColumn()
@@ -87,7 +87,7 @@ Plot._initialize()
   │           ├─> Build uniforms map  { xDomain, yDomain, count,
   │           │                         colorscale_<slot>, color_range_<slot>,
   │           │                         filter_range_<slot>,
-  │           │                         u_col_<name>: fn[] (tiled) or fn (single) for column data }
+  │           │                         u_col_<name>: fn[] for column data }
   │           ├─> Store _tileData = { nTiles, tileCounts, tileBufferOverrides } when N > 1
   │           └─> Return tile-looping draw function (N=1 → one call, N>1 → N calls per render)
   │
