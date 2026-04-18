@@ -886,13 +886,22 @@ void main() {
     return (runtimeProps) => {
       const baseProps = {}
       for (const [key, fn] of Object.entries(dynamicUniforms)) baseProps[key] = fn()
+      let nTiles = tileGpuBufs?.length ?? 1
+      for (const fns of Object.values(tiledTextureClosures)) {
+        if (fns.length > nTiles) nTiles = fns.length
+      }
       for (let t = 0; t < nTiles; t++) {
         const tileProps = tileGpuBufs?.[t] ? { ...tileGpuBufs[t] } : {}
+        let skip = false
         for (const [key, fns] of Object.entries(tiledTextureClosures)) {
-          tileProps[key] = fns.length > 1 ? fns[t]() : fns[0]()
+          const tex = (t < fns.length ? fns[t] : fns[0])?.()
+          if (tex == null) { skip = true; break }
+          tileProps[key] = tex
         }
-        const callProps = tileCounts
-          ? { ...bufferProps, ...baseProps, ...tileProps, ...runtimeProps, count: tileCounts[t] }
+        if (skip) continue
+        const count = tileCounts?.[t]
+        const callProps = count !== undefined
+          ? { ...bufferProps, ...baseProps, ...tileProps, ...runtimeProps, count }
           : { ...bufferProps, ...baseProps, ...tileProps, ...runtimeProps }
         cmd(callProps)
       }

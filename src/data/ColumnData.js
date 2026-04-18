@@ -119,6 +119,7 @@ export class TextureColumn extends ColumnData {
     this._length = length
     this._refreshFn = refreshFn
     this._shape = shape
+    this._texFns = null       // live fn[] array; refreshFn can splice to change tile count
   }
 
   get length()       { return this._length }
@@ -131,15 +132,17 @@ export class TextureColumn extends ColumnData {
       throw new Error(`[gladly] TextureColumn '${path}': texture is null — the column was not properly initialized or its computation failed`)
     }
     const uName = `u_col_${path}`
-    const texFn = () => {
-      if (!this._ref.texture) throw new Error(`[gladly] TextureColumn '${path}': texture became null after initialization`)
-      return this._ref.texture
+    if (!this._texFns) {
+      this._texFns = [() => {
+        if (!this._ref.texture) throw new Error(`[gladly] TextureColumn: texture became null after initialization`)
+        return this._ref.texture
+      }]
     }
     const shape = this.shape
     if (shape.length === 1) {
-      return { glslExpr: `sampleColumn(${uName}, a_pickId)`, textures: { [uName]: [texFn] }, shape }
+      return { glslExpr: `sampleColumn(${uName}, a_pickId)`, textures: { [uName]: this._texFns }, shape }
     }
-    return { glslExpr: null, textures: { [uName]: [texFn] }, shape }
+    return { glslExpr: null, textures: { [uName]: this._texFns }, shape }
   }
 
   toTexture(regl) {
@@ -150,7 +153,7 @@ export class TextureColumn extends ColumnData {
   }
 
   async refresh(plot) {
-    if (this._refreshFn) return await this._refreshFn(plot, this._ref) ?? false
+    if (this._refreshFn) return await this._refreshFn(plot, this._ref, this._texFns) ?? false
     return false
   }
 }
