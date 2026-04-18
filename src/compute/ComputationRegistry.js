@@ -92,12 +92,12 @@ async function resolveParams(params, data, regl, plot) {
 //   { kind: 'buffer', value: Float32Array }                 — fixed geometry
 //   { kind: 'computed', glslExpr, textures, col }           — data column
 export async function resolveAttributeExpr(regl, expr, attrShaderName, plot) {
-  if (Array.isArray(expr) && expr.length > 0 && expr[0] instanceof Float32Array) {
-    return { kind: 'buffer-tiled', values: expr }
+  if (expr instanceof Float32Array) {
+    return { kind: 'buffer-tiled', values: [expr] }
   }
 
-  if (expr instanceof Float32Array) {
-    return { kind: 'buffer', value: expr }
+  if (Array.isArray(expr) && expr.length > 0 && expr[0] instanceof Float32Array) {
+    return { kind: 'buffer-tiled', values: expr }
   }
 
   const data = plot ? plot.currentData : null

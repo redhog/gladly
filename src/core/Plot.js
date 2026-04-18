@@ -862,16 +862,15 @@ void main() {
       }
     }
 
-    // Separate single-tile closures (fn) from tiled closures (fn[]).
-    const textureClosures = {}
+    // fn[] = tiled texture closures (per-tile); plain fn = dynamic uniform (same across tiles).
     const tiledTextureClosures = {}
+    const dynamicUniforms = {}
     for (const [key, val] of Object.entries(drawConfig.uniforms)) {
       if (isTiledTexClosure(val)) tiledTextureClosures[key] = val
-      else if (typeof val === 'function') textureClosures[key] = val
+      else if (typeof val === 'function') dynamicUniforms[key] = val
     }
 
     layer._bufferProps = bufferProps
-    layer._textureClosures = textureClosures
 
     const nTiles = drawConfig._tileData?.nTiles ?? 1
 
@@ -895,19 +894,16 @@ void main() {
     }
 
     return (runtimeProps) => {
-      // Resolve single-tile texture closures once (same for every tile).
-      const baseTextureProps = {}
-      for (const [key, fn] of Object.entries(textureClosures)) {
-        baseTextureProps[key] = fn()
-      }
+      const baseProps = {}
+      for (const [key, fn] of Object.entries(dynamicUniforms)) baseProps[key] = fn()
       for (let t = 0; t < nTiles; t++) {
         const tileProps = tileGpuBufs?.[t] ? { ...tileGpuBufs[t] } : {}
         for (const [key, fns] of Object.entries(tiledTextureClosures)) {
-          tileProps[key] = fns[t]()
+          tileProps[key] = fns.length > 1 ? fns[t]() : fns[0]()
         }
         const callProps = tileCounts
-          ? { ...bufferProps, ...baseTextureProps, ...tileProps, ...runtimeProps, count: tileCounts[t] }
-          : { ...bufferProps, ...baseTextureProps, ...tileProps, ...runtimeProps }
+          ? { ...bufferProps, ...baseProps, ...tileProps, ...runtimeProps, count: tileCounts[t] }
+          : { ...bufferProps, ...baseProps, ...tileProps, ...runtimeProps }
         cmd(callProps)
       }
     }

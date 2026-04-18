@@ -151,9 +151,7 @@ export class LayerType {
 
     for (const [key, expr] of Object.entries(layer.attributes)) {
       const result = await resolveAttributeExpr(regl, expr, key, plot)
-      if (result.kind === 'buffer') {
-        bufferAttrs[key] = result.value
-      } else if (result.kind === 'buffer-tiled') {
+      if (result.kind === 'buffer-tiled') {
         bufferAttrs[key] = result.values[0]
         tiledBufferAttrs[key] = result.values
       } else {
@@ -286,7 +284,7 @@ export class LayerType {
     const spatialGlsl = buildSpatialGlsl()
     const colorGlsl = (Object.keys(layer.colorAxes).length > 0 || Object.keys(layer.colorAxes2d).length > 0) ? buildColorGlsl() : ''
     if (colorGlsl && getRegisteredColorscales().size > 0) {
-      uniforms['u_colorscale_tex'] = () => plot.colorscaleTexture
+      uniforms['u_colorscale_tex'] = [() => plot.colorscaleTexture]
     }
     const filterGlsl = Object.keys(layer.filterAxes).length > 0 ? buildFilterGlsl() : ''
     const pickVertDecls = `in float a_pickId;\nout float v_pickId;`
