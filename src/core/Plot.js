@@ -800,8 +800,7 @@ void main() {
   async _compileLayerDraw(layer) {
     const drawConfig = await layer.type.createDrawCommand(this.regl, layer, this)
 
-    // Layer types that fully override createDrawCommand (e.g. TileLayer) return
-    // a ready-to-call function instead of a plain drawConfig object. Pass through.
+    // If createDrawCommand returns a function, it fully owns the draw call — pass through.
     if (typeof drawConfig === 'function') return drawConfig
 
     const shaderKey = drawConfig.vert + '\0' + drawConfig.frag
@@ -862,36 +861,15 @@ void main() {
 
     layer._bufferProps = bufferProps
 
-    const nTiles = drawConfig._tileData?.nTiles ?? 1
-
-    // Create per-tile GPU buffers for tiled buffer attributes (tiles 1..N-1).
-    let tileGpuBufs = null
-    let tileCounts = null
-    if (drawConfig._tileData?.tileBufferOverrides) {
-      tileGpuBufs = drawConfig._tileData.tileBufferOverrides.map(overrides => {
-        const gpuBufs = {}
-        for (const [key, arr] of Object.entries(overrides)) {
-          gpuBufs[`attr_${key}`] = this.regl.buffer(arr)
-        }
-        return gpuBufs
-      })
-      tileCounts = drawConfig._tileData.tileCounts
-      for (let t = 0; t < nTiles; t++) {
-        for (const [k, gpuBuf] of Object.entries(tileGpuBufs[t])) {
-          layer._bufferProps[`_tile${t}_${k}`] = gpuBuf
-        }
-      }
-    }
-
     return (runtimeProps) => {
       const baseProps = {}
       for (const [key, fn] of Object.entries(dynamicUniforms)) baseProps[key] = fn()
-      let nTiles = tileGpuBufs?.length ?? 1
+      let nTiles = 1
       for (const fns of Object.values(tiledTextureClosures)) {
         if (fns.length > nTiles) nTiles = fns.length
       }
       for (let t = 0; t < nTiles; t++) {
-        const tileProps = tileGpuBufs?.[t] ? { ...tileGpuBufs[t] } : {}
+        const tileProps = {}
         let skip = false
         for (const [key, fns] of Object.entries(tiledTextureClosures)) {
           const tex = (t < fns.length ? fns[t] : fns[0])?.()
@@ -899,11 +877,7 @@ void main() {
           tileProps[key] = tex
         }
         if (skip) continue
-        const count = tileCounts?.[t]
-        const callProps = count !== undefined
-          ? { ...bufferProps, ...baseProps, ...tileProps, ...runtimeProps, count }
-          : { ...bufferProps, ...baseProps, ...tileProps, ...runtimeProps }
-        cmd(callProps)
+        cmd({ ...bufferProps, ...baseProps, ...tileProps, ...runtimeProps })
       }
     }
   }
