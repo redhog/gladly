@@ -82,14 +82,15 @@ Returns `string[]` — the list of column names.
 
 ## `data.getData(col)`
 
-Returns a `ColumnData` instance (`ArrayColumn` for plain `Float32Array` data) for column `col`, or `null` if the column does not exist. To get the underlying `Float32Array`, use `col.array` (only on `ArrayColumn` instances); to upload as a GPU texture use `col.toTexture(regl)` (any `ColumnData` subtype).
+Returns a `ColumnData` instance (`ArrayColumn` for plain `Float32Array` data) for column `col`, or `null` if the column does not exist. To get the underlying `Float32Array`, use `col.array` (only on `ArrayColumn` instances); to upload as GPU textures use `col.toTexture(regl)` (any `ColumnData` subtype).
 
 ```javascript
 const col = d.getData('x')   // → ArrayColumn (or null)
 if (col instanceof ArrayColumn) {
   const arr = col.array      // Float32Array (CPU access)
 }
-const tex = col.toTexture(regl)  // regl texture (any ColumnData subtype)
+const textures = await col.toTexture(regl)  // texture[] — one element per tile (usually [0] for tile 0)
+const tex = textures[0]
 ```
 
 ---

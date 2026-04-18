@@ -869,16 +869,19 @@ Each element in the array:
 {
   // GPU attribute values — keyed by GLSL attribute name.
   // Each value is one of:
-  //   - Float32Array: uploaded directly as a vertex buffer attribute.
+  //   - Float32Array: uploaded directly as a vertex buffer attribute (single tile).
+  //   - Float32Array[]: one typed array per tile — enables tiled rendering (N draw calls).
   //   - string: a column name resolved from the plot's current data to ColumnData.
   //   - ColumnData: (ArrayColumn / TextureColumn / GlslColumn) — resolved to GPU texture or GLSL expr.
   //   - Computed expression { computationName: params }: resolved to ColumnData.
   // Non-Float32Array values become GPU texture samples injected into the vertex shader as:
   //   float attrName = sampleColumn(u_col_attrName, a_pickId);
   // See docs/extension-api/Computations.md for details.
+  // See docs/tiled-data.md for the tiled rendering model (Float32Array[] and multi-tile ColumnData).
   attributes: {
     x: 'xData',                                   // column name string
-    y: Float32Array,                               // plain vertex buffer
+    y: Float32Array,                               // plain vertex buffer (single tile)
+    z: [tile0Array, tile1Array],                   // tiled buffer — two draw calls
     color_data: 'temperature',                     // column name → GPU texture sample
     count: { histogram: { input: 'norm', bins } }, // computed attribute expression
     // ...

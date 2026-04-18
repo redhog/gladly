@@ -22,7 +22,7 @@ col.shape           // [col.length] for 1D; pass { shape: [rows, cols] } to cons
 col.ndim            // col.shape.length
 col.domain          // [min, max] or null
 col.quantityKind    // string or null
-col.toTexture(regl) // returns a regl texture (RGBA, 4 values per texel, 2D layout)
+col.toTexture(regl) // returns texture[] — one element per tile (usually length 1)
 col.resolve(path, regl) // returns { glslExpr, textures, shape }
 ```
 
@@ -42,8 +42,8 @@ col.refresh(plot)      // re-runs refreshFn if present; returns true if texture 
 Wraps named `ColumnData` inputs plus a GLSL template function. Composes GLSL expressions without any GPU render pass. Call `toTexture(regl)` to materialise into a real texture via a GPU point-scatter pass.
 
 ```javascript
-col.resolve(path, regl) // returns { glslExpr, textures } — all inputs' textures merged
-col.toTexture(regl)     // GPU render pass: evaluates the expression per data point
+col.resolve(path, regl) // returns { glslExpr, textures: { name: [fn, ...] } } — all inputs' textures merged
+col.toTexture(regl)     // GPU render pass: evaluates the expression per tile; returns texture[]
 ```
 
 ### `OffsetColumn`
@@ -62,7 +62,7 @@ const interp = colX.withOffset('a_endPoint')  // per-vertex offset from a templa
 const col = new OffsetColumn(baseCol, '1.0')
 ```
 
-`OffsetColumn` delegates `length`, `domain`, `quantityKind`, `toTexture`, and `refresh` to its base column. Only `resolve()` is overridden to rewrite the GLSL sampling expression.
+`OffsetColumn` delegates `length`, `domain`, `quantityKind`, `toTexture` (returns `texture[]` from base), and `refresh` to its base column. Only `resolve()` is overridden to rewrite the GLSL sampling expression.
 
 Typical use case: instanced rendering where two consecutive data points define a line segment. Instead of building interleaved CPU arrays, use `colX.withOffset('0.0')` for the segment start and `colX.withOffset('1.0')` for the segment end, feeding both from the same underlying `ColumnData`.
 
@@ -79,8 +79,8 @@ All four subtypes share:
 | `col.domain` | `[min, max]` or `null` |
 | `col.quantityKind` | string or `null` |
 | `col.withOffset(offsetExpr)` | Returns an `OffsetColumn` that shifts the GLSL sampling index by the given GLSL expression |
-| `col.resolve(path, regl)` | Returns `{ glslExpr: string \| null, textures: { uniformName: () => tex }, shape }`. `glslExpr` is `null` for nD columns (shader wrapper generated instead). |
-| `col.toTexture(regl)` | Returns a raw regl texture (4 values packed per texel in RGBA) |
+| `col.resolve(path, regl)` | Returns `{ glslExpr: string \| null, textures: { uniformName: [() => tex, ...] }, shape }`. `textures` values are **always arrays** of zero-arg texture-returning functions (one per tile). `glslExpr` is `null` for nD columns (shader wrapper generated instead). |
+| `col.toTexture(regl)` | Returns `texture[]` — one regl texture per tile (4 values packed per texel in RGBA). Usually length 1 for non-tiled data. |
 | `col.refresh(plot)` | Refreshes if axis-reactive; returns `true` if updated |
 
 The `shape` property is what controls whether a column is treated as **1D** (sampled automatically at `a_pickId` in the vertex shader) or **nD** (accessed via a typed wrapper function, see [nD Column Shader Injection](#nd-column-shader-injection)).
@@ -180,11 +180,11 @@ Subclass `TextureComputation` and implement two methods:
 | `getAxisDomain` | `(axisId: string) => [min\|null, max\|null] \| null` | Returns the current domain of an axis and registers it as a dependency. Returns `null` if the axis has no domain yet. |
 
 **Accessing column data inside `compute()`:**
-- Call `inputs.col.toTexture(regl)` to get a GPU texture (works for any `ColumnData` subtype).
+- Call `(await inputs.col.toTexture(regl))[0]` to get a GPU texture for tile 0 (works for any `ColumnData` subtype). Built-in single-tile computations always use `[0]` since they process one tile at a time.
 - Check `inputs.col instanceof ArrayColumn` to test for CPU-accessible data; then use `inputs.col.array` for the raw `Float32Array`.
 - Use `instanceof ArrayColumn` guards and throw for computations that strictly need CPU data (e.g. FFT, adaptive convolution).
 
-**Return value:** A regl texture created with `uploadToTexture` (or equivalent). Values are packed 4 per texel in RGBA format; the framework samples them via `sampleColumn(tex, a_pickId)`. Set `tex._dataLength = n` so the framework knows the logical element count (which differs from `tex.width * tex.height * 4`).
+**Return value:** A single regl texture (not an array) — `TextureComputation` returns one texture per invocation. The framework wraps it in a `TextureColumn` which returns `[texture]` from `toTexture()`. Values are packed 4 per texel in RGBA format; the framework samples them via `sampleColumn(tex, a_pickId)`. Set `tex._dataLength = n` so the framework knows the logical element count (which differs from `tex.width * tex.height * 4`).
 
 ### `schema(data)`
 

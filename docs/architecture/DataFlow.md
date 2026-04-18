@@ -66,25 +66,30 @@ Plot._initialize()
   │           ├─> Inject filter_in_range() GLSL if filter axes present
   │           ├─> For each attribute value:
   │           │   └─> resolveAttributeExpr(regl, expr, name, plot)
-  │           │       ├─> Float32Array → { kind: 'buffer', value }  (vertex buffer)
+  │           │       ├─> Float32Array   → { kind: 'buffer', value }       (single-tile vertex buffer)
+  │           │       ├─> Float32Array[] → { kind: 'buffer-tiled', values } (N per-tile vertex buffers)
   │           │       └─> string / ColumnData / expression → { kind: 'computed', glslExpr, textures, col }
   │           │           ├─> string → resolveExprToColumn → ColumnData (ArrayColumn or TextureColumn)
   │           │           ├─> { computationName: params } → TextureComputation.createColumn()
   │           │           │     → TextureColumn with optional refreshFn for axis-reactive recompute
   │           │           │   or GlslComputation.createColumn() → GlslColumn (pure GLSL expression)
-  │           │           ├─> col.resolve(path, regl) → { glslExpr, textures }
+  │           │           ├─> col.resolve(path, regl) → { glslExpr, textures: { name: [fn, ...] } }
+  │           │           │   textures values are always fn[] — one zero-arg texture fn per tile
   │           │           └─> col stored in layer._dataColumns for per-frame col.refresh(plot)
+  │           ├─> Determine tile count N: max of all fn[].length values and Float32Array[].length values
+  │           │   All must agree (throw if mismatch). N = 1 for fully non-tiled layers.
   │           ├─> Inject SAMPLE_COLUMN_GLSL + sampler declarations into vertex shader
   │           │   when any column data attributes are present
   │           ├─> Inject column expressions into vertex shader main() body
   │           │   as: float attrName = sampleColumn(u_col_attrName, a_pickId);
-  │           ├─> Compile vertex + fragment shaders
-  │           ├─> Build attributes map  { name: Float32Array buffer }
-  │           ├─> Build uniforms map    { xDomain, yDomain, count,
-  │           │                           colorscale_<slot>, color_range_<slot>,
-  │           │                           filter_range_<slot>,
-  │           │                           u_col_<name>: () => ref.texture (dynamic, for column data) }
-  │           └─> Return regl draw function
+  │           ├─> Compile vertex + fragment shaders (one compiled command, shared across all tiles)
+  │           ├─> Build base attributes map { name: Float32Array buffer } (tile 0)
+  │           ├─> Build uniforms map  { xDomain, yDomain, count,
+  │           │                         colorscale_<slot>, color_range_<slot>,
+  │           │                         filter_range_<slot>,
+  │           │                         u_col_<name>: fn[] (tiled) or fn (single) for column data }
+  │           ├─> Store _tileData = { nTiles, tileCounts, tileBufferOverrides } when N > 1
+  │           └─> Return tile-looping draw function (N=1 → one call, N>1 → N calls per render)
   │
   ├─> Plot._setDomains(config.axes)
   │   ├─> Spatial axes:
@@ -119,7 +124,7 @@ plot.render()
   │
   ├─> For each (layer, drawCommand):
   │   │
-  │   ├─> Collect props:
+  │   ├─> Collect runtimeProps:
   │   │   ├─> xDomain  ← axisRegistry.scales[layer.xAxis].domain()
   │   │   ├─> yDomain  ← axisRegistry.scales[layer.yAxis].domain()
   │   │   ├─> viewport ← { x:0, y:0, width, height }
@@ -131,19 +136,26 @@ plot.render()
   │   │         filter_range_<slot> ← filterAxisRegistry.getVec4(quantityKind)
   │   │           → vec4 [min, max, hasMin, hasMax]
   │   │
-  │   └─> drawCommand(props)
+  │   └─> drawCommand(runtimeProps)
   │       │
-  │       └─> GPU execution:
-  │           ├─> Vertex shader (once per data point):
-  │           │   ├─> Read attribute values (x, y, v, z, …)
-  │           │   ├─> Optionally: filter_in_range() → move to clip discard position
-  │           │   ├─> Normalise to clip space using xDomain / yDomain
-  │           │   └─> Write gl_Position, gl_PointSize, varyings
-  │           │
-  │           └─> Fragment shader (once per rasterised pixel):
-  │               ├─> Optionally: discard via filter_in_range()
-  │               ├─> map_color() → look up colorscale, normalise value → RGBA
-  │               └─> Write gl_FragColor
+  │       ├─> For t in 0 .. N-1 (N = tile count; N=1 for non-tiled layers):
+  │       │   ├─> Resolve per-tile texture uniforms: u_col_<name> ← fn[t]()
+  │       │   ├─> Override per-tile buffer attrs (tileBufferOverrides[t]) + a_pickId for tile t
+  │       │   ├─> Set count = tileCounts[t] (if buffer-tiled) or runtimeProps.count
+  │       │   └─> Compiled regl command(tileProps) — one GPU draw call
+  │       │       │
+  │       │       └─> GPU execution (no clear between tiles — geometry accumulates):
+  │       │           ├─> Vertex shader (once per data point in this tile):
+  │       │           │   ├─> Read attribute values (x, y, v, z, …)
+  │       │           │   ├─> Optionally: filter_in_range() → move to clip discard position
+  │       │           │   ├─> Normalise to clip space using xDomain / yDomain
+  │       │           │   └─> Write gl_Position, gl_PointSize, varyings
+  │       │           │
+  │       │           └─> Fragment shader (once per rasterised pixel):
+  │       │               ├─> Optionally: discard via filter_in_range()
+  │       │               ├─> map_color() → look up colorscale, normalise value → RGBA
+  │       │               └─> Write gl_FragColor
+  │       └─> (end tile loop)
   │
   ├─> plot.renderAxes()
   │   └─> For each axis in AxisRegistry:
