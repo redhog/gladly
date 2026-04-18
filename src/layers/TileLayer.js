@@ -1,5 +1,6 @@
 import proj4 from 'proj4'
 import { LayerType } from '../core/LayerType.js'
+import { ColumnData, uploadToTexture } from '../data/ColumnData.js'
 import { AXES } from '../axes/AxisRegistry.js'
 import { registerLayerType } from '../core/LayerTypeRegistry.js'
 import { parseCrsCode, crsToQkX, crsToQkY, ensureCrsDefined } from '../geo/EpsgUtils.js'
@@ -33,11 +34,6 @@ function tileToMercBbox(tx, ty, z) {
 }
 
 function optimalZoom(bboxInTileCrs, pixelWidth, pixelHeight, minZoom, maxZoom) {
-  // Assume tile grid is Web Mercator: one tile = 256 px at zoom 0.
-  // Use the minimum of the x- and y-derived zoom levels so that neither
-  // dimension produces an unmanageable number of tiles.  A large y-extent
-  // with a small x-extent used to drive zoom to maxZoom via x alone, which
-  // could generate hundreds-of-thousands of tiles in the y direction.
   const xExtent = Math.abs(bboxInTileCrs.maxX - bboxInTileCrs.minX)
   const yExtent = Math.abs(bboxInTileCrs.maxY - bboxInTileCrs.minY)
   const worldSize = 2 * MERC_MAX
@@ -49,8 +45,6 @@ function optimalZoom(bboxInTileCrs, pixelWidth, pixelHeight, minZoom, maxZoom) {
 
 // ─── Source resolution ────────────────────────────────────────────────────────
 
-// source is stored as { xyz: {...} } | { wms: {...} } | { wmts: {...} }
-// Normalize to { type: 'xyz'|'wms'|'wmts', ...params } for the rest of the pipeline.
 function resolveSource(source) {
   const type = Object.keys(source).find(k => k === 'xyz' || k === 'wms' || k === 'wmts')
   if (!type) throw new Error(`source must have exactly one key of: xyz, wms, wmts`)
@@ -70,7 +64,6 @@ function buildXyzUrl(source, z, x, y) {
 }
 
 function buildWmtsUrl(source, z, x, y) {
-  // Support both RESTful template ({TileMatrix}, {TileRow}, {TileCol}) and KVP
   const url = source.url
   if (url.includes('{TileMatrix}') || url.includes('{z}')) {
     return url
@@ -78,7 +71,6 @@ function buildWmtsUrl(source, z, x, y) {
       .replace('{TileRow}', y).replace('{y}', y)
       .replace('{TileCol}', x).replace('{x}', x)
   }
-  // KVP style
   const params = new URLSearchParams({
     SERVICE: 'WMTS',
     REQUEST: 'GetTile',
@@ -98,10 +90,8 @@ function buildWmsUrl(source, bbox, tileCrs, pixelWidth, pixelHeight) {
   const version = source.version ?? '1.3.0'
   const crsParam = `EPSG:${parseCrsCode(tileCrs)}`
 
-  // WMS 1.3.0 with geographic CRS (EPSG:4326) swaps axis order: BBOX is minLat,minLon,maxLat,maxLon
   const is13 = version === '1.3.0'
   const epsgCode = parseCrsCode(crsParam)
-  // EPSG:4326 and other geographic CRS have swapped axes in WMS 1.3.0
   const swapAxes = is13 && (epsgCode === 4326)
   const bboxStr = swapAxes
     ? `${bbox.minY},${bbox.minX},${bbox.maxY},${bbox.maxX}`
@@ -127,21 +117,23 @@ function buildWmsUrl(source, bbox, tileCrs, pixelWidth, pixelHeight) {
 // ─── Tessellated mesh builder ──────────────────────────────────────────────────
 
 /**
- * Build a tessellated mesh for one tile.
+ * Build a pre-expanded (non-indexed) tessellated mesh for one tile.
  *
  * @param {{ minX, maxX, minY, maxY }} tileBbox  - bbox in tileCrs
  * @param {string} tileCrs  - e.g. "EPSG:3857"
  * @param {string} plotCrs  - e.g. "EPSG:26911" (may equal tileCrs)
  * @param {number} N        - tessellation grid size (N×N quads)
- * @returns {{ positions: Float32Array, uvs: Float32Array, indices: Uint16Array }}
+ * @returns {{ positions: Float32Array, uvs: Float32Array, vertexCount: number }}
+ *   positions and uvs are pre-expanded: N*N*6 vertices (two CCW triangles per quad).
+ *   uvs are identical for all tiles with the same N (bbox-independent).
  */
 function buildTileMesh(tileBbox, tileCrs, plotCrs, N) {
   const sameProj = `EPSG:${parseCrsCode(tileCrs)}` === `EPSG:${parseCrsCode(plotCrs)}`
   const project = sameProj ? null : proj4(`EPSG:${parseCrsCode(tileCrs)}`, `EPSG:${parseCrsCode(plotCrs)}`).forward
 
-  const numVerts = (N + 1) * (N + 1)
-  const positions = new Float32Array(numVerts * 2)
-  const uvs = new Float32Array(numVerts * 2)
+  const numGridVerts = (N + 1) * (N + 1)
+  const gridPos = new Float32Array(numGridVerts * 2)
+  const gridUvs = new Float32Array(numGridVerts * 2)
 
   for (let j = 0; j <= N; j++) {
     for (let i = 0; i <= N; i++) {
@@ -159,29 +151,66 @@ function buildTileMesh(tileBbox, tileCrs, plotCrs, N) {
       }
 
       const vi = j * (N + 1) + i
-      positions[vi * 2]     = px
-      positions[vi * 2 + 1] = py
-      uvs[vi * 2]     = u
-      uvs[vi * 2 + 1] = 1 - v  // flip v: tile y=0 is top, GL texture v=0 is bottom
+      gridPos[vi * 2]     = px
+      gridPos[vi * 2 + 1] = py
+      gridUvs[vi * 2]     = u
+      gridUvs[vi * 2 + 1] = 1 - v  // flip v: tile y=0 is top, GL texture v=0 is bottom
     }
   }
 
-  // Two CCW triangles per cell: (BL, BR, TR) and (BL, TR, TL)
-  const numIndices = N * N * 6
-  const indices = new Uint16Array(numIndices)
-  let idx = 0
+  // Expand to non-indexed triangles: two CCW triangles per quad
+  const vertexCount = N * N * 6
+  const positions = new Float32Array(vertexCount * 2)
+  const uvs = new Float32Array(vertexCount * 2)
+  let out = 0
   for (let j = 0; j < N; j++) {
     for (let i = 0; i < N; i++) {
       const bl = j * (N + 1) + i
       const br = bl + 1
       const tl = bl + (N + 1)
       const tr = tl + 1
-      indices[idx++] = bl; indices[idx++] = br; indices[idx++] = tr
-      indices[idx++] = bl; indices[idx++] = tr; indices[idx++] = tl
+      for (const vi of [bl, br, tr, bl, tr, tl]) {
+        positions[out * 2]     = gridPos[vi * 2]
+        positions[out * 2 + 1] = gridPos[vi * 2 + 1]
+        uvs[out * 2]     = gridUvs[vi * 2]
+        uvs[out * 2 + 1] = gridUvs[vi * 2 + 1]
+        out++
+      }
     }
   }
 
-  return { positions, uvs, indices }
+  return { positions, uvs, vertexCount }
+}
+
+// ─── TilePositionColumn ────────────────────────────────────────────────────────
+// ColumnData subclass that wraps a live fn[] array of per-tile position textures.
+// refresh(plot) calls syncFn so the tile manager updates tile coverage each frame.
+
+class TilePositionColumn extends ColumnData {
+  constructor(vertexCount, texFns, syncFn) {
+    super()
+    this._vertexCount = vertexCount
+    this._texFns = texFns   // live fn[] managed by TileManager; starts as [() => null]
+    this._syncFn = syncFn
+  }
+
+  get length()  { return this._vertexCount }
+  get shape()   { return [this._vertexCount] }
+
+  resolve(path, _regl) {
+    return {
+      glslExpr: `sampleColumn(u_col_${path}, a_pickId)`,
+      textures: { [`u_col_${path}`]: this._texFns },
+      shape: [this._vertexCount],
+    }
+  }
+
+  toTexture() { return this._texFns.map(fn => fn()) }
+
+  async refresh(plot) {
+    this._syncFn(plot)
+    return false
+  }
 }
 
 // ─── TileManager ──────────────────────────────────────────────────────────────
@@ -190,23 +219,25 @@ const MAX_TILE_CACHE = 50
 const DOMAIN_CHANGE_THRESHOLD = 0.02  // 2% change triggers tile sync
 
 class TileManager {
-  constructor({ regl, source, tileCrs, plotCrs, tessellation, onLoad }) {
+  constructor({ regl, source, tileCrs, plotCrs, tessellation, xTexFns, yTexFns, imageTexFns, onLoad }) {
     this.regl = regl
     this.source = source
-    this.tileCrs = tileCrs  // CRS of the tile service (e.g. "EPSG:3857")
-    this.plotCrs = plotCrs  // CRS of the plot axes
+    this.tileCrs = tileCrs
+    this.plotCrs = plotCrs
     this.tessellation = tessellation
+    this._xTexFns = xTexFns
+    this._yTexFns = yTexFns
+    this._imageTexFns = imageTexFns
     this.onLoad = onLoad
 
-    this.tiles = new Map()       // tileKey → tile entry
-    this.accessOrder = []        // LRU tracking
-    this._neededKeys = new Set() // keys required by the most recent syncTiles call
+    this.tiles = new Map()
+    this.accessOrder = []
+    this._neededKeys = new Set()
 
     this._lastXDomain = null
     this._lastYDomain = null
     this._lastViewport = null
 
-    // Pre-compute the proj4 converter from plotCrs to tileCrs for bbox conversion
     const fromCode = parseCrsCode(plotCrs)
     const toCode = parseCrsCode(tileCrs)
     this._plotToTile = fromCode === toCode
@@ -222,9 +253,6 @@ class TileManager {
     ))
     const dx = Math.abs(xDomain[1] - xDomain[0])
     const dy = Math.abs(yDomain[1] - yDomain[0])
-    // When a domain has zero width, relative change is undefined; fall back to
-    // exact equality so we don't treat every frame as "changed" (div-by-zero
-    // would give Infinity > threshold = true on every call).
     if (dx === 0 || dy === 0) {
       return xDomain[0] !== this._lastXDomain[0] ||
              xDomain[1] !== this._lastXDomain[1] ||
@@ -244,7 +272,6 @@ class TileManager {
   }
 
   _plotBboxToTileBbox(xDomain, yDomain) {
-    // Reproject all four corners and take the axis-aligned bounding box
     const corners = [
       [xDomain[0], yDomain[0]],
       [xDomain[1], yDomain[0]],
@@ -265,28 +292,22 @@ class TileManager {
     const source = this.source
 
     if (source.type === 'wms') {
-      // WMS: one image covering the full viewport
       const wmsUrl = buildWmsUrl(source, tileBbox, this.tileCrs, viewport.width, viewport.height)
       return [{ key: wmsUrl, bbox: tileBbox, url: wmsUrl, type: 'wms' }]
     }
 
-    // XYZ / WMTS: standard tile grid
     const minZoom = source.minZoom ?? 0
     const maxZoom = source.maxZoom ?? 19
     const z = optimalZoom(tileBbox, viewport.width, viewport.height, minZoom, maxZoom)
 
-    const [xMin, yMax] = mercToTileXY(tileBbox.minX, tileBbox.minY, z)  // note: minY → top tile
-    const [xMax, yMin] = mercToTileXY(tileBbox.maxX, tileBbox.maxY, z)  // maxY → bottom tile
-    // Clamp to valid tile range
+    const [xMin, yMax] = mercToTileXY(tileBbox.minX, tileBbox.minY, z)
+    const [xMax, yMin] = mercToTileXY(tileBbox.maxX, tileBbox.maxY, z)
     const tileCount = Math.pow(2, z)
     const txMin = Math.max(0, xMin)
     const txMax = Math.min(tileCount - 1, xMax)
     const tyMin = Math.max(0, yMin)
     const tyMax = Math.min(tileCount - 1, yMax)
 
-    // Safety cap: if the computed tile range is still unreasonably large (e.g.
-    // due to a degenerate bbox or an unsupported CRS), bail out rather than
-    // allocating millions of objects and crashing the tab.
     const MAX_TILES = 512
     if ((txMax - txMin + 1) * (tyMax - tyMin + 1) > MAX_TILES) {
       console.warn(`[TileLayer] tile range too large (${txMax - txMin + 1}×${tyMax - tyMin + 1} at z=${z}), skipping`)
@@ -316,25 +337,41 @@ class TileManager {
     const needed = this._computeNeededTiles(xDomain, yDomain, viewport)
     this._neededKeys = new Set(needed.map(t => t.key))
 
-    // Start loading tiles not yet in cache
     for (const tileSpec of needed) {
       if (!this.tiles.has(tileSpec.key)) {
         this._loadTile(tileSpec)
       }
     }
-    // Eviction is deferred to _loadTile() so old tiles stay visible while new ones load.
   }
 
   _evictTile(key) {
     const tile = this.tiles.get(key)
     if (!tile) return
-    if (tile.texture) tile.texture.destroy()
-    if (tile.posBuffer) tile.posBuffer.destroy()
-    if (tile.uvBuffer) tile.uvBuffer.destroy()
-    if (tile.elements) tile.elements.destroy()
+    if (tile.imgTex) tile.imgTex.destroy()
+    if (tile.xTex) tile.xTex.destroy()
+    if (tile.yTex) tile.yTex.destroy()
     this.tiles.delete(key)
     const i = this.accessOrder.indexOf(key)
     if (i >= 0) this.accessOrder.splice(i, 1)
+  }
+
+  _rebuildArrays() {
+    const loaded = [...this.tiles.values()].filter(t => t.status === 'loaded')
+    this._xTexFns.length = 0
+    this._yTexFns.length = 0
+    this._imageTexFns.length = 0
+    // Always keep at least one entry so isTiledTexClosure detection stays true.
+    if (loaded.length === 0) {
+      this._xTexFns.push(() => null)
+      this._yTexFns.push(() => null)
+      this._imageTexFns.push(() => null)
+      return
+    }
+    for (const tile of loaded) {
+      this._xTexFns.push(() => tile.xTex)
+      this._yTexFns.push(() => tile.yTex)
+      this._imageTexFns.push(() => tile.imgTex)
+    }
   }
 
   async _loadTile(tileSpec) {
@@ -350,35 +387,30 @@ class TileManager {
         img.src = tileSpec.url
       })
 
-      // Check we haven't been evicted while loading
       if (!this.tiles.has(tileSpec.key)) return
 
       const mesh = buildTileMesh(tileSpec.bbox, this.tileCrs, this.plotCrs, this.tessellation)
-      const texture = this.regl.texture({ data: img, flipY: false, min: 'linear', mag: 'linear' })
-      const posBuffer = this.regl.buffer(mesh.positions)
-      const uvBuffer = this.regl.buffer(mesh.uvs)
-      const elements = this.regl.elements({ data: mesh.indices, type: 'uint16' })
+      const imgTex = this.regl.texture({ data: img, flipY: false, min: 'linear', mag: 'linear' })
 
-      this.tiles.set(tileSpec.key, {
-        status: 'loaded',
-        texture,
-        posBuffer,
-        uvBuffer,
-        elements,
-        indexCount: mesh.indices.length,
-      })
+      // De-interleave xy positions into separate packed float textures
+      const n = mesh.vertexCount
+      const xArr = new Float32Array(n)
+      const yArr = new Float32Array(n)
+      for (let i = 0; i < n; i++) {
+        xArr[i] = mesh.positions[i * 2]
+        yArr[i] = mesh.positions[i * 2 + 1]
+      }
+      const xTex = uploadToTexture(this.regl, xArr)
+      const yTex = uploadToTexture(this.regl, yArr)
 
-      // Now that this tile is ready, evict old tiles that are no longer needed.
-      // Eviction is done here (not in syncTiles) so superseded tiles stay visible
-      // as a fallback while their replacements are still loading.
+      this.tiles.set(tileSpec.key, { status: 'loaded', imgTex, xTex, yTex })
+
       const neededKeys = this._neededKeys
       if (this.source.type === 'wms') {
-        // WMS covers the whole viewport with one image; always evict non-needed tiles.
         for (const key of [...this.tiles.keys()]) {
           if (key !== tileSpec.key && !neededKeys.has(key)) this._evictTile(key)
         }
       } else if (this.tiles.size > MAX_TILE_CACHE) {
-        // XYZ/WMTS: LRU eviction only when the cache grows too large.
         for (const key of this.accessOrder) {
           if (key !== tileSpec.key && !neededKeys.has(key) && this.tiles.has(key)) {
             this._evictTile(key)
@@ -387,18 +419,14 @@ class TileManager {
         }
       }
 
+      this._rebuildArrays()
       this.onLoad()
     } catch (err) {
-      // Mark as failed so we don't retry endlessly (remove from cache to allow future retry on pan)
       this.tiles.delete(tileSpec.key)
       const i = this.accessOrder.indexOf(tileSpec.key)
       if (i >= 0) this.accessOrder.splice(i, 1)
       console.warn(`[TileLayer] ${err.message}`)
     }
-  }
-
-  get loadedTiles() {
-    return [...this.tiles.values()].filter(t => t.status === 'loaded')
   }
 
   destroy() {
@@ -409,45 +437,30 @@ class TileManager {
 }
 
 // ─── GLSL ─────────────────────────────────────────────────────────────────────
+// x_pos and y_pos are injected as float variables by the column system (sampleColumn).
+// uv is a plain vertex buffer attribute (same for all tiles with same tessellation N).
 
 const TILE_VERT = `#version 300 es
   precision mediump float;
-  in vec2 position;
   in vec2 uv;
-  uniform vec2 xDomain;
-  uniform vec2 yDomain;
-  uniform float xScaleType;
-  uniform float yScaleType;
   out vec2 vUv;
 
-  float normalize_axis(float v, vec2 domain, float scaleType) {
-    float vt = scaleType > 0.5 ? log(v) : v;
-    float d0 = scaleType > 0.5 ? log(domain.x) : domain.x;
-    float d1 = scaleType > 0.5 ? log(domain.y) : domain.y;
-    return (vt - d0) / (d1 - d0);
-  }
-  vec4 plot_pos(vec2 pos) {
-    float nx = normalize_axis(pos.x, xDomain, xScaleType);
-    float ny = normalize_axis(pos.y, yDomain, yScaleType);
-    return vec4(nx * 2.0 - 1.0, ny * 2.0 - 1.0, 0.0, 1.0);
-  }
-
   void main() {
-    gl_Position = plot_pos(position);
+    gl_Position = plot_pos(vec2(x_pos, y_pos));
     vUv = uv;
   }
 `
 
+// out vec4 fragColor is injected by LayerType (buildApplyColorGlsl).
 const TILE_FRAG = `#version 300 es
   precision mediump float;
   uniform sampler2D tileTexture;
   uniform float opacity;
   in vec2 vUv;
-  out vec4 fragColor;
 
   void main() {
     vec4 color = texture(tileTexture, vUv);
-    fragColor = vec4(color.rgb, color.a * opacity);
+    fragColor = gladly_apply_color(vec4(color.rgb, color.a * opacity));
   }
 `
 
@@ -455,7 +468,7 @@ const TILE_FRAG = `#version 300 es
 
 class TileLayerType extends LayerType {
   constructor() {
-    super({ name: 'tile' })
+    super({ name: 'tile', vert: TILE_VERT, frag: TILE_FRAG, suppressWarnings: true })
   }
 
   schema(_data) {
@@ -596,113 +609,100 @@ class TileLayerType extends LayerType {
     }
   }
 
-  createLayer(regl, parameters, _data) {
+  createLayer(regl, parameters, _data, plot) {
     const {
       xAxis = 'xaxis_bottom',
       yAxis = 'yaxis_left',
       plotCrs,
       tileCrs,
+      source: sourceSpec,
+      tessellation = 8,
+      opacity = 1.0,
     } = parameters
     const effectiveTileCrs = tileCrs ?? 'EPSG:3857'
     const effectivePlotCrs = plotCrs ?? effectiveTileCrs
-
-    // Return a plain object: compatible with the render loop but no Float32Array required.
-    return [{
-      type: this,
-      xAxis,
-      yAxis,
-      xAxisQuantityKind: crsToQkX(effectivePlotCrs),
-      yAxisQuantityKind: crsToQkY(effectivePlotCrs),
-      colorAxes: {},
-      filterAxes: {},
-      vertexCount: 0,
-      instanceCount: null,
-      attributes: {},
-      domains: {},
-      uniforms: {},
-      parameters,
-    }]
-  }
-
-  createDrawCommand(regl, layer, plot) {
-    const {
-      source: sourceSpec,
-      tileCrs,
-      plotCrs,
-      tessellation = 8,
-      opacity = 1.0,
-    } = layer.parameters
+    const N = tessellation
     const source = resolveSource(sourceSpec)
-    const effectiveTileCrs = tileCrs ?? 'EPSG:3857'
-    const effectivePlotCrs = plotCrs ?? effectiveTileCrs
+    const axisConfig = this.resolveAxisConfig(parameters, _data)
 
-    // Create the regl draw command immediately — it doesn't need CRS info
-    const drawTile = regl({
-      vert: TILE_VERT,
-      frag: TILE_FRAG,
-      attributes: {
-        position: regl.prop('posBuffer'),
-        uv: regl.prop('uvBuffer'),
-      },
-      elements: regl.prop('elements'),
-      uniforms: {
-        xDomain: regl.prop('xDomain'),
-        yDomain: regl.prop('yDomain'),
-        xScaleType: regl.prop('xScaleType'),
-        yScaleType: regl.prop('yScaleType'),
-        tileTexture: regl.prop('texture'),
-        opacity: opacity,
-      },
-      viewport: regl.prop('viewport'),
-      blend: {
-        enable: true,
-        func: { src: 'src alpha', dst: 'one minus src alpha' },
-      },
-      depth: { enable: false },
-    })
+    // Pre-compute shared UV data — same for all tiles with the same tessellation N.
+    const { uvs: sharedUvs, vertexCount } = buildTileMesh(
+      { minX: 0, maxX: 1, minY: 0, maxY: 1 }, 'EPSG:3857', 'EPSG:3857', N
+    )
 
-    // TileManager is created once both CRS definitions are ready.
-    // Renders nothing until then; scheduleRender() triggers a repaint once ready.
-    let tileManager = null
+    // Live fn[] arrays — spliced by TileManager as tiles load and are evicted.
+    // Start as [() => null] so isTiledTexClosure detects them at compile time,
+    // and the null-skip in the render loop suppresses drawing until tiles arrive.
+    const xTexFns = [() => null]
+    const yTexFns = [() => null]
+    const imageTexFns = [() => null]
 
+    const tileManagerRef = { manager: null }
+
+    // syncFn is called by TilePositionColumn.refresh() on every render frame.
+    const syncFn = (renderPlot) => {
+      if (!tileManagerRef.manager) return
+      const xScale = renderPlot.axisRegistry.getScale(xAxis)
+      const yScale = renderPlot.axisRegistry.getScale(yAxis)
+      if (!xScale || !yScale) return
+      tileManagerRef.manager.syncTiles(
+        xScale.domain(),
+        yScale.domain(),
+        { width: renderPlot.canvas.width, height: renderPlot.canvas.height }
+      )
+    }
+
+    const xCol = new TilePositionColumn(vertexCount, xTexFns, syncFn)
+    const yCol = new TilePositionColumn(vertexCount, yTexFns, syncFn)
+
+    // Async CRS init — create TileManager once proj4 defs are loaded.
     Promise.all([
       ensureCrsDefined(effectiveTileCrs),
       ensureCrsDefined(effectivePlotCrs),
     ]).then(() => {
       try {
-        tileManager = new TileManager({
-          regl,
-          source,
-          tileCrs: effectiveTileCrs,
-          plotCrs: effectivePlotCrs,
-          tessellation,
+        tileManagerRef.manager = new TileManager({
+          regl, source,
+          tileCrs: effectiveTileCrs, plotCrs: effectivePlotCrs, tessellation: N,
+          xTexFns, yTexFns, imageTexFns,
           onLoad: () => plot.scheduleRender(),
         })
         plot.scheduleRender()
       } catch (_) {
-        // regl may have been destroyed if the plot was updated before CRS resolved
+        // regl was destroyed before CRS resolved — silently ignore
       }
     }).catch(err => {
       console.error('[TileLayer] CRS initialization failed:', err)
     })
 
-    return (props) => {
-      if (!tileManager) return
-      tileManager.syncTiles(props.xDomain, props.yDomain, props.viewport)
-      for (const tile of tileManager.loadedTiles) {
-        drawTile({
-          xDomain: props.xDomain,
-          yDomain: props.yDomain,
-          xScaleType: props.xScaleType,
-          yScaleType: props.yScaleType,
-          viewport: props.viewport,
-          posBuffer: tile.posBuffer,
-          uvBuffer: tile.uvBuffer,
-          elements: tile.elements,
-          texture: tile.texture,
-        })
-      }
-    }
+    return [{
+      type: this,
+      xAxis,
+      yAxis,
+      xAxisQuantityKind: axisConfig.xAxisQuantityKind,
+      yAxisQuantityKind: axisConfig.yAxisQuantityKind,
+      colorAxes: {},
+      colorAxes2d: {},
+      filterAxes: {},
+      vertexCount,
+      primitive: 'triangles',
+      lineWidth: 1,
+      instanceCount: null,
+      attributeDivisors: {},
+      // x_pos and y_pos: TilePositionColumn — one texture per loaded tile.
+      // uv: Float32Array buffer attribute — shared across all tiles (bbox-independent).
+      attributes: { x_pos: xCol, y_pos: yCol, uv: sharedUvs },
+      // tileTexture: live fn[] of per-tile image textures, detected as tiled closure.
+      uniforms: { tileTexture: imageTexFns, opacity },
+      domains: {},
+      blend: { enable: true, func: { src: 'src alpha', dst: 'one minus src alpha' } },
+      parameters,
+    }]
+  }
+
+  async createDrawCommand(regl, layer, plot) {
+    const drawConfig = await LayerType.prototype.createDrawCommand.call(this, regl, layer, plot)
+    return { ...drawConfig, depth: { enable: false } }
   }
 }
 
