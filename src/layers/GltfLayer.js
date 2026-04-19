@@ -43,10 +43,21 @@ function expandPrimitive(prim) {
   }
 }
 
-function resolveImage(material) {
+async function resolveImagePixels(material) {
   const bt = material?.pbrMetallicRoughness?.baseColorTexture
   if (!bt) return null
-  return bt.index?.source?.image ?? null
+  const source = bt.texture?.source
+  if (!source) return null
+  const data = source.bufferView?.data
+  if (!data) return null
+  const blob = new Blob([data], { type: source.mimeType ?? 'image/jpeg' })
+  const bitmap = await createImageBitmap(blob)
+  const { width, height } = bitmap
+  const canvas = new OffscreenCanvas(width, height)
+  const ctx = canvas.getContext('2d')
+  ctx.drawImage(bitmap, 0, 0)
+  const pixels = ctx.getImageData(0, 0, width, height).data  // Uint8ClampedArray RGBA
+  return { pixels, width, height }
 }
 
 function normalize3(v) {
@@ -268,12 +279,18 @@ class GltfLayerType extends LayerType {
         const pbr         = material.pbrMetallicRoughness ?? {}
         const alphaMode   = material.alphaMode ?? 'OPAQUE'
         const doubleSided = material.doubleSided ?? false
-        const image       = resolveImage(material)
-        const hasTexture  = !!(uvs && image)
+        const imgPixels   = uvs ? await resolveImagePixels(material) : null
+        const hasTexture  = !!(uvs && imgPixels)
 
         let texture = null
         if (hasTexture) {
-          texture = regl.texture({ data: image, flipY: true, min: 'linear', mag: 'linear' })
+          const { pixels, width, height } = imgPixels
+          texture = regl.texture({
+            data: new Uint8Array(pixels.buffer),
+            width, height,
+            format: 'rgba', type: 'uint8',
+            flipY: true, min: 'linear', mag: 'linear',
+          })
         }
 
         // build pick ID array (one per vertex, all same primitive index)
@@ -303,7 +320,7 @@ class GltfLayerType extends LayerType {
             u_pickLayerIndex: regl.prop('u_pickLayerIndex'),
             u_center:          center,
             u_baseColorFactor: pbr.baseColorFactor ?? [1, 1, 1, 1],
-            u_emissiveFactor:  material.emissiveFactor ?? [0, 0, 0],
+            u_emissiveFactor:  [0, 0, 0],
             u_lightDir:        lightDir,
             u_ambientStrength: ambientStrength,
             ...(hasTexture ? { u_baseColorTex: texture } : {}),
