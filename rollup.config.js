@@ -31,4 +31,31 @@ export default [
       },
     ],
   },
+  // GltfLayer ESM — @loaders.gl kept external
+  {
+    input: 'src/layers/GltfLayer.js',
+    external: ['regl', 'd3-scale', 'proj4', 'projnames', '@loaders.gl/core', '@loaders.gl/gltf'],
+    output: {
+      file: 'dist/gladly-gltf.esm.js',
+      format: 'esm',
+    },
+  },
+  // GltfLayer IIFE — everything bundled
+  {
+    input: 'src/layers/GltfLayer.js',
+    plugins: [resolve(), commonjs(), json()],
+    output: [
+      {
+        file: 'dist/gladly-gltf.iife.js',
+        format: 'iife',
+        name: 'GladlyGltf',
+      },
+      {
+        file: 'dist/gladly-gltf.iife.min.js',
+        format: 'iife',
+        name: 'GladlyGltf',
+        plugins: [terser()],
+      },
+    ],
+  },
 ];

@@ -454,6 +454,7 @@
           <div class="tab" data-tab="tab5">Histogram</div>
           <div class="tab" data-tab="tab6">3D Scatter</div>
           <div class="tab" data-tab="tab7">Scatter + Histograms</div>
+          <div class="tab" data-tab="tab8">GLTF Model</div>
         </div>
         <select class="tab-select">
           <option value="tab1">Linked scatterplots</option>
@@ -463,6 +464,7 @@
           <option value="tab5">Histogram</option>
           <option value="tab6">3D Scatter</option>
           <option value="tab7">Scatter + Histograms</option>
+          <option value="tab8">GLTF Model</option>
         </select>
       </div>
       <div class="menubar-right" style="display:flex;align-items:center;gap:16px;">
@@ -512,7 +514,28 @@
         "projnames":      "/node_modules/projnames/index.mjs",
         "regl":           "/example/vendor/regl.js",
         "proj4":          "/example/vendor/proj4.js",
-        "@json-editor/json-editor": "/example/vendor/json-editor.js"
+        "@json-editor/json-editor": "/example/vendor/json-editor.js",
+        "@loaders.gl/core":         "/node_modules/@loaders.gl/core/dist/index.js",
+        "@loaders.gl/gltf":         "/node_modules/@loaders.gl/gltf/dist/index.js",
+        "@loaders.gl/loader-utils": "/node_modules/@loaders.gl/loader-utils/dist/index.js",
+        "@loaders.gl/images":       "/node_modules/@loaders.gl/images/dist/index.js",
+        "@loaders.gl/textures":     "/node_modules/@loaders.gl/textures/dist/index.js",
+        "@loaders.gl/draco":        "/node_modules/@loaders.gl/draco/dist/index.js",
+        "@loaders.gl/schema":       "/node_modules/@loaders.gl/schema/dist/index.js",
+        "@loaders.gl/schema-utils": "/node_modules/@loaders.gl/schema-utils/dist/index.js",
+        "@loaders.gl/worker-utils": "/node_modules/@loaders.gl/worker-utils/dist/index.js",
+        "@math.gl/core":            "/node_modules/@math.gl/core/dist/index.js",
+        "@math.gl/types":           "/node_modules/@math.gl/types/dist/index.js",
+        "@probe.gl/log":            "/node_modules/@probe.gl/log/dist/index.js",
+        "@probe.gl/stats":          "/node_modules/@probe.gl/stats/dist/index.js",
+        "@probe.gl/env":            "/node_modules/@probe.gl/env/dist/index.js",
+        "worker_threads":           "/node_modules/@loaders.gl/worker-utils/dist/lib/node/worker_threads-browser.js",
+        "child_process":            "/example/vendor/child_process.js",
+        "stream":                   "/example/vendor/stream.js",
+        "apache-arrow":             "/node_modules/apache-arrow/Arrow.dom.mjs",
+        "ktx-parse":                "/node_modules/ktx-parse/dist/ktx-parse.esm.js",
+        "tslib":                    "/node_modules/tslib/tslib.es6.mjs",
+        "flatbuffers":              "/node_modules/flatbuffers/mjs/flatbuffers.js"
       }
     }
     </script>
@@ -546,5 +569,6 @@
     <script type="module" src="./histogram.js"></script>
     <script type="module" src="./scatter-3d.js"></script>
     <script type="module" src="./scatter-histograms.js"></script>
+    <script type="module" src="./gltf-model.js"></script>
   </body>
 </html>

@@ -4,7 +4,8 @@
   "description": "GPU-powered multi-axis plotting library with regl + d3",
   "type": "module",
   "exports": {
-    ".": "./src/index.js"
+    ".": "./src/index.js",
+    "./layers/gltf": "./src/layers/GltfLayer.js"
   },
   "files": [
     "src"
@@ -19,6 +20,10 @@
     "proj4": "^2.15.0",
     "projnames": "^0.0.4",
     "regl": "^2.1.0"
+  },
+  "optionalDependencies": {
+    "@loaders.gl/core": "^4.4.1",
+    "@loaders.gl/gltf": "^4.4.1"
   },
   "browserslist": [
     "last 2 Chrome versions",
