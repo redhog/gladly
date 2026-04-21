@@ -15,7 +15,7 @@ function mercYToNorm(y) { return (1 - y / MERC_MAX) / 2 }
 function normToMercX(nx) { return nx * 2 * MERC_MAX - MERC_MAX }
 function normToMercY(ny) { return (1 - 2 * ny) * MERC_MAX }
 
-function mercToTileXY(x, y, z) {
+export function mercToTileXY(x, y, z) {
   const scale = Math.pow(2, z)
   return [
     Math.floor(mercXToNorm(x) * scale),
@@ -23,7 +23,7 @@ function mercToTileXY(x, y, z) {
   ]
 }
 
-function tileToMercBbox(tx, ty, z) {
+export function tileToMercBbox(tx, ty, z) {
   const scale = Math.pow(2, z)
   return {
     minX: normToMercX(tx / scale),
@@ -33,7 +33,7 @@ function tileToMercBbox(tx, ty, z) {
   }
 }
 
-function optimalZoom(bboxInTileCrs, pixelWidth, pixelHeight, minZoom, maxZoom) {
+export function optimalZoom(bboxInTileCrs, pixelWidth, pixelHeight, minZoom, maxZoom) {
   const xExtent = Math.abs(bboxInTileCrs.maxX - bboxInTileCrs.minX)
   const yExtent = Math.abs(bboxInTileCrs.maxY - bboxInTileCrs.minY)
   const worldSize = 2 * MERC_MAX
@@ -45,7 +45,7 @@ function optimalZoom(bboxInTileCrs, pixelWidth, pixelHeight, minZoom, maxZoom) {
 
 // ─── Source resolution ────────────────────────────────────────────────────────
 
-function resolveSource(source) {
+export function resolveSource(source) {
   const type = Object.keys(source).find(k => k === 'xyz' || k === 'wms' || k === 'wmts')
   if (!type) throw new Error(`source must have exactly one key of: xyz, wms, wmts`)
   return { type, ...source[type] }
@@ -53,7 +53,7 @@ function resolveSource(source) {
 
 // ─── URL builders ──────────────────────────────────────────────────────────────
 
-function buildXyzUrl(source, z, x, y) {
+export function buildXyzUrl(source, z, x, y) {
   const subdomains = source.subdomains ?? ['a', 'b', 'c']
   const s = subdomains[Math.abs(x + y) % subdomains.length]
   return source.url
@@ -63,7 +63,7 @@ function buildXyzUrl(source, z, x, y) {
     .replace('{s}', s)
 }
 
-function buildWmtsUrl(source, z, x, y) {
+export function buildWmtsUrl(source, z, x, y) {
   const url = source.url
   if (url.includes('{TileMatrix}') || url.includes('{z}')) {
     return url
@@ -86,7 +86,7 @@ function buildWmtsUrl(source, z, x, y) {
   return `${source.url}?${params}`
 }
 
-function buildWmsUrl(source, bbox, tileCrs, pixelWidth, pixelHeight) {
+export function buildWmsUrl(source, bbox, tileCrs, pixelWidth, pixelHeight) {
   const version = source.version ?? '1.3.0'
   const crsParam = `EPSG:${parseCrsCode(tileCrs)}`
 

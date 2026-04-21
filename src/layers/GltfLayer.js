@@ -3,6 +3,7 @@ import { GLTFLoader, postProcessGLTF } from '@loaders.gl/gltf'
 import { LayerType } from '../core/LayerType.js'
 import { Layer } from '../core/Layer.js'
 import { registerLayerType } from '../core/LayerTypeRegistry.js'
+import { AXES } from '../axes/AxisRegistry.js'
 
 // ── Geometry helpers ────────────────────────────────────────────────────────
 
@@ -225,6 +226,25 @@ class GltfLayerType extends LayerType {
       uniforms:   {},
     })
     this.suppressWarnings = true
+  }
+
+  schema(_data) {
+    return {
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      type: 'object',
+      properties: {
+        url:             { type: 'string', description: 'URL to a glTF 2.0 (.gltf or .glb) model' },
+        lightDir:        { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3, default: [0.3, 1.0, 0.3], description: 'World-space light direction vector' },
+        ambientStrength: { type: 'number', default: 0.3, minimum: 0, maximum: 1, description: 'Ambient light fraction' },
+        xAxis: { type: 'string', enum: AXES.filter(a => a.includes('x')), default: 'xaxis_bottom' },
+        yAxis: { type: 'string', enum: AXES.filter(a => a.includes('y')), default: 'yaxis_left' },
+        zAxis: { type: 'string', enum: AXES.filter(a => a.includes('z')), default: 'zaxis_bottom_left' },
+        xAxisQuantityKind: { type: 'string', default: 'distance_meters_x' },
+        yAxisQuantityKind: { type: 'string', default: 'distance_meters_y' },
+        zAxisQuantityKind: { type: 'string', default: 'distance_meters_z' },
+      },
+      required: ['url'],
+    }
   }
 
   resolveAxisConfig(parameters, _data) {
