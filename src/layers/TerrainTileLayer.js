@@ -388,20 +388,27 @@ class SatTileCache {
       }
       return
     }
+    // Request only the single tile containing the center of satCrsBbox at the optimal zoom.
+    // This gives one sat tile per DTM tile (at the same zoom level, bounds match almost exactly),
+    // avoiding O(N²) tile requests that overflow the cache and cause an evict-reload loop.
+    //
+    // Cap sat zoom to the inferred DTM tile zoom level. A higher sat zoom = smaller sat tile =
+    // UV coordinates outside [0,1] = terrain fragments discarded. Since satCrsBbox IS the DTM
+    // tile footprint in sat CRS (both 3857), we infer z_dtm from the bbox extent.
+    const cx = (satCrsBbox.minX + satCrsBbox.maxX) / 2
+    const cy = (satCrsBbox.minY + satCrsBbox.maxY) / 2
     const pixelSize = viewport ? Math.max(viewport.width, viewport.height) / 2 : 256
-    const z = optimalZoom(satCrsBbox, pixelSize, pixelSize, source.minZoom ?? 0, source.maxZoom ?? 19)
-    const [xMin, yMax] = mercToTileXY(satCrsBbox.minX, satCrsBbox.minY, z)
-    const [xMax, yMin] = mercToTileXY(satCrsBbox.maxX, satCrsBbox.maxY, z)
-    const tc = Math.pow(2, z)
-    for (let ty = Math.max(0, yMin); ty <= Math.min(tc - 1, yMax); ty++) {
-      for (let tx = Math.max(0, xMin); tx <= Math.min(tc - 1, xMax); tx++) {
-        const key = `${z}/${tx}/${ty}`
-        if (!this.tiles.has(key)) {
-          const url    = source.type === 'wmts' ? buildWmtsUrl(source, z, tx, ty) : buildXyzUrl(source, z, tx, ty)
-          const bounds = tileToMercBbox(tx, ty, z)
-          this._loadTile({ key, url, bounds })
-        }
-      }
+    const WORLD_SIZE = 2 * Math.PI * 6378137  // full Mercator world extent in metres
+    const bboxExtent = Math.min(satCrsBbox.maxX - satCrsBbox.minX, satCrsBbox.maxY - satCrsBbox.minY)
+    const dtmZoomGuess = Math.round(Math.log2(WORLD_SIZE / bboxExtent))
+    const maxZ = Math.min(source.maxZoom ?? 19, dtmZoomGuess)
+    const z = optimalZoom(satCrsBbox, pixelSize, pixelSize, source.minZoom ?? 0, maxZ)
+    const [tx, ty] = mercToTileXY(cx, cy, z)
+    const key = `${z}/${tx}/${ty}`
+    if (!this.tiles.has(key)) {
+      const url    = source.type === 'wmts' ? buildWmtsUrl(source, z, tx, ty) : buildXyzUrl(source, z, tx, ty)
+      const bounds = tileToMercBbox(tx, ty, z)
+      this._loadTile({ key, url, bounds })
     }
   }
 
