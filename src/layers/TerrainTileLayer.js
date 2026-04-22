@@ -369,7 +369,13 @@ class SatTileCache {
     const cy = (satCrsBbox.minY + satCrsBbox.maxY) / 2
     const minZoom = source.minZoom ?? 0
     const maxZoom = source.maxZoom ?? 19
-    for (let z = maxZoom; z >= minZoom; z--) {
+    // Start at the zoom level matching the DTM tile size. Starting higher risks finding
+    // a stale smaller sat tile that only covers part of the DTM tile, producing holes
+    // and wrong UV mapping.
+    const WORLD_SIZE = 2 * Math.PI * 6378137
+    const bboxExtent = Math.min(satCrsBbox.maxX - satCrsBbox.minX, satCrsBbox.maxY - satCrsBbox.minY)
+    const startZoom = Math.min(maxZoom, Math.round(Math.log2(WORLD_SIZE / bboxExtent)))
+    for (let z = startZoom; z >= minZoom; z--) {
       const [tx, ty] = mercToTileXY(cx, cy, z)
       const key  = `${z}/${tx}/${ty}`
       const tile = this.tiles.get(key)
