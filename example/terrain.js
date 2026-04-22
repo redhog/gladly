@@ -79,50 +79,12 @@ const initialConfig = {
 }
 
 const _doInit_tab9 = async () => {
+  // JSONEditor disabled — crashes even with simplified schema
   const plot = new Plot(document.getElementById('tab9-plot1'))
-
-  const schema = Plot.schema()
-
-  const editor = new JSONEditor(document.getElementById('tab9-editor-container'), {
-    schema,
-    startval: initialConfig,
-    theme: 'html',
-    iconlib: 'fontawesome4',
-    disable_edit_json: false,
-    disable_properties: false,
-    disable_collapse: false,
-    no_additional_properties: false,
-    show_errors: 'always',
-  })
-
-  const errorsDiv = document.getElementById('tab9-validation-errors')
-
-  async function applyConfig() {
-    const errors = editor.validate()
-    if (errors.length > 0) {
-      errorsDiv.textContent = errors.map(e => e.message).join('\n')
-      errorsDiv.style.display = ''
-      return
-    }
-    errorsDiv.style.display = 'none'
-    try {
-      await plot.update({ config: editor.getValue(), data: {} })
-    } catch (err) {
-      console.error('[terrain example]', err)
-      errorsDiv.textContent = String(err)
-      errorsDiv.style.display = ''
-    }
-  }
-
-  editor.on('change', applyConfig)
-
   try {
     await plot.update({ config: initialConfig, data: {} })
   } catch (err) {
     console.error('[terrain example]', err)
-    const errDiv = document.getElementById('tab9-validation-errors')
-    errDiv.textContent = String(err)
-    errDiv.style.display = ''
   }
 }
 

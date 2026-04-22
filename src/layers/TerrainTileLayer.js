@@ -102,8 +102,8 @@ class TerrainColumn extends ColumnData {
 
 class DtmTileManager {
   constructor({ regl, source, dtmTileCrs, plotCrs, satTileCrs, tessellation,
-                xTexFns, zTexFns, satXTexFns, satYTexFns, dtmTexFns,
-                satTexFns, satBoundsMinFns, satBoundsSizeFns,
+                xTexFns, zTexFns, dtmTexFns,
+                satTexFns, satUvXTexFns, satUvYTexFns,
                 satCacheRef, onLoad }) {
     this.regl = regl
     this.source = source
@@ -111,8 +111,8 @@ class DtmTileManager {
     this.plotCrs      = plotCrs
     this.satTileCrs   = satTileCrs
     this.tessellation = tessellation
-    this._fns = { xTexFns, zTexFns, satXTexFns, satYTexFns, dtmTexFns,
-                  satTexFns, satBoundsMinFns, satBoundsSizeFns }
+    this._fns = { xTexFns, zTexFns, dtmTexFns,
+                  satTexFns, satUvXTexFns, satUvYTexFns }
     this._satCacheRef = satCacheRef
     this.onLoad = onLoad
 
@@ -128,8 +128,6 @@ class DtmTileManager {
     this._plotToTile = fromCode === toCode
       ? (pt) => pt
       : proj4(`EPSG:${fromCode}`, `EPSG:${toCode}`).forward
-
-    this._rebuildArrays()
   }
 
   _domainChanged(xDomain, yDomain, viewport) {
@@ -221,32 +219,49 @@ class DtmTileManager {
 
   _rebuildArrays() {
     const loaded = [...this.tiles.values()].filter(t => t.status === 'loaded')
-    const { xTexFns, zTexFns, satXTexFns, satYTexFns, dtmTexFns,
-            satTexFns, satBoundsMinFns, satBoundsSizeFns } = this._fns
-    for (const arr of [xTexFns, zTexFns, satXTexFns, satYTexFns, dtmTexFns,
-                       satTexFns, satBoundsMinFns, satBoundsSizeFns]) arr.length = 0
-    if (loaded.length === 0) {
-      for (const arr of [xTexFns, zTexFns, satXTexFns, satYTexFns, dtmTexFns,
-                         satTexFns, satBoundsMinFns, satBoundsSizeFns]) arr.push(() => null)
-      return
-    }
+    const { xTexFns, zTexFns, dtmTexFns,
+            satTexFns, satUvXTexFns, satUvYTexFns } = this._fns
+    for (const arr of [xTexFns, zTexFns, dtmTexFns,
+                       satTexFns, satUvXTexFns, satUvYTexFns]) arr.length = 0
+
     const satCacheRef = this._satCacheRef
     for (const tile of loaded) {
       const s = tile.slot
-      xTexFns.push(()    => s.xTex)
-      zTexFns.push(()    => s.zTex)
-      satXTexFns.push(() => s.satXTex)
-      satYTexFns.push(() => s.satYTex)
-      dtmTexFns.push(()  => s.dtmTex)
-      satTexFns.push(()  => satCacheRef.cache?.getBestAvailable(s.satCrsBbox)?.texture ?? null)
-      satBoundsMinFns.push(() => {
-        const sat = satCacheRef.cache?.getBestAvailable(s.satCrsBbox)
-        return sat ? [sat.bounds.minX, sat.bounds.minY] : null
-      })
-      satBoundsSizeFns.push(() => {
-        const sat = satCacheRef.cache?.getBestAvailable(s.satCrsBbox)
-        return sat ? [sat.bounds.maxX - sat.bounds.minX, sat.bounds.maxY - sat.bounds.minY] : null
-      })
+      const sat = satCacheRef.cache?.getBestAvailable(s.satCrsBbox)
+
+      if (!sat) {
+        // No sat tile available yet — push nulls so the fn[] tile loop skips this tile.
+        xTexFns.push(      () => null)
+        zTexFns.push(      () => null)
+        dtmTexFns.push(    () => null)
+        satTexFns.push(    () => null)
+        satUvXTexFns.push( () => null)
+        satUvYTexFns.push( () => null)
+        continue
+      }
+
+      // Precompute UV coordinates from raw CPU sat positions + current best sat tile bounds.
+      const vCount = s.satXArr.length
+      const uvXArr = new Float32Array(vCount)
+      const uvYArr = new Float32Array(vCount)
+      const bW = sat.bounds.maxX - sat.bounds.minX
+      const bH = sat.bounds.maxY - sat.bounds.minY
+      for (let k = 0; k < vCount; k++) {
+        uvXArr[k] = (s.satXArr[k] - sat.bounds.minX) / bW
+        uvYArr[k] = 1.0 - (s.satYArr[k] - sat.bounds.minY) / bH
+      }
+
+      s.satUvXTex?.destroy()
+      s.satUvYTex?.destroy()
+      s.satUvXTex = uploadToTexture(this.regl, uvXArr)
+      s.satUvYTex = uploadToTexture(this.regl, uvYArr)
+
+      xTexFns.push(      () => s.xTex)
+      zTexFns.push(      () => s.zTex)
+      dtmTexFns.push(    () => s.dtmTex)
+      satTexFns.push(    () => sat.texture)
+      satUvXTexFns.push( () => s.satUvXTex)
+      satUvYTexFns.push( () => s.satUvYTex)
     }
   }
 
@@ -255,9 +270,9 @@ class DtmTileManager {
     if (!tile) return
     tile.slot?.xTex?.destroy()
     tile.slot?.zTex?.destroy()
-    tile.slot?.satXTex?.destroy()
-    tile.slot?.satYTex?.destroy()
     tile.slot?.dtmTex?.destroy()
+    tile.slot?.satUvXTex?.destroy()
+    tile.slot?.satUvYTex?.destroy()
     this.tiles.delete(key)
     const i = this.accessOrder.indexOf(key)
     if (i >= 0) this.accessOrder.splice(i, 1)
@@ -277,40 +292,45 @@ class DtmTileManager {
       })
       if (!this.tiles.has(spec.key)) return
 
-      const N    = this.tessellation
-      const mesh = buildTerrainTileMesh(spec.bbox, this.dtmTileCrs, this.plotCrs, this.satTileCrs, N)
-      const dtmTex = this.regl.texture({ data: img, flipY: false, min: 'linear', mag: 'linear' })
+      const dtmTex = this.regl.texture({
+        data: img, flipY: false,
+        min: 'nearest', mag: 'nearest',
+        format: 'rgba', type: 'uint8',
+      })
 
-      const n = mesh.vertexCount
-      const xArr    = new Float32Array(n), zArr    = new Float32Array(n)
-      const satXArr = new Float32Array(n), satYArr = new Float32Array(n)
-      for (let i = 0; i < n; i++) {
-        xArr[i]    = mesh.positions[i * 2];    zArr[i]    = mesh.positions[i * 2 + 1]
-        satXArr[i] = mesh.satPositions[i * 2]; satYArr[i] = mesh.satPositions[i * 2 + 1]
+      const { positions, satPositions, vertexCount, satCrsBbox } =
+        buildTerrainTileMesh(spec.bbox, this.dtmTileCrs, this.plotCrs, this.satTileCrs, this.tessellation)
+
+      const xArr = new Float32Array(vertexCount)
+      const zArr = new Float32Array(vertexCount)
+      for (let k = 0; k < vertexCount; k++) {
+        xArr[k] = positions[k * 2]
+        zArr[k] = positions[k * 2 + 1]
+      }
+      const satXArr = new Float32Array(vertexCount)
+      const satYArr = new Float32Array(vertexCount)
+      for (let k = 0; k < vertexCount; k++) {
+        satXArr[k] = satPositions[k * 2]
+        satYArr[k] = satPositions[k * 2 + 1]
       }
 
-      const xTex    = uploadToTexture(this.regl, xArr)
-      const zTex    = uploadToTexture(this.regl, zArr)
-      const satXTex = uploadToTexture(this.regl, satXArr)
-      const satYTex = uploadToTexture(this.regl, satYArr)
+      const xTex = uploadToTexture(this.regl, xArr)
+      const zTex = uploadToTexture(this.regl, zArr)
 
-      const slot = { xTex, zTex, satXTex, satYTex, dtmTex, satCrsBbox: mesh.satCrsBbox }
-      this.tiles.set(spec.key, { status: 'loaded', slot })
-
-      const neededKeys = this._neededKeys
-      if (this.source.type === 'wms') {
-        for (const key of [...this.tiles.keys()]) {
-          if (key !== spec.key && !neededKeys.has(key)) this._evictTile(key)
-        }
-      } else if (this.tiles.size > MAX_TILE_CACHE) {
-        for (const key of this.accessOrder) {
-          if (key !== spec.key && !neededKeys.has(key) && this.tiles.has(key)) {
-            this._evictTile(key)
+      if (this.tiles.size > MAX_TILE_CACHE) {
+        for (const k of this.accessOrder) {
+          if (k !== spec.key && this.tiles.has(k)) {
+            this._evictTile(k)
             if (this.tiles.size <= MAX_TILE_CACHE) break
           }
         }
       }
 
+      // satXArr/satYArr kept as CPU arrays; UV textures computed in _rebuildArrays.
+      this.tiles.set(spec.key, {
+        status: 'loaded',
+        slot: { dtmTex, xTex, zTex, satXArr, satYArr, satCrsBbox },
+      })
       this._rebuildArrays()
       this.onLoad()
     } catch (err) {
@@ -399,6 +419,7 @@ class SatTileCache {
       if (!this.tiles.has(key)) return
       const texture = this.regl.texture({ data: img, flipY: false, min: 'linear', mag: 'linear' })
       this.tiles.set(key, { status: 'loaded', texture, bounds })
+      console.log('[Terrain] sat tile loaded', key, 'bounds', bounds, img.width, 'x', img.height)
       if (this.tiles.size > MAX_TILE_CACHE) {
         for (const k of this.accessOrder) {
           if (k !== key && this.tiles.has(k)) {
@@ -443,8 +464,6 @@ uniform sampler2D u_dtm_tex;
 uniform float u_dtm_encoding;
 uniform float u_elev_scale;
 uniform float u_elev_offset;
-uniform vec2  u_sat_bounds_min;
-uniform vec2  u_sat_bounds_size;
 
 out vec2 v_sat_uv;
 
@@ -460,13 +479,12 @@ float decodeElev(vec4 col) {
 void main() {
   float elevation = decodeElev(texture(u_dtm_tex, a_dtm_uv)) * u_elev_scale + u_elev_offset;
   gl_Position = plot_pos_3d(vec3(x_pos, elevation, z_pos));
-  vec2 rawUv = (vec2(sat_x, sat_y) - u_sat_bounds_min) / u_sat_bounds_size;
-  v_sat_uv = vec2(rawUv.x, 1.0 - rawUv.y);
+  v_sat_uv = vec2(sat_uv_x, sat_uv_y);
 }
 `
 
 const TERRAIN_FRAG = `#version 300 es
-precision mediump float;
+precision highp float;
 
 in vec2 v_sat_uv;
 
@@ -485,65 +503,44 @@ void main() {
 
 const SOURCE_SCHEMA = {
   type: 'object',
-  description: 'Tile source. Exactly one key (xyz, wms, or wmts) must be present.',
-  anyOf: [
-    {
-      title: 'XYZ',
+  description: 'Tile source. Set exactly one of: xyz, wms, or wmts.',
+  properties: {
+    xyz: {
+      type: 'object',
+      description: 'XYZ/TMS slippy-map tiles',
       properties: {
-        xyz: {
-          type: 'object',
-          properties: {
-            url:        { type: 'string', description: 'URL template with {z}, {x}, {y}, optional {s}' },
-            subdomains: { type: 'array', items: { type: 'string' }, default: ['a', 'b', 'c'] },
-            minZoom:    { type: 'integer', default: 0 },
-            maxZoom:    { type: 'integer', default: 19 },
-          },
-          required: ['url'],
-        },
+        url:        { type: 'string', description: 'URL template with {z}, {x}, {y}, optional {s}' },
+        subdomains: { type: 'array', items: { type: 'string' }, default: ['a', 'b', 'c'] },
+        minZoom:    { type: 'integer', default: 0 },
+        maxZoom:    { type: 'integer', default: 19 },
       },
-      required: ['xyz'],
-      additionalProperties: false,
     },
-    {
-      title: 'WMS',
+    wms: {
+      type: 'object',
+      description: 'OGC Web Map Service',
       properties: {
-        wms: {
-          type: 'object',
-          properties: {
-            url:         { type: 'string' },
-            layers:      { type: 'string' },
-            styles:      { type: 'string', default: '' },
-            format:      { type: 'string', default: 'image/png' },
-            version:     { type: 'string', enum: ['1.1.1', '1.3.0'], default: '1.1.1' },
-            transparent: { type: 'boolean', default: true },
-          },
-          required: ['url', 'layers'],
-        },
+        url:         { type: 'string' },
+        layers:      { type: 'string' },
+        styles:      { type: 'string', default: '' },
+        format:      { type: 'string', default: 'image/png' },
+        version:     { type: 'string', enum: ['1.1.1', '1.3.0'], default: '1.1.1' },
+        transparent: { type: 'boolean', default: true },
       },
-      required: ['wms'],
-      additionalProperties: false,
     },
-    {
-      title: 'WMTS',
+    wmts: {
+      type: 'object',
+      description: 'OGC Web Map Tile Service',
       properties: {
-        wmts: {
-          type: 'object',
-          properties: {
-            url:           { type: 'string' },
-            layer:         { type: 'string' },
-            style:         { type: 'string', default: 'default' },
-            format:        { type: 'string', default: 'image/png' },
-            tileMatrixSet: { type: 'string', default: 'GoogleMapsCompatible' },
-            minZoom:       { type: 'integer', default: 0 },
-            maxZoom:       { type: 'integer', default: 19 },
-          },
-          required: ['url', 'layer'],
-        },
+        url:           { type: 'string' },
+        layer:         { type: 'string' },
+        style:         { type: 'string', default: 'default' },
+        format:        { type: 'string', default: 'image/png' },
+        tileMatrixSet: { type: 'string', default: 'GoogleMapsCompatible' },
+        minZoom:       { type: 'integer', default: 0 },
+        maxZoom:       { type: 'integer', default: 19 },
       },
-      required: ['wmts'],
-      additionalProperties: false,
     },
-  ],
+  },
 }
 
 class TerrainTileLayerType extends LayerType {
@@ -639,14 +636,12 @@ class TerrainTileLayerType extends LayerType {
 
     // Live fn[] arrays — one entry per loaded DTM tile. Start with () => null so
     // isTiledTexClosure detects them at compile time; null skips tiles until loaded.
-    const xTexFns         = [() => null]
-    const zTexFns         = [() => null]
-    const satXTexFns      = [() => null]
-    const satYTexFns      = [() => null]
-    const dtmTexFns       = [() => null]
-    const satTexFns       = [() => null]
-    const satBoundsMinFns = [() => null]
-    const satBoundsSizeFns = [() => null]
+    const xTexFns      = [() => null]
+    const zTexFns      = [() => null]
+    const dtmTexFns    = [() => null]
+    const satTexFns    = [() => null]
+    const satUvXTexFns = [() => null]
+    const satUvYTexFns = [() => null]
 
     const dtmManagerRef = { manager: null }
     const satCacheRef   = { cache: null }
@@ -664,10 +659,10 @@ class TerrainTileLayerType extends LayerType {
       dtmManagerRef.manager.requestSatTiles(viewport)
     }
 
-    const xCol    = new TerrainColumn(vertexCount, xTexFns,    syncFn)
-    const zCol    = new TerrainColumn(vertexCount, zTexFns,    syncFn)
-    const satXCol = new TerrainColumn(vertexCount, satXTexFns, syncFn)
-    const satYCol = new TerrainColumn(vertexCount, satYTexFns, syncFn)
+    const xCol      = new TerrainColumn(vertexCount, xTexFns,      syncFn)
+    const zCol      = new TerrainColumn(vertexCount, zTexFns,      syncFn)
+    const satUvXCol = new TerrainColumn(vertexCount, satUvXTexFns, syncFn)
+    const satUvYCol = new TerrainColumn(vertexCount, satUvYTexFns, syncFn)
 
     Promise.all([
       ensureCrsDefined(effectiveDtmTileCrs),
@@ -681,15 +676,18 @@ class TerrainTileLayerType extends LayerType {
           plotCrs:    effectivePlotCrs,
           satTileCrs: effectiveSatTileCrs,
           tessellation: N,
-          xTexFns, zTexFns, satXTexFns, satYTexFns, dtmTexFns,
-          satTexFns, satBoundsMinFns, satBoundsSizeFns,
+          xTexFns, zTexFns, dtmTexFns,
+          satTexFns, satUvXTexFns, satUvYTexFns,
           satCacheRef,
           onLoad: () => plot.scheduleRender(),
         })
         satCacheRef.cache = new SatTileCache({
           regl, source: satSource,
           satTileCrs: effectiveSatTileCrs,
-          onLoad: () => plot.scheduleRender(),
+          onLoad: () => {
+            dtmManagerRef.manager?._rebuildArrays()
+            plot.scheduleRender()
+          },
         })
         plot.scheduleRender()
       } catch (_) {}
@@ -714,21 +712,19 @@ class TerrainTileLayerType extends LayerType {
       instanceCount: null,
       attributeDivisors: {},
       attributes: {
-        a_dtm_uv: dtmUvs,
-        x_pos:    xCol,
-        z_pos:    zCol,
-        sat_x:    satXCol,
-        sat_y:    satYCol,
+        a_dtm_uv:  dtmUvs,
+        x_pos:     xCol,
+        z_pos:     zCol,
+        sat_uv_x:  satUvXCol,
+        sat_uv_y:  satUvYCol,
       },
       uniforms: {
-        u_dtm_tex:         dtmTexFns,
-        u_sat_tex:         satTexFns,
-        u_sat_bounds_min:  satBoundsMinFns,
-        u_sat_bounds_size: satBoundsSizeFns,
-        u_dtm_encoding:    dtmEncodingF,
-        u_elev_scale:      elevScale,
-        u_elev_offset:     elevOffset,
-        u_opacity:         opacity,
+        u_dtm_tex:      dtmTexFns,
+        u_sat_tex:      satTexFns,
+        u_dtm_encoding: dtmEncodingF,
+        u_elev_scale:   elevScale,
+        u_elev_offset:  elevOffset,
+        u_opacity:      opacity,
       },
       domains: {},
     }]
