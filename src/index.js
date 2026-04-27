@@ -46,3 +46,6 @@ import "./compute/scatter2dInterpolate.js"
 
 // Register BarsLayer (side-effect import)
 import "./layers/BarsLayer.js"
+
+// Register TerrainTileLayer (side-effect import)
+import "./layers/TerrainTileLayer.js"
