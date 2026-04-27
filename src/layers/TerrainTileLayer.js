@@ -103,7 +103,7 @@ class TerrainColumn extends ColumnData {
 class DtmTileManager {
   constructor({ regl, source, dtmTileCrs, plotCrs, satTileCrs, tessellation,
                 xTexFns, zTexFns, dtmTexFns,
-                satTexFns, satUvXTexFns, satUvYTexFns,
+                satTexFns, satUvXTexFns, satUvYTexFns, dtmUvRangeFns,
                 satCacheRef, onLoad }) {
     this.regl = regl
     this.source = source
@@ -112,13 +112,14 @@ class DtmTileManager {
     this.satTileCrs   = satTileCrs
     this.tessellation = tessellation
     this._fns = { xTexFns, zTexFns, dtmTexFns,
-                  satTexFns, satUvXTexFns, satUvYTexFns }
+                  satTexFns, satUvXTexFns, satUvYTexFns, dtmUvRangeFns }
     this._satCacheRef = satCacheRef
     this.onLoad = onLoad
 
     this.tiles = new Map()
     this.accessOrder = []
     this._neededKeys = new Set()
+    this._neededSpecs = []
     this._lastXDomain = null
     this._lastYDomain = null
     this._lastViewport = null
@@ -154,9 +155,11 @@ class DtmTileManager {
   }
 
   _plotBboxToTileBbox(xDomain, yDomain) {
+    // yDomain is negated northing (z_pos = -northing); un-negate for geographic projection
+    const geoY = [-yDomain[1], -yDomain[0]]
     const corners = [
-      [xDomain[0], yDomain[0]], [xDomain[1], yDomain[0]],
-      [xDomain[0], yDomain[1]], [xDomain[1], yDomain[1]],
+      [xDomain[0], geoY[0]], [xDomain[1], geoY[0]],
+      [xDomain[0], geoY[1]], [xDomain[1], geoY[1]],
     ].map(pt => this._plotToTile(pt))
     return {
       minX: Math.min(...corners.map(c => c[0])),
@@ -191,7 +194,7 @@ class DtmTileManager {
         const url = source.type === 'wmts'
           ? buildWmtsUrl(source, z, tx, ty)
           : buildXyzUrl(source, z, tx, ty)
-        tiles.push({ key: `${z}/${tx}/${ty}`, bbox: tileToMercBbox(tx, ty, z), url })
+        tiles.push({ key: `${z}/${tx}/${ty}`, bbox: tileToMercBbox(tx, ty, z), url, z, x: tx, y: ty })
       }
     }
     return tiles
@@ -204,9 +207,11 @@ class DtmTileManager {
     this._lastViewport = viewport ? { width: viewport.width, height: viewport.height } : null
     const needed = this._computeNeededTiles(xDomain, yDomain, viewport)
     this._neededKeys = new Set(needed.map(t => t.key))
+    this._neededSpecs = needed
     for (const spec of needed) {
       if (!this.tiles.has(spec.key)) this._loadTile(spec)
     }
+    this._rebuildArrays()
   }
 
   requestSatTiles(viewport) {
@@ -218,50 +223,105 @@ class DtmTileManager {
   }
 
   _rebuildArrays() {
-    const loaded = [...this.tiles.values()].filter(t => t.status === 'loaded')
     const { xTexFns, zTexFns, dtmTexFns,
-            satTexFns, satUvXTexFns, satUvYTexFns } = this._fns
+            satTexFns, satUvXTexFns, satUvYTexFns, dtmUvRangeFns } = this._fns
     for (const arr of [xTexFns, zTexFns, dtmTexFns,
-                       satTexFns, satUvXTexFns, satUvYTexFns]) arr.length = 0
+                       satTexFns, satUvXTexFns, satUvYTexFns, dtmUvRangeFns]) arr.length = 0
 
     const satCacheRef = this._satCacheRef
-    for (const tile of loaded) {
-      const s = tile.slot
+    const maxFallback = 4
+
+    // Build render items using Algorithm B (ancestor sub-mesh fallback).
+    // Each needed tile slot produces exactly one render item — either the tile
+    // itself (full mesh) or a sub-region of a loaded ancestor (no overlap guaranteed).
+    const renderItems = []
+
+    if (this.source.type === 'wms') {
+      // WMS has no tile hierarchy — only render directly loaded needed tiles.
+      for (const [key, tile] of this.tiles.entries()) {
+        if (tile.status === 'loaded' && this._neededKeys.has(key)) {
+          renderItems.push({ slot: tile.slot, range: [0, 0, 1, 1] })
+        }
+      }
+    } else {
+      // XYZ/WMTS: Algorithm B — for each target tile slot, find the best available render source.
+      for (const spec of this._neededSpecs) {
+        const tile = this.tiles.get(spec.key)
+        if (tile?.status === 'loaded') {
+          renderItems.push({ slot: tile.slot, range: [0, 0, 1, 1] })
+        } else {
+          // Walk ancestors for a fallback sub-mesh.
+          for (let k = 1; k <= maxFallback; k++) {
+            const az = spec.z - k
+            if (az < 0) break
+            const ax = spec.x >> k
+            const ay = spec.y >> k
+            const aKey = `${az}/${ax}/${ay}`
+            const ancestor = this.tiles.get(aKey)
+            if (ancestor?.status === 'loaded') {
+              const stride = 1 << k
+              const qx = spec.x - ax * stride
+              const qy = spec.y - ay * stride
+              // DTM UV range for this sub-region within the ancestor tile.
+              // v-axis: qy=0 is northernmost (low v in DTM space, high a_dtm_uv.y).
+              renderItems.push({
+                slot: ancestor.slot,
+                range: [qx / stride, qy / stride, (qx + 1) / stride, (qy + 1) / stride],
+              })
+              break
+            }
+          }
+          // If no ancestor found, this slot renders as a blank area.
+        }
+      }
+    }
+
+    // Push fn[] entries, computing sat UVs once per ancestor slot.
+    const computedSlots = new Set()
+
+    for (const item of renderItems) {
+      const s = item.slot
       const sat = satCacheRef.cache?.getBestAvailable(s.satCrsBbox)
 
       if (!sat) {
-        // No sat tile available yet — push nulls so the fn[] tile loop skips this tile.
+        // No sat tile yet — push nulls so the tile loop skips this render item.
         xTexFns.push(      () => null)
         zTexFns.push(      () => null)
         dtmTexFns.push(    () => null)
         satTexFns.push(    () => null)
         satUvXTexFns.push( () => null)
         satUvYTexFns.push( () => null)
+        dtmUvRangeFns.push(() => null)
         continue
       }
 
-      // Precompute UV coordinates from raw CPU sat positions + current best sat tile bounds.
-      const vCount = s.satXArr.length
-      const uvXArr = new Float32Array(vCount)
-      const uvYArr = new Float32Array(vCount)
-      const bW = sat.bounds.maxX - sat.bounds.minX
-      const bH = sat.bounds.maxY - sat.bounds.minY
-      for (let k = 0; k < vCount; k++) {
-        uvXArr[k] = (s.satXArr[k] - sat.bounds.minX) / bW
-        uvYArr[k] = 1.0 - (s.satYArr[k] - sat.bounds.minY) / bH
+      // Compute sat UV textures once per slot (shared across multiple sub-mesh render items
+      // that reference the same ancestor tile).
+      if (!computedSlots.has(s)) {
+        computedSlots.add(s)
+        const vCount = s.satXArr.length
+        const uvXArr = new Float32Array(vCount)
+        const uvYArr = new Float32Array(vCount)
+        const bW = sat.bounds.maxX - sat.bounds.minX
+        const bH = sat.bounds.maxY - sat.bounds.minY
+        for (let i = 0; i < vCount; i++) {
+          uvXArr[i] = (s.satXArr[i] - sat.bounds.minX) / bW
+          uvYArr[i] = 1.0 - (s.satYArr[i] - sat.bounds.minY) / bH
+        }
+        s.satUvXTex?.destroy()
+        s.satUvYTex?.destroy()
+        s.satUvXTex = uploadToTexture(this.regl, uvXArr)
+        s.satUvYTex = uploadToTexture(this.regl, uvYArr)
       }
 
-      s.satUvXTex?.destroy()
-      s.satUvYTex?.destroy()
-      s.satUvXTex = uploadToTexture(this.regl, uvXArr)
-      s.satUvYTex = uploadToTexture(this.regl, uvYArr)
-
+      const range = item.range
       xTexFns.push(      () => s.xTex)
       zTexFns.push(      () => s.zTex)
       dtmTexFns.push(    () => s.dtmTex)
       satTexFns.push(    () => sat.texture)
       satUvXTexFns.push( () => s.satUvXTex)
       satUvYTexFns.push( () => s.satUvYTex)
+      dtmUvRangeFns.push(() => range)
     }
   }
 
@@ -305,7 +365,7 @@ class DtmTileManager {
       const zArr = new Float32Array(vertexCount)
       for (let k = 0; k < vertexCount; k++) {
         xArr[k] = positions[k * 2]
-        zArr[k] = positions[k * 2 + 1]
+        zArr[k] = -positions[k * 2 + 1]
       }
       const satXArr = new Float32Array(vertexCount)
       const satYArr = new Float32Array(vertexCount)
@@ -477,6 +537,7 @@ uniform sampler2D u_dtm_tex;
 uniform float u_dtm_encoding;
 uniform float u_elev_scale;
 uniform float u_elev_offset;
+uniform vec4 u_dtm_uv_range;
 
 out vec2 v_sat_uv;
 
@@ -490,6 +551,12 @@ float decodeElev(vec4 col) {
 }
 
 void main() {
+  if (a_dtm_uv.x < u_dtm_uv_range.x || a_dtm_uv.x > u_dtm_uv_range.z ||
+      a_dtm_uv.y < u_dtm_uv_range.y || a_dtm_uv.y > u_dtm_uv_range.w) {
+    gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+    v_sat_uv = vec2(-1.0);
+    return;
+  }
   float elevation = decodeElev(texture(u_dtm_tex, a_dtm_uv)) * u_elev_scale + u_elev_offset;
   gl_Position = plot_pos_3d(vec3(x_pos, elevation, z_pos));
   v_sat_uv = vec2(sat_uv_x, sat_uv_y);
@@ -647,14 +714,16 @@ class TerrainTileLayerType extends LayerType {
       }
     }
 
-    // Live fn[] arrays — one entry per loaded DTM tile. Start with () => null so
-    // isTiledTexClosure detects them at compile time; null skips tiles until loaded.
-    const xTexFns      = [() => null]
-    const zTexFns      = [() => null]
-    const dtmTexFns    = [() => null]
-    const satTexFns    = [() => null]
-    const satUvXTexFns = [() => null]
-    const satUvYTexFns = [() => null]
+    // Live fn[] arrays — one entry per render item (loaded tile or ancestor sub-mesh).
+    // Start with () => null so isTiledTexClosure detects them at compile time;
+    // null return skips that render item until tiles are available.
+    const xTexFns        = [() => null]
+    const zTexFns        = [() => null]
+    const dtmTexFns      = [() => null]
+    const satTexFns      = [() => null]
+    const satUvXTexFns   = [() => null]
+    const satUvYTexFns   = [() => null]
+    const dtmUvRangeFns  = [() => null]
 
     const dtmManagerRef = { manager: null }
     const satCacheRef   = { cache: null }
@@ -690,7 +759,7 @@ class TerrainTileLayerType extends LayerType {
           satTileCrs: effectiveSatTileCrs,
           tessellation: N,
           xTexFns, zTexFns, dtmTexFns,
-          satTexFns, satUvXTexFns, satUvYTexFns,
+          satTexFns, satUvXTexFns, satUvYTexFns, dtmUvRangeFns,
           satCacheRef,
           onLoad: () => plot.scheduleRender(),
         })
@@ -732,12 +801,13 @@ class TerrainTileLayerType extends LayerType {
         sat_uv_y:  satUvYCol,
       },
       uniforms: {
-        u_dtm_tex:      dtmTexFns,
-        u_sat_tex:      satTexFns,
-        u_dtm_encoding: dtmEncodingF,
-        u_elev_scale:   elevScale,
-        u_elev_offset:  elevOffset,
-        u_opacity:      opacity,
+        u_dtm_tex:       dtmTexFns,
+        u_sat_tex:       satTexFns,
+        u_dtm_uv_range:  dtmUvRangeFns,
+        u_dtm_encoding:  dtmEncodingF,
+        u_elev_scale:    elevScale,
+        u_elev_offset:   elevOffset,
+        u_opacity:       opacity,
       },
       domains: {},
     }]
