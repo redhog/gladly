@@ -155,8 +155,7 @@ class DtmTileManager {
   }
 
   _plotBboxToTileBbox(xDomain, yDomain) {
-    // yDomain is negated northing (z_pos = -northing); un-negate for geographic projection
-    const geoY = [-yDomain[1], -yDomain[0]]
+    const geoY = [yDomain[0], yDomain[1]]
     const corners = [
       [xDomain[0], geoY[0]], [xDomain[1], geoY[0]],
       [xDomain[0], geoY[1]], [xDomain[1], geoY[1]],
@@ -365,7 +364,7 @@ class DtmTileManager {
       const zArr = new Float32Array(vertexCount)
       for (let k = 0; k < vertexCount; k++) {
         xArr[k] = positions[k * 2]
-        zArr[k] = -positions[k * 2 + 1]
+        zArr[k] = positions[k * 2 + 1]
       }
       const satXArr = new Float32Array(vertexCount)
       const satYArr = new Float32Array(vertexCount)
@@ -535,8 +534,6 @@ in vec2 a_dtm_uv;
 
 uniform sampler2D u_dtm_tex;
 uniform float u_dtm_encoding;
-uniform float u_elev_scale;
-uniform float u_elev_offset;
 uniform vec4 u_dtm_uv_range;
 
 out vec2 v_sat_uv;
@@ -557,7 +554,7 @@ void main() {
     v_sat_uv = vec2(-1.0);
     return;
   }
-  float elevation = decodeElev(texture(u_dtm_tex, a_dtm_uv)) * u_elev_scale + u_elev_offset;
+  float elevation = decodeElev(texture(u_dtm_tex, a_dtm_uv));
   gl_Position = plot_pos_3d(vec3(x_pos, elevation, z_pos));
   v_sat_uv = vec2(sat_uv_x, sat_uv_y);
 }
@@ -640,8 +637,6 @@ class TerrainTileLayerType extends LayerType {
         plotCrs:     { type: 'string', description: 'CRS of the x/z plot axes. Defaults to dtmTileCrs.' },
         tessellation: { type: 'integer', default: 16, minimum: 1, description: 'Grid resolution N×N quads per DTM tile' },
         dtmEncoding: { type: 'string', enum: ['grayscale', 'mapbox', 'terrarium'], default: 'terrarium' },
-        elevScale:   { type: 'number', default: 1.0 },
-        elevOffset:  { type: 'number', default: 0.0 },
         opacity:     { type: 'number', default: 1.0, minimum: 0, maximum: 1 },
         xAxis: { type: 'string', enum: AXES.filter(a => a.includes('x')), default: 'xaxis_bottom' },
         yAxis: { type: 'string', enum: AXES.filter(a => a.includes('y')), default: 'yaxis_left', description: 'Elevation axis' },
@@ -685,8 +680,6 @@ class TerrainTileLayerType extends LayerType {
       satSource: satSourceSpec,
       tessellation = 16,
       dtmEncoding  = 'terrarium',
-      elevScale    = 1.0,
-      elevOffset   = 0.0,
       opacity      = 1.0,
     } = parameters
 
@@ -805,8 +798,6 @@ class TerrainTileLayerType extends LayerType {
         u_sat_tex:       satTexFns,
         u_dtm_uv_range:  dtmUvRangeFns,
         u_dtm_encoding:  dtmEncodingF,
-        u_elev_scale:    elevScale,
-        u_elev_offset:   elevOffset,
         u_opacity:       opacity,
       },
       domains: {},

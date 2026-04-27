@@ -38,7 +38,7 @@ import { JSONEditor } from '@json-editor/json-editor'
 
 const _panel_tab9 = document.getElementById('tab9')
 
-// Swiss Alps region in EPSG:4326 (degrees).
+// Southern Scandinavia in EPSG:4326 (degrees): Oslo, Gothenburg, Stockholm, Malmö.
 // x = longitude (east), z = latitude (north), y = elevation (metres).
 const initialConfig = {
   layers: [
@@ -62,8 +62,6 @@ const initialConfig = {
         plotCrs:     'EPSG:4326',
         tessellation: 16,
         dtmEncoding: 'terrarium',
-        elevScale:   1.0,
-        elevOffset:  0.0,
         opacity:     1.0,
         xAxis:       'xaxis_bottom',
         yAxis:       'yaxis_left',
@@ -72,9 +70,9 @@ const initialConfig = {
     },
   ],
   axes: {
-    xaxis_bottom:      { min: 6.0, max: 11.0 },
-    yaxis_left:        { min: 0,   max: 4500 },
-    zaxis_bottom_left: { min: 45.5, max: 47.5 },
+    xaxis_bottom:      { min: 5.0,  max: 20.0 },
+    yaxis_left:        { min: -2000,    max: 6000 },
+    zaxis_bottom_left: { min: 61.5, max: 55.0 },
   },
 }
 
