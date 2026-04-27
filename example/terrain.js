@@ -78,14 +78,99 @@ const initialConfig = {
   },
 }
 
-const _doInit_tab9 = async () => {
-  // JSONEditor disabled — crashes even with simplified schema
-  const plot = new Plot(document.getElementById('tab9-plot1'))
+const plotData = {}
+
+let currentPlotConfig = initialConfig
+
+const plot = new Plot(document.getElementById('tab9-plot1'))
+
+let lastEditorValue = ''
+let lastSchema = ''
+let editor
+
+function createEditor(config) {
+  lastSchema = JSON.stringify(Plot.schema(plotData, config))
+  if (editor) editor.destroy()
+  editor = new JSONEditor(document.getElementById('tab9-editor-container'), {
+    schema: Plot.schema(plotData, config),
+    startval: config,
+    theme: 'html',
+    iconlib: 'fontawesome4',
+    disable_collapse: false,
+    disable_edit_json: false,
+    disable_properties: false,
+    no_additional_properties: false,
+    required_by_default: false,
+    show_errors: 'always',
+    compact: false
+  })
+  editor.on('ready', () => {
+    const rootEditor = editor.editors['root']
+    if (rootEditor && rootEditor.editjson_control) {
+      rootEditor.editjson_control.classList.add('je-root-editjson')
+    }
+    lastEditorValue = JSON.stringify(editor.getValue())
+  })
+  editor.on('change', async () => {
+    const value = editor.getValue()
+    if (JSON.stringify(value) === lastEditorValue) return
+    lastEditorValue = JSON.stringify(value)
+    const errors = editor.validate()
+    if (errors.length === 0) {
+      const schemaChanged = await updatePlot(value)
+      if (schemaChanged) setTimeout(() => createEditor(currentPlotConfig), 0)
+    } else {
+      const errorMessages = errors.map(err => `${err.path}: ${err.message}`).join('<br>')
+      document.getElementById('tab9-validation-errors').innerHTML = `
+        <div class="validation-error">
+          <strong>Validation Errors:</strong><br>${errorMessages}
+        </div>
+      `
+    }
+  })
+}
+
+async function updatePlot(plotConfig) {
   try {
-    await plot.update({ config: initialConfig, data: {} })
-  } catch (err) {
-    console.error('[terrain example]', err)
+    await plot.update({ config: plotConfig, data: plotData })
+    document.getElementById('tab9-validation-errors').innerHTML = ''
+
+    const fullConfig = plot.getConfig()
+    currentPlotConfig = fullConfig
+    const newSchema = JSON.stringify(Plot.schema(plotData, fullConfig))
+    if (newSchema !== lastSchema) {
+      return true
+    } else if (editor) {
+      editor.setValue(fullConfig)
+      lastEditorValue = JSON.stringify(editor.getValue())
+    }
+
+    return false
+  } catch (error) {
+    console.error('[terrain example]', error)
+    document.getElementById('tab9-validation-errors').innerHTML = `
+      <div class="validation-error">
+        <strong>Error:</strong> ${error.message}
+      </div>
+    `
+    return false
   }
+}
+
+const _doInit_tab9 = async () => {
+  await updatePlot(currentPlotConfig)
+
+  const schema = Plot.schema(plotData, currentPlotConfig)
+  console.log('[terrain] Plot.schema() result:', schema)
+  console.log('[terrain] Plot.schema() JSON size (bytes):', JSON.stringify(schema).length)
+  console.log('[terrain] Plot.schema() JSON:', JSON.stringify(schema, null, 2))
+  console.log('[terrain] currentPlotConfig:', JSON.stringify(currentPlotConfig, null, 2))
+
+  createEditor(currentPlotConfig)
+
+  plot.onZoomEnd(() => {
+    currentPlotConfig = plot.getConfig()
+  })
 }
 
 if (_panel_tab9.style.display !== 'none') {
