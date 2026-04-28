@@ -13,7 +13,7 @@ plot.update({
   data: { x, y, temperature, depth },
   config: {
     layers: [
-      { scatter: { xData: "x", yData: "y", vData: "temperature" } }
+      { points: { xData: "x", yData: "y", vData: "temperature" } }
     ],
     axes: {
       temperature: { colorbar: "horizontal" },  // floating colorbar

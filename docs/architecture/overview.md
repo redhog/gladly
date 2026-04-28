@@ -31,15 +31,16 @@ gladly/
 │   │   ├── Plot.js                            # Main rendering orchestrator
 │   │   ├── Layer.js                           # Data container (DTO)
 │   │   ├── LayerType.js                       # Shader + metadata + schema + factory
-│   │   ├── Data.js                            # Data normalisation wrapper
 │   │   └── LayerTypeRegistry.js               # Global layer type registration
+│   ├── data/
+│   │   └── Data.js                            # Data normalisation wrapper
 │   ├── axes/
 │   │   ├── Axis.js                            # First-class axis object (stable across update())
-│   │   ├── AxisRegistry.js                    # Spatial scale management (internal)
+│   │   ├── AxisRegistry.js                    # Spatial, color, and filter axis management
 │   │   ├── AxisLink.js                        # Cross-plot axis linking
 │   │   ├── AxisQuantityKindRegistry.js        # Global quantity kind definitions
-│   │   ├── ColorAxisRegistry.js               # Color axis range + colorscale management (internal)
-│   │   ├── FilterAxisRegistry.js              # Filter axis range management + GLSL helper (internal)
+│   │   ├── ColorAxisRegistry.js               # Stub — merged into AxisRegistry.js
+│   │   ├── FilterAxisRegistry.js              # Stub — merged into AxisRegistry.js
 │   │   └── ZoomController.js                  # Zoom and pan interaction
 │   ├── colorscales/
 │   │   ├── ColorscaleRegistry.js              # GLSL colorscale registration + dispatch builder
@@ -89,10 +90,8 @@ gladly/
 Plot (main orchestrator)
   ├── regl (WebGL context)
   ├── D3 (selection, scales, axes, zoom)
-  ├── AxisRegistry (created internally — spatial axes)
+  ├── AxisRegistry (created internally — spatial, color, and filter axes)
   │   └── D3 scales (linear / log)
-  ├── ColorAxisRegistry (created internally — color axes)
-  ├── FilterAxisRegistry (created internally — filter axes)
   ├── LayerTypeRegistry (global singleton)
   │   └── LayerType instances (by name)
   └── Layer[] (created automatically from config)
@@ -249,9 +248,8 @@ Potential enhancements that maintain the current architecture:
 1. ~~**WebGL2** — upgrade regl context for instancing and compute~~ ✓ Done (WebGL 2.0 context + GLSL ES 3.00 shaders; see architectural decision #7)
 2. **Layer Groups** — batch show/hide
 3. **Animation** — time-based attribute updates
-4. **Point Picking** — GPU-based selection
-5. **Texture Colormaps** — richer gradient support
-6. **Runtime Validation** — enforce JSON Schema at `update()` time
-7. **Serialisation** — save/restore plot configurations as JSON
+4. ~~**Point Picking** — GPU-based selection~~ ✓ Done (`plot.pick(x, y)` method)
+5. **Runtime Validation** — enforce JSON Schema at `update()` time
+6. **Serialisation** — save/restore plot configurations as JSON
 
 All can be added without breaking the current API or architecture.

@@ -40,9 +40,9 @@ const redDotsType = new LayerType({
     }
   },
 
-  vert: `
-    precision mediump float;
-    attribute float x, y;
+  vert: `#version 300 es
+    precision highp float;
+    in float x, y;
     uniform vec2 xDomain, yDomain;
 
     void main() {
@@ -53,10 +53,11 @@ const redDotsType = new LayerType({
     }
   `,
 
-  frag: `
-    precision mediump float;
+  frag: `#version 300 es
+    precision highp float;
+    out vec4 fragColor;
     void main() {
-      gl_FragColor = gladly_apply_color(vec4(1.0, 0.0, 0.0, 1.0));
+      fragColor = gladly_apply_color(vec4(1.0, 0.0, 0.0, 1.0));
     }
   `,
 
@@ -120,12 +121,12 @@ const heatDotsType = new LayerType({
     }
   },
 
-  vert: `
-    precision mediump float;
-    attribute float x, y;
-    attribute float color_data;
+  vert: `#version 300 es
+    precision highp float;
+    in float x, y;
+    in float color_data;
     uniform vec2 xDomain, yDomain;
-    varying float value;
+    out float value;
 
     void main() {
       float nx = (x - xDomain.x) / (xDomain.y - xDomain.x);
@@ -138,15 +139,16 @@ const heatDotsType = new LayerType({
 
   // map_color_s() is injected automatically when color axes are present
   // It calls gladly_apply_color() internally, so no explicit wrap needed.
-  frag: `
-    precision mediump float;
+  frag: `#version 300 es
+    precision highp float;
     uniform int colorscale;
     uniform vec2 color_range;
     uniform float color_scale_type;
-    varying float value;
+    in float value;
+    out vec4 fragColor;
 
     void main() {
-      gl_FragColor = map_color_s(colorscale, color_range, value, color_scale_type, 0.0);
+      fragColor = map_color_s(colorscale, color_range, value, color_scale_type, 0.0);
     }
   `,
 
@@ -216,10 +218,10 @@ const filteredDotsType = new LayerType({
     }
   },
 
-  vert: `
-    precision mediump float;
-    attribute float x, y;
-    attribute float filter_data;
+  vert: `#version 300 es
+    precision highp float;
+    in float x, y;
+    in float filter_data;
     uniform vec2 xDomain, yDomain;
     uniform vec4 filter_range;
 
@@ -236,9 +238,10 @@ const filteredDotsType = new LayerType({
     }
   `,
 
-  frag: `
-    precision mediump float;
-    void main() { gl_FragColor = gladly_apply_color(vec4(0.0, 0.5, 1.0, 1.0)); }
+  frag: `#version 300 es
+    precision highp float;
+    out vec4 fragColor;
+    void main() { fragColor = gladly_apply_color(vec4(0.0, 0.5, 1.0, 1.0)); }
   `,
 
   schema: (data) => ({ /* ... */ }),
@@ -285,14 +288,14 @@ const filteredScatterType = new LayerType({
     }
   },
 
-  vert: `
-    precision mediump float;
-    attribute float x, y;
-    attribute float color_data;
-    attribute float filter_data;
+  vert: `#version 300 es
+    precision highp float;
+    in float x, y;
+    in float color_data;
+    in float filter_data;
     uniform vec2 xDomain, yDomain;
     uniform vec4 filter_range;
-    varying float value;
+    out float value;
 
     void main() {
       if (!filter_in_range(filter_range, filter_data)) {
@@ -307,15 +310,16 @@ const filteredScatterType = new LayerType({
     }
   `,
 
-  frag: `
-    precision mediump float;
+  frag: `#version 300 es
+    precision highp float;
     uniform int colorscale;
     uniform vec2 color_range;
     uniform float color_scale_type;
-    varying float value;
+    in float value;
+    out vec4 fragColor;
 
     void main() {
-      gl_FragColor = map_color_s(colorscale, color_range, value, color_scale_type, 0.0);
+      fragColor = map_color_s(colorscale, color_range, value, color_scale_type, 0.0);
     }
   `,
 
@@ -357,12 +361,12 @@ const fixedScatterType = new LayerType({
     return { xAxis: parameters.xAxis, yAxis: parameters.yAxis }
   },
 
-  vert: `
-    precision mediump float;
-    attribute float x, y, temperature_K, velocity_ms;
+  vert: `#version 300 es
+    precision highp float;
+    in float x, y, temperature_K, velocity_ms;
     uniform vec2 xDomain, yDomain;
     uniform vec4 filter_range_velocity_ms;
-    varying float value;
+    out float value;
     void main() {
       if (!filter_in_range(filter_range_velocity_ms, velocity_ms)) {
         gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
@@ -375,14 +379,15 @@ const fixedScatterType = new LayerType({
       value = temperature_K;
     }
   `,
-  frag: `
-    precision mediump float;
+  frag: `#version 300 es
+    precision highp float;
     uniform int colorscale_temperature_K;
     uniform vec2 color_range_temperature_K;
     uniform float color_scale_type_temperature_K;
-    varying float value;
+    in float value;
+    out vec4 fragColor;
     void main() {
-      gl_FragColor = map_color_s(colorscale_temperature_K, color_range_temperature_K, value, color_scale_type_temperature_K, 0.0);
+      fragColor = map_color_s(colorscale_temperature_K, color_range_temperature_K, value, color_scale_type_temperature_K, 0.0);
     }
   `,
   schema: () => ({ /* ... */ }),
@@ -493,7 +498,7 @@ The render loop passes these via internal prop names `colorscale_<quantityKind>`
 
 ### How the Plot Handles Color Axes
 
-1. Registers each quantity kind with the `ColorAxisRegistry`
+1. Registers each quantity kind via `axisRegistry.ensureColorAxis(qk)` (color axes are managed inside `AxisRegistry`)
 2. Scans `layer.domains` for that quantity kind and computes the auto range [min, max]
    (if no domain exists, falls back to scanning `layer.attributes` by quantity kind name)
 3. Applies any override from `config.axes`
@@ -510,11 +515,12 @@ When a layer has color axes, `createDrawCommand` automatically:
 uniform int colorscale;
 uniform vec2 color_range;
 uniform float color_scale_type;
-varying float value;
+in float value;
+out vec4 fragColor;
 
 void main() {
   // map_color_s calls gladly_apply_color internally — no explicit wrap needed.
-  gl_FragColor = map_color_s(colorscale, color_range, value, color_scale_type, 0.0);
+  fragColor = map_color_s(colorscale, color_range, value, color_scale_type, 0.0);
 }
 ```
 
@@ -538,7 +544,7 @@ Examples:
 
 ### How the Plot Handles Filter Axes
 
-1. Registers each quantity kind with the `FilterAxisRegistry`
+1. Registers each quantity kind via `axisRegistry.ensureFilterAxis(qk)` (filter axes are managed inside `AxisRegistry`)
 2. Scans `layer.domains` and `layer.attributes` (by quantity kind name) and computes the data extent
 3. Applies `min`/`max` from `config.axes` if present; defaults to fully open bounds
 4. Passes uniforms to the draw call
@@ -551,7 +557,7 @@ When a layer has filter axes, `createDrawCommand` automatically:
 ```glsl
 // Using suffix '' — GLSL uniform name is: filter_range
 uniform vec4 filter_range;
-attribute float filter_data;
+in float filter_data;
 
 void main() {
   if (!filter_in_range(filter_range, filter_data)) {
@@ -605,15 +611,15 @@ const rectLayerType = new LayerType({
     yAxisQuantityKind: params.yTopData,
   }),
 
-  vert: `
-    precision mediump float;
-    attribute float cx;    // per-vertex: quad corner x (0 or 1)
-    attribute float cy;    // per-vertex: quad corner y (0 or 1)
-    attribute float x;     // per-instance: rect center
-    attribute float xPrev; // per-instance: previous center (mirror at boundary)
-    attribute float xNext; // per-instance: next center (mirror at boundary)
-    attribute float top;   // per-instance: top y
-    attribute float bot;   // per-instance: bottom y
+  vert: `#version 300 es
+    precision highp float;
+    in float cx;    // per-vertex: quad corner x (0 or 1)
+    in float cy;    // per-vertex: quad corner y (0 or 1)
+    in float x;     // per-instance: rect center
+    in float xPrev; // per-instance: previous center (mirror at boundary)
+    in float xNext; // per-instance: next center (mirror at boundary)
+    in float top;   // per-instance: top y
+    in float bot;   // per-instance: bottom y
     uniform float uE;
     uniform vec2 xDomain, yDomain;
     uniform float xScaleType, yScaleType;
@@ -634,9 +640,10 @@ const rectLayerType = new LayerType({
     }
   `,
 
-  frag: `
-    precision mediump float;
-    void main() { gl_FragColor = gladly_apply_color(vec4(0.2, 0.5, 0.8, 1.0)); }
+  frag: `#version 300 es
+    precision highp float;
+    out vec4 fragColor;
+    void main() { fragColor = gladly_apply_color(vec4(0.2, 0.5, 0.8, 1.0)); }
   `,
 
   schema: (data) => ({ /* ... */ }),
@@ -690,20 +697,24 @@ const rectLayerType = new LayerType({
 
 ## Picking Support
 
-GPU picking lets the application identify which layer and data point is under the mouse cursor. The framework handles the mechanics automatically — layer authors only need to follow one rule: **always assign `gl_FragColor` through `gladly_apply_color()`**.
+GPU picking lets the application identify which layer and data point is under the mouse cursor. The framework handles the mechanics automatically — layer authors only need to follow one rule: **always assign `fragColor` through `gladly_apply_color()`**.
 
 ### The rule
 
+All fragment shaders must write to a declared `out vec4 fragColor` (GLSL ES 3.0). Always route through `gladly_apply_color()`:
+
 ```glsl
 // ✅ Correct — picking works automatically
+out vec4 fragColor;
 void main() {
   vec4 color = /* your color calculation */;
-  gl_FragColor = gladly_apply_color(color);
+  fragColor = gladly_apply_color(color);
 }
 
 // ❌ Wrong — pick pass will not detect this fragment
+out vec4 fragColor;
 void main() {
-  gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+  fragColor = vec4(1.0, 0.0, 0.0, 1.0);
 }
 ```
 
@@ -714,19 +725,21 @@ In normal rendering, `gladly_apply_color` is a pass-through and has no effect on
 `map_color_s` calls `gladly_apply_color` internally, so layers using it for their final output need **no additional call**:
 
 ```glsl
+out vec4 fragColor;
 void main() {
   // gladly_apply_color is called inside map_color_s — no wrapping needed
-  gl_FragColor = map_color_s(colorscale, color_range, value, color_scale_type, 0.0);
+  fragColor = map_color_s(colorscale, color_range, value, color_scale_type, 0.0);
 }
 ```
 
 Only wrap `gladly_apply_color` explicitly when doing additional processing after `map_color_s` (e.g. custom alpha):
 
 ```glsl
+out vec4 fragColor;
 void main() {
   float t = clamp((value - color_range.x) / (color_range.y - color_range.x), 0.0, 1.0);
   vec4 color = map_color_s(colorscale, color_range, value, color_scale_type, 0.0);
-  gl_FragColor = gladly_apply_color(vec4(color.rgb, t));  // explicit wrap needed here
+  fragColor = gladly_apply_color(vec4(color.rgb, t));  // explicit wrap needed here
 }
 ```
 
@@ -815,22 +828,24 @@ Any field that is `undefined` (or absent) leaves the corresponding static declar
 
 **Automatically injected GLSL:**
 
+All shaders must start with `#version 300 es` and use GLSL ES 3.0 syntax: `in`/`out` instead of `attribute`/`varying`, `out vec4 fragColor` instead of writing to `gl_FragColor`.
+
 ```glsl
 // Always injected into vertex shader:
-attribute float a_pickId;   // per-vertex id (non-instanced) or per-instance id (instanced)
-varying float v_pickId;     // passed to fragment shader; automatically assigned in main()
+in float a_pickId;    // per-vertex id (non-instanced) or per-instance id (instanced)
+out float v_pickId;   // passed to fragment shader; automatically assigned in main()
 
 float normalize_axis(float v, vec2 domain, float scaleType)
 // Maps v from data-space to [0, 1], handling both linear and log scales.
 
 // Always injected into fragment shader:
-varying float v_pickId;
+in float v_pickId;
 
 vec4 gladly_apply_color(vec4 color)
 // In normal rendering: returns color unchanged.
 // In a GPU pick pass (u_pickingMode > 0.5): ignores color and returns the
 // pick-encoded RGBA for this vertex (layer index + data index).
-// Call this as the last step before assigning gl_FragColor.
+// Call this as the last step before assigning fragColor.
 
 // Injected when color axes are present:
 vec4 map_color(int cs, vec2 range, float value)
@@ -945,30 +960,33 @@ Values in `attributes` are normally `Float32Array`. They may also be **computed 
 
 ---
 
-### `registerColorscale(name, glslFn)`
+### `registerColorscale(name, stops, nanColor)`
 
-Registers a custom colorscale.
+Registers a custom 1D colorscale as a list of color stops. The stops are uploaded to a GPU texture; the library handles the GLSL lookup automatically.
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `name` | string | Unique colorscale name |
-| `glslFn` | string | GLSL function: `vec4 colorscale_<name>(float t) { ... }` where `t ∈ [0, 1]` |
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `name` | string | — | Unique colorscale name |
+| `stops` | `[t, r, g, b][]` | — | Array of color stops. Each entry is `[t, r, g, b]` where `t ∈ [0, 1]` is the position and `r,g,b ∈ [0, 1]` are the color components. Values between stops are linearly interpolated. |
+| `nanColor` | `[r, g, b]` | `[0.5, 0.5, 0.5]` | Color used for NaN values |
 
 ```javascript
 import { registerColorscale } from './src/index.js'
 
-registerColorscale("my_scale", `
-  vec4 colorscale_my_scale(float t) {
-    return vec4(t, 1.0 - t, 0.5, 1.0);
-  }
-`)
+registerColorscale("my_scale", [
+  [0.0, 0.0, 0.0, 1.0],   // t=0: blue
+  [0.5, 0.5, 0.0, 0.5],   // t=0.5: mix
+  [1.0, 1.0, 0.0, 0.0],   // t=1: red
+])
 ```
+
+For 2D (bivariate) colorscales, use `register2DColorscale(name, glslFn)` — 2D colorscales are still GLSL-based and receive a `vec2 t` argument.
 
 ---
 
 ### `getRegisteredColorscales()`
 
-Returns `Map<string, string>` of all registered colorscale names to GLSL function strings.
+Returns a `Map` of all registered 1D colorscale names to their internal data (stops and GPU texture). Not intended for direct shader use — colorscales are referenced by name in `config.axes[qk].colorscale`.
 
 ---
 
@@ -987,6 +1005,18 @@ Returns the GLSL `filter_in_range` helper string. Injected automatically by `cre
 ## Constants Reference
 
 ### `AXES`
+
+All 12 registered spatial axis names, including 3D and back-face axes:
+
+```javascript
+[
+  "xaxis_bottom", "xaxis_top", "xaxis_bottom_back", "xaxis_top_back",
+  "yaxis_left",   "yaxis_right", "yaxis_left_back",  "yaxis_right_back",
+  "zaxis_bottom_left", "zaxis_bottom_right", "zaxis_top_left", "zaxis_top_right"
+]
+```
+
+For schemas that should only accept standard 2D axes, use `AXES_2D`:
 
 ```javascript
 ["xaxis_bottom", "xaxis_top", "yaxis_left", "yaxis_right"]

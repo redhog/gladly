@@ -25,12 +25,13 @@ A scatter plot that renders individual points coloured by a per-point value mapp
 | `vData` | expression | no | — | Data key for primary color values; also used as the color axis quantity kind. If omitted, points are drawn black |
 | `vData2` | expression | no | — | Data key for secondary color values for 2D colorscale mapping. If omitted with `vData` present, uses 1D colorscale |
 | `fData` | expression | no | `none` | Data key for filter values (points outside filter range are hidden) |
+| `pointSize` | integer | no | `4` | Point diameter in pixels (minimum 1) |
 | `xAxis` | string | no | `"xaxis_bottom"` | x-axis position |
 | `yAxis` | string | no | `"yaxis_left"` | y-axis position |
 
 ### Behavior
 
-- Point size: 4.0 px
+- Default point size: 4 px (configurable via `pointSize`)
 - Uses [`Data.wrap`](../user-api/Data.md#datawrapdata) internally, so it accepts flat `{ col: Float32Array }` objects, per-column rich objects, and the columnar format — any of the three formats described in the `Data` reference
 - Spatial quantity kinds: taken from the data's `quantity_kind` metadata for the named column if present; otherwise the column name itself
 - Color axis quantity kind: same resolution for `vData`; the key in `config.axes` must match the resolved quantity kind
@@ -133,7 +134,7 @@ Renders bar charts with configurable bin positions and heights.
 **Auto-registered** on import. `barsLayerType` is also exported if needed.
 
 ```javascript
-{ bars: { xData: "category", yData: "count", color: [0.2, 0.5, 0.8, 1.0] } }
+{ bars: { xData: "category", yData: "count", color: "#3380cc" } }
 ```
 
 ### Parameters
@@ -143,7 +144,7 @@ Renders bar charts with configurable bin positions and heights.
 | `xData` | string | yes | — | Column name for bin center positions |
 | `yData` | string | yes | — | Column name for bar lengths (counts) |
 | `orientation` | string | no | `"vertical"` | `"vertical"`: bins on x-axis, bars extend up; `"horizontal"`: bins on y-axis, bars extend right |
-| `color` | array | no | `[0.2, 0.5, 0.8, 1.0]` | Bar color as `[R, G, B, A]` in [0, 1] |
+| `color` | string | no | `"#3380cc"` | Bar color as a CSS color string (e.g. `"#3380cc"`, `"rgba(51,128,204,0.8)"`) |
 | `xAxis` | string | no | `"xaxis_bottom"` | x-axis position |
 | `yAxis` | string | no | `"yaxis_left"` | y-axis position |
 
@@ -158,7 +159,7 @@ A geographic map underlay that fetches and renders raster tiles from XYZ, WMS, o
 **Auto-registered** on import. `tileLayerType` and `TileLayerType` are also exported if needed.
 
 ```javascript
-{ tile: { source: { xyz: { url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" } }, plotCrs: "EPSG:3857" } }
+{ tile: { source: { xyz: { url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" } }, tileCrs: "EPSG:3857" } }
 ```
 
 ### Parameters
@@ -175,7 +176,9 @@ A geographic map underlay that fetches and renders raster tiles from XYZ, WMS, o
 
 ### Source types
 
-`source.type: "xyz"` — Standard slippy-map tiles (OpenStreetMap, Mapbox, etc.)
+The `source` object uses a **key-discriminated** format: the source type is the top-level key (`xyz`, `wms`, or `wmts`) and its value is the type-specific config.
+
+`{ xyz: { ... } }` — Standard slippy-map tiles (OpenStreetMap, Mapbox, etc.)
 
 | Field | Required | Default | Description |
 |-------|----------|---------|-------------|
@@ -184,7 +187,7 @@ A geographic map underlay that fetches and renders raster tiles from XYZ, WMS, o
 | `minZoom` | no | `0` | Minimum zoom level |
 | `maxZoom` | no | `19` | Maximum zoom level |
 
-`source.type: "wms"` — OGC Web Map Service. Fetches a single image per viewport change.
+`{ wms: { ... } }` — OGC Web Map Service. Fetches a single image per viewport change.
 
 | Field | Required | Default | Description |
 |-------|----------|---------|-------------|
@@ -192,11 +195,10 @@ A geographic map underlay that fetches and renders raster tiles from XYZ, WMS, o
 | `layers` | yes | — | Comma-separated layer names |
 | `format` | no | `"image/png"` | Image format |
 | `version` | no | `"1.3.0"` | WMS version (`"1.1.1"` or `"1.3.0"`) |
-| `crs` | no | `tileCrs` | CRS for the `GetMap` request |
 | `styles` | no | — | Comma-separated style names |
 | `transparent` | no | `true` | Request transparent background |
 
-`source.type: "wmts"` — OGC Web Map Tile Service. Uses the same Web Mercator tile grid as XYZ.
+`{ wmts: { ... } }` — OGC Web Map Tile Service. Uses the same Web Mercator tile grid as XYZ.
 
 | Field | Required | Default | Description |
 |-------|----------|---------|-------------|
@@ -240,8 +242,9 @@ plot.update({
       {
         tile: {
           source: {
-            type: 'xyz',
-            url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+            xyz: {
+              url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+            },
           },
           tileCrs: 'EPSG:3857',
           plotCrs: 'EPSG:4326',
@@ -269,11 +272,12 @@ plot.update({
       {
         tile: {
           source: {
-            type: 'wms',
-            url: 'https://example.com/wms',
-            layers: 'MyLayer',
-            format: 'image/png',
-            version: '1.3.0',
+            wms: {
+              url: 'https://example.com/wms',
+              layers: 'MyLayer',
+              format: 'image/png',
+              version: '1.3.0',
+            },
           },
           tileCrs: 'EPSG:3857',
           plotCrs: 'EPSG:26911',   // NAD83 / UTM zone 11N — fetched automatically

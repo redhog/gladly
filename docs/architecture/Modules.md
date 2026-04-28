@@ -12,31 +12,32 @@ Detailed breakdown of each source module, organised by subdirectory. For the hig
 - `Plot` — main plotting class
 - `LayerType` — class for defining custom layer types
 - `Layer` — data container DTO
-- `Data` — data normalisation wrapper
+- `Data`, `DataGroup` — data normalisation wrapper
 - `Axis` — first-class axis object (obtained via `plot.axes[name]`)
 - `linkAxes` — cross-plot axis linking
-- `AXES` — array of the four spatial axis names
-- `pointsLayerType` — built-in points `LayerType`
-- `linesLayerType` — built-in lines `LayerType`
-- `colorbarLayerType` — built-in 1D colorbar gradient `LayerType`
-- `colorbar2dLayerType` — built-in 2D colorbar `LayerType`
-- `filterbarLayerType` — built-in filterbar axis `LayerType`
-- `tileLayerType`, `TileLayerType` — built-in map tile `LayerType`
-- `Colorbar` — 1D colorbar plot (extends `Plot`)
-- `Colorbar2d` — 2D colorbar plot (extends `Plot`)
+- `AXES` — all 12 spatial axis names (including 3D); `AXES_2D` — the 4 standard 2D axes
+- `AXIS_GEOMETRY`, `axisEndpoints`, `axisPosAtN` — spatial axis geometry helpers
+- `AxisRegistry` — unified axis registry (spatial, color, and filter axes)
+- `Camera`, `TickLabelAtlas` — 3D/label helpers
+- `pointsLayerType`, `linesLayerType`, `barsLayerType` — built-in data layer types
+- `colorbarLayerType`, `colorbar2dLayerType` — built-in colorbar layer types
+- `filterbarLayerType` — built-in filterbar axis layer type
+- `tileLayerType`, `TileLayerType` — built-in map tile layer type
+- `Colorbar`, `Colorbar2d` — colorbar plot widgets (extend `Plot`)
 - `Float` — draggable, resizable floating widget container
-- `Filterbar` — filterbar plot (extends `Plot`)
+- `Filterbar` — filterbar plot widget (extends `Plot`)
+- `PlotGroup`, `ComputePipeline`, `ComputeOutput`
 - `registerLayerType`, `getLayerType`, `getRegisteredLayerTypes`
 - `registerAxisQuantityKind`, `getAxisQuantityKind`, `getRegisteredAxisQuantityKinds`
-- `registerColorscale`, `register2DColorscale`, `getRegisteredColorscales`, `getRegistered2DColorscales`, `getColorscaleIndex`, `get2DColorscaleIndex`, `buildColorGlsl`
-- `buildFilterGlsl`
-- `AxisRegistry`, `ColorAxisRegistry`, `FilterAxisRegistry`
+- `registerColorscale`, `register2DColorscale` — register 1D (stop-based) and 2D (GLSL) colorscales
+- `getRegisteredColorscales`, `getRegistered2DColorscales`, `getColorscaleIndex`, `get2DColorscaleIndex`
+- `buildColorGlsl`, `buildColorscaleTexture`, `getColorscalesVersion`, `buildFilterGlsl`
 - `registerEpsgDef`, `parseCrsCode`, `crsToQkX`, `crsToQkY`, `qkToEpsgCode`, `reproject`
-- `ColumnData`, `ArrayColumn`, `TextureColumn`, `GlslColumn` — column data class hierarchy
-- `Computation`, `TextureComputation`, `GlslComputation` — base classes for custom computations
-- `registerTextureComputation`, `registerGlslComputation`
-- `uploadToTexture`, `resolveExprToColumn`, `SAMPLE_COLUMN_GLSL`
-- `EXPRESSION_REF`, `EXPRESSION_REF_OPT`, `computationSchema`, `buildTransformSchema`
+- `ArrayColumn` — concrete column data class (wraps `Float32Array`)
+- `Computation`, `TextureComputation`, `GlslComputation`, `ComputedData` — base classes for custom computations
+- `registerTextureComputation`, `registerGlslComputation`, `registerComputedData`, `getComputedData`
+- `EXPRESSION_REF`, `EXPRESSION_REF_OPT`, `computationSchema`, `buildTransformSchema`, `resolveQuantityKind`
+- `ComputedDataNode`
 
 ---
 
@@ -51,9 +52,7 @@ Detailed breakdown of each source module, organised by subdirectory. For the hig
 this.regl                // WebGL context (regl)
 this.svg                 // D3 selection of the SVG overlay
 this.layers              // Layer[]
-this.axisRegistry        // AxisRegistry (spatial)
-this.colorAxisRegistry   // ColorAxisRegistry
-this.filterAxisRegistry  // FilterAxisRegistry
+this.axisRegistry        // AxisRegistry (handles spatial, color, and filter axes)
 this._renderCallbacks    // Set<function> — called after each render()
 ```
 
@@ -78,7 +77,7 @@ See architectural decision #7 in [Architecture Overview](index.md) for the full 
 **`_processLayers(layersConfig, data)`**
 1. For each `{ typeName: parameters }`, looks up the `LayerType`
 2. Calls `layerType.createLayer(parameters, data)` — resolves all axis quantities
-3. Registers axes with `AxisRegistry`, `ColorAxisRegistry`, `FilterAxisRegistry`
+3. Registers spatial, color, and filter axes via `axisRegistry.ensureAxis`, `ensureColorAxis`, `ensureFilterAxis`
 4. Calls `layerType.createDrawCommand(regl, layer)` and stores the result
 
 **`_setDomains(axesOverrides)`** — Computes auto-domains from layer data for spatial, color, and filter axes; applies any config overrides.
@@ -158,7 +157,7 @@ See architectural decision #7 in [Architecture Overview](index.md) for the full 
 
 ---
 
-### `core/Data.js`
+### `data/Data.js`
 
 **Purpose:** Normalise plain data objects of several formats into a consistent columnar interface.
 
@@ -224,7 +223,7 @@ this.axisQuantityKinds = {} // { axisName: quantityKind }
 
 **`applyAutoDomainsFromLayers(layers, axesOverrides)`** — Scans all layers to compute per-axis min/max; applies config overrides; validates log-scale domains.
 
-**Exports `AXES`** — the four canonical spatial axis names: `["xaxis_bottom", "xaxis_top", "yaxis_left", "yaxis_right"]`.
+**Exports `AXES`** — all 12 spatial axis names (including 3D and back-face axes). **`AXES_2D`** — the four standard 2D axes: `["xaxis_bottom", "xaxis_top", "yaxis_left", "yaxis_right"]`. Also exports `AXIS_GEOMETRY`, `axisEndpoints`, `axisPosAtN`, `buildFilterGlsl`.
 
 ---
 
@@ -252,35 +251,13 @@ Accepts any object implementing the `Axis` interface (duck typing), not just `Ax
 
 ---
 
-### `axes/ColorAxisRegistry.js`
+### `axes/ColorAxisRegistry.js` / `axes/FilterAxisRegistry.js`
 
-**Purpose:** Track color axis quantity kinds, ranges, and colorscale preferences. Internal — managed by `Plot`.
+These files are stubs (`// Merged into AxisRegistry.js`). All color and filter axis functionality is implemented directly in `AxisRegistry.js`:
 
-**`ensureColorAxis(quantityKind, colorscaleOverride?)`** — Registers a quantity kind if not already present; applies a colorscale override if given.
-
-**`setRange(quantityKind, min, max)`** — Stores the resolved range.
-
-**`getColorscale(quantityKind)`** — Returns the active colorscale name (override → quantity kind registry → null).
-
-**`getColorscaleIndex(quantityKind)`** — Returns the integer colorscale index used as a GLSL uniform.
-
-**`applyAutoDomainsFromLayers(layers, axesOverrides)`** — Scans layer data for auto-range; applies config overrides; validates log-scale ranges.
-
----
-
-### `axes/FilterAxisRegistry.js`
-
-**Purpose:** Track filter axis quantity kinds and their active ranges. Internal — managed by `Plot`.
-
-**`ensureFilterAxis(quantityKind)`** — Registers a quantity kind with open bounds (`null` min and max).
-
-**`setRange(quantityKind, min, max)`** — Sets one or both bounds (each independently nullable for open bounds).
-
-**`getRangeUniform(quantityKind)`** — Returns `[min, max, hasMin, hasMax]` for use as a GLSL `vec4` uniform.
-
-**`getDataExtent(quantityKind)`** — Returns `[min, max]` of the raw data (used by `Filterbar` to set the visible range when a bound is open).
-
-**`buildFilterGlsl()`** (module-level export) — Returns the `filter_in_range(vec4 range, float value)` GLSL helper string.
+- **`ensureColorAxis(qk, colorscaleOverride?)`** — registers a color axis quantity kind
+- **`ensureFilterAxis(qk)`** — registers a filter axis quantity kind with open bounds
+- **`getColorscaleIndex(qk)`** — returns the integer colorscale index used as a GLSL uniform
 
 ---
 
@@ -298,7 +275,7 @@ Attached to the plot SVG during `_initialize()`. Detects which region the gestur
 
 **Purpose:** Store GLSL colorscale functions and build the dispatch code.
 
-**`registerColorscale(name, glslFn)`** — Adds a named 1D GLSL function (`vec4 colorscale_NAME(float t)`).
+**`registerColorscale(name, stops, nanColor)`** — Registers a 1D colorscale from color stops `[[t, r, g, b], ...]`. The stops are uploaded to a GPU texture; GLSL lookup is handled automatically. `nanColor` defaults to `[0.5, 0.5, 0.5]`.
 
 **`register2DColorscale(name, glslFn)`** — Adds a named 2D GLSL function (`vec4 colorscale_2d_NAME(vec2 t)`).
 
@@ -485,7 +462,7 @@ The `compute/` directory implements the **computed attribute system**: a class-b
 - `GlslComputation extends Computation` — subclasses must implement `glsl(resolvedGlslParams) => string`
 
 **Utility functions:**
-- `uploadToTexture(regl, array)` — uploads `Float32Array` to an R-channel, 1-value/texel, 2D regl texture; sets `tex._dataLength`
+- `uploadToTexture(regl, array)` — uploads `Float32Array` to an RGBA float texture packing 4 values per texel; sets `tex._dataLength`. Sampled via the injected `sampleColumn(sampler2D, float i)` GLSL helper.
 - `resolveExprToColumn(expr, data, regl, plot)` — resolves string/expression/ColumnData to a `ColumnData` instance
 - `SAMPLE_COLUMN_GLSL` — GLSL `sampleColumn(sampler2D, float)` helper string; injected automatically into shaders using column data
 
@@ -516,7 +493,7 @@ Each file defines one or more `TextureComputation` subclasses and registers them
 | `compute/axisFilter.js` | `filteredHistogram` | Like `histogram` but filters input by a filter axis range before counting; axis-reactive |
 | `compute/kde.js` | `kde` | Gaussian-smoothed kernel density estimate over a histogram or raw array |
 | `compute/filter.js` | `filter1D`, `lowPass`, `highPass`, `bandPass` | 1-D GPU convolution; Gaussian low/high/band-pass variants built on top |
-| `compute/fft.js` | `fft1d`, `fftConvolution` | GPU Cooley–Tukey FFT of a real signal; FFT-based convolution |
+| `compute/fft.js` | `fftConvolution` (TextureComputation); `FftData` (ComputedData — produces `real` + `imag` columns) | GPU Cooley–Tukey FFT; FFT-based convolution |
 | `compute/conv.js` | `convolution` | Adaptive convolution: single-pass GPU (kernel ≤ 1024), chunked GPU (≤ 8192), or FFT fallback |
 
 See [Computations](../extension-api/Computations.md) for usage, parameter schemas, and extension examples.

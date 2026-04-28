@@ -128,37 +128,53 @@ FFT-based convolution for large signals.
 
 #### linspace
 
-Generates linearly spaced values.
+Generates `length` evenly-spaced values on the GPU. Output values are `(i + 0.5) / length` for `i` in `[0, length)` — i.e. bin centres uniformly covering `]0, 1[`. Useful as a normalised x-axis for histogram or KDE output.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `start` | number | yes | Start value |
-| `stop` | number | yes | Stop value |
-| `num` | number | yes | Number of samples |
+| `length` | integer | yes | Number of values to generate |
 
 ---
 
 #### range
 
-Generates a range of integer values.
+Generates `length` consecutive integer values on the GPU: `0, 1, 2, …, length-1`. Useful as a point index column for instanced rendering.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `start` | number | yes | Start value |
-| `stop` | number | yes | Stop value (exclusive) |
-| `step` | number | no | Step size (default: 1) |
+| `length` | integer | yes | Number of values to generate |
 
 ---
 
 #### random
 
-Generates random values.
+Generates `length` pseudorandom values on the GPU. Output values are in `]0, 1[`. Uses a deterministic hash keyed by index and `seed`, so the same `seed` always produces the same sequence.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `num` | number | yes | Number of samples |
-| `min` | number | no | Minimum value (default: 0) |
-| `max` | number | no | Maximum value (default: 1) |
+| `length` | integer | yes | Number of values to generate |
+| `seed` | integer | no | Integer seed for reproducibility (default: random each run) |
+
+---
+
+#### glslExpr
+
+Composes a new column as a GLSL expression over one or more named input columns. The expression runs in the vertex shader — no extra GPU pass is needed.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `expr` | string | yes | GLSL expression; reference named inputs as `{name}` placeholders |
+| `inputs` | object | no | Map of placeholder names to input column expressions |
+
+```javascript
+// Compute the vector magnitude from two columns
+{
+  points: {
+    xData: "time",
+    yData: { glslExpr: { expr: "sqrt({vx}*{vx} + {vy}*{vy})", inputs: { vx: "vel_x", vy: "vel_y" } } }
+  }
+}
+```
 
 ---
 
@@ -175,7 +191,7 @@ A transform transforms an entire dataset into a new dataset. The output can have
 | Output | Single column, same length as input | Entire dataset, possibly different length and columns |
 | Specification | Inline in layer parameters | In `config.transforms` array |
 | Access | Used directly in layer params | Access via `data.transformName.columnName` |
-| Example | `vData: { histogram: { input: "x", bins: 50 } }` | `transforms: [{ name: "hist", HistogramData: {...} }]` |
+| Example | `vData: { histogram: { input: "x", bins: 50 } }` | `transforms: [{ name: "hist", transform: { HistogramData: {...} } }]` |
 
 A transform can consist of **multiple computed attributes** if the transform type is elementwise — see `ElementwiseData` below.
 
@@ -186,10 +202,12 @@ config: {
   transforms: [
     {
       name: "histogram",
-      HistogramData: {
-        input: "temperature",
-        bins: 50,
-        filter: "depth"
+      transform: {
+        HistogramData: {
+          input: "temperature",
+          bins: 50,
+          filter: "depth"
+        }
       }
     }
   ]
@@ -228,8 +246,6 @@ Computes Fast Fourier Transform with real and imaginary outputs.
 **Output columns:**
 - `real` — real component
 - `imag` — imaginary component
-- `magnitude` — magnitude (computed)
-- `phase` — phase (computed)
 
 ---
 
@@ -276,7 +292,7 @@ Expressions can be:
    ```javascript
    config: {
      transforms: [
-       { name: "myHist", HistogramData: { input: "data", bins: 20 } }
+       { name: "myHist", transform: { HistogramData: { input: "data", bins: 20 } } }
      ]
    }
    // Results in data.myHist.binCenters and data.myHist.counts

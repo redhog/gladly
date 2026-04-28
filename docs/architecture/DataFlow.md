@@ -38,8 +38,7 @@ Plot._initialize()
   │
   ├─> Initialise regl WebGL context on canvas
   ├─> Create AxisRegistry(width, height)
-  ├─> Create ColorAxisRegistry
-  ├─> Create FilterAxisRegistry
+  │   (handles spatial, color, and filter axes)
   │
   ├─> Plot._processLayers(config.layers, data)
   │   │
@@ -49,17 +48,15 @@ Plot._initialize()
   │       │
   │       ├─> layerType.createLayer(parameters, data)
   │       │   ├─> User createLayer: extract Float32Arrays, return config object
-  │       │   ├─> resolveAxisQuantityKinds()  — merge static + getAxisQuantityKinds()
-  │       │   ├─> resolveColorAxisQuantityKinds()
-  │       │   ├─> resolveFilterAxisQuantityKinds()
-  │       │   └─> Construct Layer instance (validates Float32Arrays)
+  │       │   ├─> resolveAxisConfig()  — merge static declarations + getAxisConfig()
+  │       │   └─> Construct Layer instance
   │       │
-  │       ├─> AxisRegistry.ensureAxis(layer.xAxis, layer.xAxisQuantityKind)
+  │       ├─> axisRegistry.ensureAxis(layer.xAxis, layer.xAxisQuantityKind)
   │       │   └─> Create D3 scale if new; throw if quantity kind conflicts
-  │       ├─> AxisRegistry.ensureAxis(layer.yAxis, layer.yAxisQuantityKind)
+  │       ├─> axisRegistry.ensureAxis(layer.yAxis, layer.yAxisQuantityKind)
   │       │
-  │       ├─> ColorAxisRegistry.ensureColorAxis(quantityKind) — per color slot
-  │       ├─> FilterAxisRegistry.ensureFilterAxis(quantityKind) — per filter slot
+  │       ├─> axisRegistry.ensureColorAxis(quantityKind) — per color slot
+  │       ├─> axisRegistry.ensureFilterAxis(quantityKind) — per filter slot
   │       │
   │       └─> layerType.createDrawCommand(regl, layer)
   │           ├─> Inject map_color() GLSL if color axes present
@@ -130,10 +127,10 @@ plot.render()
   │   │   ├─> viewport ← { x:0, y:0, width, height }
   │   │   ├─> count    ← layer.vertexCount ?? layer.attributes.x.length
   │   │   ├─> Per color slot:
-  │   │   │     colorscale_<slot>  ← colorAxisRegistry.getIndex(quantityKind)
-  │   │   │     color_range_<slot> ← colorAxisRegistry.getRange(quantityKind)
+  │   │   │     colorscale_<slot>  ← axisRegistry.getColorscaleIndex(quantityKind)
+  │   │   │     color_range_<slot> ← axisRegistry color range for quantityKind
   │   │   └─> Per filter slot:
-  │   │         filter_range_<slot> ← filterAxisRegistry.getVec4(quantityKind)
+  │   │         filter_range_<slot> ← axisRegistry.getRangeUniform(quantityKind)
   │   │           → vec4 [min, max, hasMin, hasMax]
   │   │
   │   └─> drawCommand(runtimeProps)
@@ -154,7 +151,7 @@ plot.render()
   │       │           └─> Fragment shader (once per rasterised pixel):
   │       │               ├─> Optionally: discard via filter_in_range()
   │       │               ├─> map_color() → look up colorscale, normalise value → RGBA
-  │       │               └─> Write gl_FragColor
+  │       │               └─> Write fragColor (out vec4)
   │       └─> (end tile loop)
   │
   ├─> plot.renderAxes()

@@ -178,10 +178,12 @@ config: {
   transforms: [
     {
       name: "histogram",
-      HistogramData: {
-        input: "temperature",
-        bins: 50,
-        filter: "depth"
+      transform: {
+        HistogramData: {
+          input: "temperature",
+          bins: 50,
+          filter: "depth"
+        }
       }
     }
   ]
@@ -190,8 +192,7 @@ config: {
 
 Each entry is an object with:
 - `name`: key to access the transformed data (e.g., `data.histogram.counts`)
-- `transformType`: the computation type (e.g., `HistogramData`, `FftData`, `ElementwiseData`)
-- `params`: computation-specific parameters
+- `transform`: object with a single key — the computation class name (e.g., `HistogramData`, `FftData`, `ElementwiseData`) — and its parameters as the value
 
 See [Computations](Computations.md) for the full list of available transforms and their parameters.
 

@@ -2,7 +2,7 @@
 
 All [matplotlib colorscales](https://matplotlib.org/stable/gallery/color/colormap_reference.html) are registered by default on import.
 
-Use `registerColorscale(name, glslFn)` to add custom colorscales.
+Use `registerColorscale(name, stops, nanColor?)` to add custom 1D colorscales. `stops` is an array of `[t, r, g, b]` entries where `t ∈ [0, 1]` and `r, g, b ∈ [0, 1]`. For 2D colorscales use `register2DColorscale(name, glslFn)` where `glslFn` is a GLSL function `vec4 colorscale_2d_NAME(vec2 t)`. See [Extension API](../extension-api/LayerTypes.md#registercolorscalename-stops-nancolor) for details.
 
 ---
 

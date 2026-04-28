@@ -45,7 +45,7 @@ All axes — spatial, color, and filter — share two concepts:
 
 ### Spatial Axes
 
-A plot has up to four **spatial axes** (`xaxis_bottom`, `xaxis_top`, `yaxis_left`, `yaxis_right`). For spatial axes the quantity kind is any string; it determines the axis label and, for the special value `"log10"`, switches to a logarithmic scale.
+A plot has up to four standard 2D **spatial axes** (`xaxis_bottom`, `xaxis_top`, `yaxis_left`, `yaxis_right`), plus 3D axes when a 3D layer type is used. For spatial axes the quantity kind is any string; it determines the axis label. A log scale is enabled by registering the quantity kind with `scale: "log"` via `registerAxisQuantityKind`, or by setting `config.axes[name].scale: "log"` per plot.
 
 ### Color Axes
 
@@ -181,7 +181,7 @@ plot.update({
 
 - **[Quick Start](../Quickstart.md)** — installation and minimal working example
 - **[Configuring Plots](../configuration/PlotConfiguration.md)** — plot.update(), axes config, auto-range, multi-layer, interaction
-- **[Built-in Layer Types](../configuration/BuiltInLayerTypes.md)** — points, lines, bars, histogram, tile, colorbar, filterbar
+- **[Built-in Layer Types](../configuration/BuiltInLayerTypes.md)** — points, lines, bars, tile, colorbar, colorbar2d, filterbar
 - **[Computations](../configuration/Computations.md)** — transforms and computed attributes
 - **[PlotGroup](../user-api/PlotGroup.md)** — coordinating multiple plots with shared data and auto-linking
 - **[Writing Layer Types](../extension-api/LayerTypes.md)** — custom layer types with shaders, color axes, filter axes
