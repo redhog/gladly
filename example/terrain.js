@@ -48,20 +48,20 @@ const initialConfig = {
           xyz: {
             url: 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png',
             maxZoom: 15,
+            encoding: 'terrarium',
+            crs: 'EPSG:3857',
           },
         },
-        dtmTileCrs:  'EPSG:3857',
         satSource: {
           xyz: {
             url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
             subdomains: ['a', 'b', 'c'],
             maxZoom: 19,
+            crs: 'EPSG:3857',
           },
         },
-        satTileCrs:  'EPSG:3857',
         plotCrs:     'EPSG:4326',
         tessellation: 16,
-        dtmEncoding: 'terrarium',
         opacity:     1.0,
         xAxis:       'xaxis_bottom',
         yAxis:       'yaxis_left',

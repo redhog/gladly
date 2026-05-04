@@ -51,6 +51,128 @@ export function resolveSource(source) {
   return { type, ...source[type] }
 }
 
+// ─── Presets ──────────────────────────────────────────────────────────────────
+
+export const SAT_PRESETS = [
+  {
+    title: 'OpenStreetMap (preset)',
+    source: { xyz: { url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', subdomains: ['a', 'b', 'c'], maxZoom: 19, crs: 'EPSG:3857' } },
+  },
+  {
+    title: 'NASA GIBS Blue Marble WMS (preset)',
+    source: { wms: { url: 'https://gibs.earthdata.nasa.gov/wms/epsg3857/best/wms.cgi', layers: 'BlueMarble_NextGeneration', format: 'image/jpeg', transparent: false, version: '1.1.1', crs: 'EPSG:3857' } },
+  },
+  {
+    title: 'USGS National Map Topo WMTS (preset)',
+    source: { wmts: { url: 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/WMTS', layer: 'USGSTopo', tileMatrixSet: 'GoogleMapsCompatible', format: 'image/jpeg', crs: 'EPSG:3857' } },
+  },
+]
+
+export const DTM_PRESETS = [
+  {
+    title: 'AWS Open Terrain — terrarium (preset)',
+    source: { xyz: { url: 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png', maxZoom: 15, encoding: 'terrarium', crs: 'EPSG:3857' } },
+  },
+  {
+    title: 'Mapbox Terrain-RGB (preset)',
+    source: { xyz: { url: 'https://api.mapbox.com/v4/mapbox.terrain-rgb/{z}/{x}/{y}.pngraw?access_token=TOKEN', maxZoom: 15, encoding: 'mapbox', crs: 'EPSG:3857' } },
+  },
+  {
+    title: 'MapTiler Terrain (preset)',
+    source: { xyz: { url: 'https://api.maptiler.com/tiles/terrain-rgb-v2/{z}/{x}/{y}.webp?key=KEY', maxZoom: 15, encoding: 'mapbox', crs: 'EPSG:3857' } },
+  },
+  {
+    title: 'USGS 3DEP WMS — grayscale (preset)',
+    source: { wms: { url: 'https://elevation.nationalmap.gov/arcgis/services/3DEPElevation/ImageServer/WMSServer', layers: '3DEPElevation', format: 'image/png', version: '1.3.0', transparent: false, encoding: 'grayscale', crs: 'EPSG:3857' } },
+  },
+  {
+    title: 'USGS 3DEP WMTS — grayscale (preset)',
+    source: { wmts: { url: 'https://elevation.nationalmap.gov/arcgis/rest/services/3DEPElevation/ImageServer/WMTS', layer: '3DEPElevation', tileMatrixSet: 'GoogleMapsCompatible', format: 'image/png', encoding: 'grayscale', crs: 'EPSG:3857' } },
+  },
+]
+
+// ─── Source schema builder ─────────────────────────────────────────────────────
+// Base protocol alternatives (XYZ / WMS / WMTS) come first so editors that
+// match anyOf by first-valid always resolve to the bare protocol name rather
+// than a preset name for existing data.  Preset alternatives follow, providing
+// named defaults for one-click setup.
+
+export function makeSourceSchema(presets, { includeEncoding = false } = {}) {
+  const crsProp = {
+    crs: {
+      type: 'string',
+      default: 'EPSG:3857',
+      description: 'CRS of the tile service (XYZ/WMTS: tile grid CRS; WMS: SRS/CRS parameter).',
+      examples: ['EPSG:3857', 'EPSG:4326'],
+    },
+  }
+  const encodingProp = includeEncoding ? {
+    encoding: {
+      type: 'string',
+      enum: ['terrarium', 'mapbox', 'grayscale'],
+      default: 'terrarium',
+      description: 'Elevation encoding. terrarium: AWS RGB (R×256+G+B/256−32768 m). mapbox: Mapbox/MapTiler RGB. grayscale: single-channel 0–1 (calibrate yAxis to real elevation range).',
+    },
+  } : {}
+  const extra = { ...crsProp, ...encodingProp }
+
+  const xyzProps = {
+    url:        { type: 'string', description: 'URL template with {z}, {x}, {y}, optional {s}' },
+    subdomains: { type: 'array', items: { type: 'string' }, default: ['a', 'b', 'c'] },
+    minZoom:    { type: 'integer', default: 0 },
+    maxZoom:    { type: 'integer', default: 19 },
+    ...extra,
+  }
+  const wmsProps = {
+    url:         { type: 'string', description: 'WMS service base URL' },
+    layers:      { type: 'string', description: 'Comma-separated layer names' },
+    styles:      { type: 'string', default: '', description: 'Comma-separated style names (optional)' },
+    format:      { type: 'string', default: 'image/png' },
+    version:     { type: 'string', enum: ['1.1.1', '1.3.0'], default: '1.1.1' },
+    transparent: { type: 'boolean', default: false },
+    ...extra,
+  }
+  const wmtsProps = {
+    url:           { type: 'string', description: 'WMTS base URL (RESTful template or KVP endpoint)' },
+    layer:         { type: 'string' },
+    style:         { type: 'string', default: 'default' },
+    format:        { type: 'string', default: 'image/png' },
+    tileMatrixSet: { type: 'string', default: 'GoogleMapsCompatible' },
+    minZoom:       { type: 'integer', default: 0 },
+    maxZoom:       { type: 'integer', default: 19 },
+    ...extra,
+  }
+
+  const makeAlt = (title, type, props, required, defaultVal) => ({
+    title,
+    properties: {
+      [type]: { type: 'object', properties: props, required, ...(defaultVal ? { default: defaultVal } : {}) },
+    },
+    required: [type],
+    additionalProperties: false,
+  })
+
+  const baseAlts = [
+    makeAlt('XYZ',  'xyz',  xyzProps,  ['url'],           null),
+    makeAlt('WMS',  'wms',  wmsProps,  ['url', 'layers'], null),
+    makeAlt('WMTS', 'wmts', wmtsProps, ['url', 'layer'],  null),
+  ]
+
+  const presetAlts = presets.map(p => {
+    const type = Object.keys(p.source)[0]
+    const props = type === 'xyz' ? xyzProps : type === 'wms' ? wmsProps : wmtsProps
+    const required = type === 'xyz' ? ['url'] : type === 'wms' ? ['url', 'layers'] : ['url', 'layer']
+    return makeAlt(p.title, type, props, required, p.source[type])
+  })
+
+  return {
+    type: 'object',
+    description: 'Tile source. Exactly one of xyz, wms, or wmts must be present.',
+    anyOf: [...baseAlts, ...presetAlts],
+    default: presets.length > 0 ? presets[0].source : undefined,
+  }
+}
+
 // ─── URL builders ──────────────────────────────────────────────────────────────
 
 export function buildXyzUrl(source, z, x, y) {
@@ -476,113 +598,10 @@ class TileLayerType extends LayerType {
       $schema: 'https://json-schema.org/draft/2020-12/schema',
       type: 'object',
       properties: {
-        source: {
-          type: 'object',
-          description: 'Tile source configuration. Exactly one key (xyz, wms, or wmts) must be present.',
-          anyOf: [
-            {
-              title: 'XYZ',
-              properties: {
-                xyz: {
-                  type: 'object',
-                  properties: {
-                    url: { type: 'string', default: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', description: 'URL template with {z}, {x}, {y}, optional {s}' },
-                    subdomains: { type: 'array', items: { type: 'string' }, default: ['a', 'b', 'c'], description: 'Subdomain letters for {s}' },
-                    minZoom: { type: 'integer', default: 0 },
-                    maxZoom: { type: 'integer', default: 19 },
-                  },
-                  required: ['url'],
-                  default: {
-                    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-                    subdomains: ['a', 'b', 'c'],
-                  },
-                },
-              },
-              required: ['xyz'],
-              additionalProperties: false,
-            },
-            {
-              title: 'WMS',
-              properties: {
-                wms: {
-                  type: 'object',
-                  properties: {
-                    url: { type: 'string', default: 'https://gibs.earthdata.nasa.gov/wms/epsg3857/best/wms.cgi', description: 'WMS service base URL' },
-                    layers: { type: 'string', default: 'BlueMarble_NextGeneration', description: 'Comma-separated layer names' },
-                    styles: { type: 'string', default: '', description: 'Comma-separated style names (optional)' },
-                    format: { type: 'string', default: 'image/jpeg' },
-                    version: { type: 'string', enum: ['1.1.1', '1.3.0'], default: '1.1.1' },
-                    transparent: { type: 'boolean', default: false },
-                  },
-                  required: ['url', 'layers'],
-                  default: {
-                    url: 'https://gibs.earthdata.nasa.gov/wms/epsg3857/best/wms.cgi',
-                    layers: 'BlueMarble_NextGeneration',
-                    format: 'image/jpeg',
-                    transparent: false,
-                    version: '1.1.1',
-                  },
-                },
-              },
-              required: ['wms'],
-              additionalProperties: false,
-            },
-            {
-              title: 'WMTS',
-              properties: {
-                wmts: {
-                  type: 'object',
-                  properties: {
-                    url: { type: 'string', default: 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/WMTS', description: 'WMTS base URL (RESTful template or KVP endpoint)' },
-                    layer: { type: 'string', default: 'USGSTopo' },
-                    style: { type: 'string', default: 'default' },
-                    format: { type: 'string', default: 'image/jpeg' },
-                    tileMatrixSet: { type: 'string', default: 'GoogleMapsCompatible' },
-                    minZoom: { type: 'integer', default: 0 },
-                    maxZoom: { type: 'integer', default: 19 },
-                  },
-                  required: ['url', 'layer'],
-                  default: {
-                    url: 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/WMTS',
-                    layer: 'USGSTopo',
-                    tileMatrixSet: 'GoogleMapsCompatible',
-                    format: 'image/jpeg',
-                  },
-                },
-              },
-              required: ['wmts'],
-              additionalProperties: false,
-            },
-          ],
-          default: {
-            xyz: {
-              url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-              subdomains: ['a', 'b', 'c'],
-            },
-          },
-        },
-        tileCrs: {
-          type: 'string',
-          default: 'EPSG:3857',
-          description: 'CRS of the tile service. For XYZ/WMTS this is the tile grid CRS; for WMS this becomes the CRS/SRS parameter in GetMap requests. Defaults to EPSG:3857 (Web Mercator).',
-          examples: ['EPSG:3857', 'EPSG:4326'],
-        },
-        plotCrs: {
-          type: 'string',
-          description: 'CRS of the plot axes (e.g. "EPSG:26911"). Defaults to tileCrs (no reprojection).',
-        },
-        tessellation: {
-          type: 'integer',
-          default: 8,
-          minimum: 1,
-          description: 'Grid resolution (N×N quads per tile) for reprojection accuracy.',
-        },
-        opacity: {
-          type: 'number',
-          default: 1.0,
-          minimum: 0,
-          maximum: 1,
-        },
+        source:       { ...makeSourceSchema(SAT_PRESETS), description: 'Tile source. crs is configured inside the source.' },
+        plotCrs:      { type: 'string', description: 'CRS of the plot axes (e.g. "EPSG:26911"). Defaults to source crs.' },
+        tessellation: { type: 'integer', default: 8, minimum: 1, description: 'Grid resolution (N×N quads per tile) for reprojection accuracy.' },
+        opacity:      { type: 'number', default: 1.0, minimum: 0, maximum: 1 },
         xAxis: { type: 'string', enum: AXES.filter(a => a.includes('x')), default: 'xaxis_bottom' },
         yAxis: { type: 'string', enum: AXES.filter(a => a.includes('y')), default: 'yaxis_left' },
       },
@@ -591,14 +610,10 @@ class TileLayerType extends LayerType {
   }
 
   resolveAxisConfig(parameters, _data) {
-    const {
-      xAxis = 'xaxis_bottom',
-      yAxis = 'yaxis_left',
-      plotCrs,
-      tileCrs,
-    } = parameters
-    const effectiveTileCrs = tileCrs ?? 'EPSG:3857'
-    const effectivePlotCrs = plotCrs ?? effectiveTileCrs
+    const { xAxis = 'xaxis_bottom', yAxis = 'yaxis_left', plotCrs, source: sourceSpec } = parameters
+    let tileCrs = 'EPSG:3857'
+    try { tileCrs = resolveSource(sourceSpec).crs ?? 'EPSG:3857' } catch (_) {}
+    const effectivePlotCrs = plotCrs ?? tileCrs
     return {
       xAxis,
       xAxisQuantityKind: crsToQkX(effectivePlotCrs),
@@ -614,15 +629,14 @@ class TileLayerType extends LayerType {
       xAxis = 'xaxis_bottom',
       yAxis = 'yaxis_left',
       plotCrs,
-      tileCrs,
       source: sourceSpec,
       tessellation = 8,
       opacity = 1.0,
     } = parameters
-    const effectiveTileCrs = tileCrs ?? 'EPSG:3857'
+    const source = resolveSource(sourceSpec)
+    const effectiveTileCrs = source.crs ?? 'EPSG:3857'
     const effectivePlotCrs = plotCrs ?? effectiveTileCrs
     const N = tessellation
-    const source = resolveSource(sourceSpec)
     const axisConfig = this.resolveAxisConfig(parameters, _data)
 
     // Pre-compute shared UV data — same for all tiles with the same tessellation N.

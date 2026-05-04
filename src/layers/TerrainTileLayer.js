@@ -7,6 +7,7 @@ import { parseCrsCode, crsToQkX, crsToQkY, ensureCrsDefined } from '../geo/EpsgU
 import {
   buildXyzUrl, buildWmtsUrl, buildWmsUrl, optimalZoom,
   mercToTileXY, tileToMercBbox, resolveSource,
+  makeSourceSchema, SAT_PRESETS, DTM_PRESETS,
 } from './TileLayer.js'
 
 const DOMAIN_CHANGE_THRESHOLD = 0.02
@@ -577,48 +578,10 @@ void main() {
 `
 
 // ─── TerrainTileLayerType ─────────────────────────────────────────────────────
+// See docs/dtm-sources.md for a list of public DTM/DEM tile sources.
 
-const SOURCE_SCHEMA = {
-  type: 'object',
-  description: 'Tile source. Set exactly one of: xyz, wms, or wmts.',
-  properties: {
-    xyz: {
-      type: 'object',
-      description: 'XYZ/TMS slippy-map tiles',
-      properties: {
-        url:        { type: 'string', description: 'URL template with {z}, {x}, {y}, optional {s}' },
-        subdomains: { type: 'array', items: { type: 'string' }, default: ['a', 'b', 'c'] },
-        minZoom:    { type: 'integer', default: 0 },
-        maxZoom:    { type: 'integer', default: 19 },
-      },
-    },
-    wms: {
-      type: 'object',
-      description: 'OGC Web Map Service',
-      properties: {
-        url:         { type: 'string' },
-        layers:      { type: 'string' },
-        styles:      { type: 'string', default: '' },
-        format:      { type: 'string', default: 'image/png' },
-        version:     { type: 'string', enum: ['1.1.1', '1.3.0'], default: '1.1.1' },
-        transparent: { type: 'boolean', default: true },
-      },
-    },
-    wmts: {
-      type: 'object',
-      description: 'OGC Web Map Tile Service',
-      properties: {
-        url:           { type: 'string' },
-        layer:         { type: 'string' },
-        style:         { type: 'string', default: 'default' },
-        format:        { type: 'string', default: 'image/png' },
-        tileMatrixSet: { type: 'string', default: 'GoogleMapsCompatible' },
-        minZoom:       { type: 'integer', default: 0 },
-        maxZoom:       { type: 'integer', default: 19 },
-      },
-    },
-  },
-}
+const DTM_SOURCE_SCHEMA = makeSourceSchema(DTM_PRESETS, { includeEncoding: true })
+const SAT_SOURCE_SCHEMA = makeSourceSchema(SAT_PRESETS)
 
 class TerrainTileLayerType extends LayerType {
   constructor() {
@@ -630,14 +593,11 @@ class TerrainTileLayerType extends LayerType {
       $schema: 'https://json-schema.org/draft/2020-12/schema',
       type: 'object',
       properties: {
-        dtmSource:   { ...SOURCE_SCHEMA, description: 'Elevation (DTM) tile source' },
-        dtmTileCrs:  { type: 'string', default: 'EPSG:3857', description: 'CRS of the DTM tile grid' },
-        satSource:   { ...SOURCE_SCHEMA, description: 'Satellite/imagery tile source draped over terrain' },
-        satTileCrs:  { type: 'string', default: 'EPSG:3857', description: 'CRS of the satellite tile grid' },
-        plotCrs:     { type: 'string', description: 'CRS of the x/z plot axes. Defaults to dtmTileCrs.' },
+        dtmSource:    { ...DTM_SOURCE_SCHEMA, description: 'Elevation (DTM) tile source. encoding and crs are set per source.' },
+        satSource:    { ...SAT_SOURCE_SCHEMA, description: 'Satellite/imagery tile source draped over terrain. crs is set per source.' },
+        plotCrs:      { type: 'string', description: 'CRS of the x/z plot axes. Defaults to the dtmSource crs.' },
         tessellation: { type: 'integer', default: 16, minimum: 1, description: 'Grid resolution N×N quads per DTM tile' },
-        dtmEncoding: { type: 'string', enum: ['grayscale', 'mapbox', 'terrarium'], default: 'terrarium' },
-        opacity:     { type: 'number', default: 1.0, minimum: 0, maximum: 1 },
+        opacity:      { type: 'number', default: 1.0, minimum: 0, maximum: 1 },
         xAxis: { type: 'string', enum: AXES.filter(a => a.includes('x')), default: 'xaxis_bottom' },
         yAxis: { type: 'string', enum: AXES.filter(a => a.includes('y')), default: 'yaxis_left', description: 'Elevation axis' },
         zAxis: { type: 'string', enum: AXES.filter(a => a.includes('z')), default: 'zaxis_bottom_left' },
@@ -652,9 +612,11 @@ class TerrainTileLayerType extends LayerType {
       yAxis = 'yaxis_left',
       zAxis = 'zaxis_bottom_left',
       plotCrs,
-      dtmTileCrs = 'EPSG:3857',
+      dtmSource: dtmSourceSpec,
     } = parameters
-    const effectivePlotCrs = plotCrs ?? dtmTileCrs
+    let dtmCrs = 'EPSG:3857'
+    try { dtmCrs = resolveSource(dtmSourceSpec).crs ?? 'EPSG:3857' } catch (_) {}
+    const effectivePlotCrs = plotCrs ?? dtmCrs
     return {
       xAxis,
       xAxisQuantityKind: crsToQkX(effectivePlotCrs),
@@ -673,23 +635,21 @@ class TerrainTileLayerType extends LayerType {
       xAxis = 'xaxis_bottom',
       yAxis = 'yaxis_left',
       zAxis = 'zaxis_bottom_left',
-      dtmTileCrs = 'EPSG:3857',
-      satTileCrs = 'EPSG:3857',
       plotCrs,
       dtmSource: dtmSourceSpec,
       satSource: satSourceSpec,
       tessellation = 16,
-      dtmEncoding  = 'terrarium',
       opacity      = 1.0,
     } = parameters
-
-    const effectiveDtmTileCrs = dtmTileCrs
-    const effectiveSatTileCrs = satTileCrs
-    const effectivePlotCrs    = plotCrs ?? effectiveDtmTileCrs
 
     const axisConfig = this.resolveAxisConfig(parameters, _data)
     const dtmSource  = resolveSource(dtmSourceSpec)
     const satSource  = resolveSource(satSourceSpec)
+
+    const effectiveDtmTileCrs = dtmSource.crs ?? 'EPSG:3857'
+    const effectiveSatTileCrs = satSource.crs ?? 'EPSG:3857'
+    const effectivePlotCrs    = plotCrs ?? effectiveDtmTileCrs
+    const dtmEncoding         = dtmSource.encoding ?? 'terrarium'
 
     const N = tessellation
     const vertexCount = N * N * 6
