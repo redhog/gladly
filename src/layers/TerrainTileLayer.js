@@ -15,6 +15,16 @@ const MAX_TILE_CACHE = 50
 
 // ─── Terrain mesh builder ─────────────────────────────────────────────────────
 
+function safeProject(fn, x, y) {
+  if (!fn) return [x, y]
+  try {
+    const [rx, ry] = fn([x, y])
+    return (isFinite(rx) && isFinite(ry)) ? [rx, ry] : [NaN, NaN]
+  } catch {
+    return [NaN, NaN]
+  }
+}
+
 function buildTerrainTileMesh(tileBbox, dtmTileCrs, plotCrs, satTileCrs, N) {
   const dtmCode  = parseCrsCode(dtmTileCrs)
   const plotCode = parseCrsCode(plotCrs)
@@ -26,16 +36,17 @@ function buildTerrainTileMesh(tileBbox, dtmTileCrs, plotCrs, satTileCrs, N) {
     ? null : proj4(`EPSG:${dtmCode}`, `EPSG:${satCode}`).forward
 
   const numGrid = (N + 1) * (N + 1)
-  const gridPlot = new Float32Array(numGrid * 2)
-  const gridSat  = new Float32Array(numGrid * 2)
+  // Using regular arrays so NaN is preserved (Float32Array converts NaN to 0).
+  const gridPlot = new Array(numGrid * 2)
+  const gridSat  = new Array(numGrid * 2)
 
   for (let j = 0; j <= N; j++) {
     for (let i = 0; i <= N; i++) {
       const u = i / N, v = j / N
       const tx = tileBbox.minX + u * (tileBbox.maxX - tileBbox.minX)
       const ty = tileBbox.minY + v * (tileBbox.maxY - tileBbox.minY)
-      const [px, py] = dtmToPlot ? dtmToPlot([tx, ty]) : [tx, ty]
-      const [sx, sy] = dtmToSat  ? dtmToSat([tx, ty])  : [tx, ty]
+      const [px, py] = safeProject(dtmToPlot, tx, ty)
+      const [sx, sy] = safeProject(dtmToSat,  tx, ty)
       const vi = j * (N + 1) + i
       gridPlot[vi * 2] = px;  gridPlot[vi * 2 + 1] = py
       gridSat[vi * 2]  = sx;  gridSat[vi * 2 + 1]  = sy
@@ -45,6 +56,8 @@ function buildTerrainTileMesh(tileBbox, dtmTileCrs, plotCrs, satTileCrs, N) {
   const vertexCount  = N * N * 6
   const positions    = new Float32Array(vertexCount * 2)
   const satPositions = new Float32Array(vertexCount * 2)
+  // Track which output vertices are valid for satCrsBbox (degenerate quads are excluded).
+  const validVertex  = new Uint8Array(vertexCount)
   let out = 0
   for (let j = 0; j < N; j++) {
     for (let i = 0; i < N; i++) {
@@ -52,9 +65,23 @@ function buildTerrainTileMesh(tileBbox, dtmTileCrs, plotCrs, satTileCrs, N) {
       const br = bl + 1
       const tl = bl + (N + 1)
       const tr = tl + 1
-      for (const vi of [bl, br, tr, bl, tr, tl]) {
-        positions[out * 2]        = gridPlot[vi * 2];  positions[out * 2 + 1]    = gridPlot[vi * 2 + 1]
-        satPositions[out * 2]     = gridSat[vi * 2];   satPositions[out * 2 + 1] = gridSat[vi * 2 + 1]
+      const indices = [bl, br, tr, bl, tr, tl]
+      // If any vertex has a NaN plot or sat position, degenerate the whole quad to (0,0)
+      // so it produces no fragments — it's outside one projection's valid domain.
+      const anyNaN = indices.some(vi =>
+        !isFinite(gridPlot[vi * 2]) || !isFinite(gridPlot[vi * 2 + 1]) ||
+        !isFinite(gridSat[vi * 2])  || !isFinite(gridSat[vi * 2 + 1])
+      )
+      for (const vi of indices) {
+        if (anyNaN) {
+          positions[out * 2] = 0;  positions[out * 2 + 1] = 0
+          satPositions[out * 2] = 0;  satPositions[out * 2 + 1] = 0
+          validVertex[out] = 0
+        } else {
+          positions[out * 2]    = gridPlot[vi * 2];  positions[out * 2 + 1]    = gridPlot[vi * 2 + 1]
+          satPositions[out * 2] = gridSat[vi * 2];   satPositions[out * 2 + 1] = gridSat[vi * 2 + 1]
+          validVertex[out] = 1
+        }
         out++
       }
     }
@@ -62,6 +89,7 @@ function buildTerrainTileMesh(tileBbox, dtmTileCrs, plotCrs, satTileCrs, N) {
 
   let mnSX = Infinity, mxSX = -Infinity, mnSY = Infinity, mxSY = -Infinity
   for (let k = 0; k < vertexCount; k++) {
+    if (!validVertex[k]) continue
     const sx = satPositions[k * 2], sy = satPositions[k * 2 + 1]
     if (sx < mnSX) mnSX = sx;  if (sx > mxSX) mxSX = sx
     if (sy < mnSY) mnSY = sy;  if (sy > mxSY) mxSY = sy
@@ -130,6 +158,8 @@ class DtmTileManager {
     this._plotToTile = fromCode === toCode
       ? (pt) => pt
       : proj4(`EPSG:${fromCode}`, `EPSG:${toCode}`).forward
+
+    this._validBounds = this._computeValidBounds()
   }
 
   _domainChanged(xDomain, yDomain, viewport) {
@@ -169,18 +199,58 @@ class DtmTileManager {
     }
   }
 
+  _computeValidBounds() {
+    const code = parseCrsCode(this.dtmTileCrs)
+    const corners = [[-180, -85.051129], [180, -85.051129], [-180, 85.051129], [180, 85.051129]]
+    try {
+      const project = proj4('EPSG:4326', `EPSG:${code}`).forward
+      const xs = [], ys = []
+      for (const corner of corners) {
+        const [x, y] = project(corner)
+        if (!isFinite(x) || !isFinite(y)) return null
+        xs.push(x); ys.push(y)
+      }
+      return { minX: Math.min(...xs), maxX: Math.max(...xs),
+               minY: Math.min(...ys), maxY: Math.max(...ys) }
+    } catch {
+      return null
+    }
+  }
+
+  _clampToBounds(bbox) {
+    const bounds = this._validBounds
+    if (!bounds) {
+      const { minX, maxX, minY, maxY } = bbox
+      return (isFinite(minX) && isFinite(maxX) && isFinite(minY) && isFinite(maxY)) ? bbox : null
+    }
+    // Treat non-finite (NaN / ±Infinity) coordinates as "unbounded in that direction"
+    // and fall back to the CRS's full valid extent. This handles the case where the
+    // view domain extends beyond the CRS's valid domain and _plotToTile returns NaN.
+    const minX = isFinite(bbox.minX) ? Math.max(bbox.minX, bounds.minX) : bounds.minX
+    const maxX = isFinite(bbox.maxX) ? Math.min(bbox.maxX, bounds.maxX) : bounds.maxX
+    const minY = isFinite(bbox.minY) ? Math.max(bbox.minY, bounds.minY) : bounds.minY
+    const maxY = isFinite(bbox.maxY) ? Math.min(bbox.maxY, bounds.maxY) : bounds.maxY
+    if (minX >= maxX || minY >= maxY) return null
+    return { minX, maxX, minY, maxY }
+  }
+
   _computeNeededTiles(xDomain, yDomain, viewport) {
-    const tileBbox = this._plotBboxToTileBbox(xDomain, yDomain)
+    const rawBbox  = this._plotBboxToTileBbox(xDomain, yDomain)
+    const tileBbox = this._clampToBounds(rawBbox)  // null if view is entirely outside valid range
     const source = this.source
     if (source.type === 'wms') {
+      if (!tileBbox) return []
       const url = buildWmsUrl(source, tileBbox, this.dtmTileCrs, viewport.width, viewport.height)
       return [{ key: url, bbox: tileBbox, url, type: 'wms' }]
     }
+    // For XYZ/WMTS: tile index math handles out-of-range by clamping to [0, 2^z-1].
+    // Fall back to rawBbox when dtmTileCrs isn't EPSG:3857 and _clampToBounds returns null.
+    const xyzBbox = tileBbox ?? rawBbox
     const minZoom = source.minZoom ?? 0
     const maxZoom = source.maxZoom ?? 14
-    const z = optimalZoom(tileBbox, viewport.width, viewport.height, minZoom, maxZoom)
-    const [xMin, yMax] = mercToTileXY(tileBbox.minX, tileBbox.minY, z)
-    const [xMax, yMin] = mercToTileXY(tileBbox.maxX, tileBbox.maxY, z)
+    const z = optimalZoom(xyzBbox, viewport.width, viewport.height, minZoom, maxZoom)
+    const [xMin, yMax] = mercToTileXY(xyzBbox.minX, xyzBbox.minY, z)
+    const [xMax, yMin] = mercToTileXY(xyzBbox.maxX, xyzBbox.maxY, z)
     const tc = Math.pow(2, z)
     const txMin = Math.max(0, xMin), txMax = Math.min(tc - 1, xMax)
     const tyMin = Math.max(0, yMin), tyMax = Math.min(tc - 1, yMax)
@@ -217,8 +287,13 @@ class DtmTileManager {
   requestSatTiles(viewport) {
     const satCache = this._satCacheRef.cache
     if (!satCache) return
-    for (const tile of this.tiles.values()) {
-      if (tile.status === 'loaded') satCache.requestForBbox(tile.slot.satCrsBbox, viewport)
+    for (const [key, tile] of this.tiles.entries()) {
+      if (tile.status !== 'loaded') continue
+      // For WMS, only request sat tiles for the current needed tile(s).
+      // Old WMS tiles accumulate in the cache (different bbox per pan position)
+      // and would otherwise trigger sat tile requests for stale positions every frame.
+      if (this.source.type === 'wms' && !this._neededKeys.has(key)) continue
+      satCache.requestForBbox(tile.slot.satCrsBbox, viewport)
     }
   }
 
@@ -360,6 +435,10 @@ class DtmTileManager {
 
       const { positions, satPositions, vertexCount, satCrsBbox } =
         buildTerrainTileMesh(spec.bbox, this.dtmTileCrs, this.plotCrs, this.satTileCrs, this.tessellation)
+      console.log('[DtmTileManager] loaded tile', spec.key,
+        '| spec.bbox', spec.bbox, '| dtmTileCrs', this.dtmTileCrs,
+        '| plotCrs', this.plotCrs, '| satTileCrs', this.satTileCrs,
+        '| satCrsBbox', satCrsBbox)
 
       const xArr = new Float32Array(vertexCount)
       const zArr = new Float32Array(vertexCount)
@@ -377,7 +456,13 @@ class DtmTileManager {
       const xTex = uploadToTexture(this.regl, xArr)
       const zTex = uploadToTexture(this.regl, zArr)
 
-      if (this.tiles.size > MAX_TILE_CACHE) {
+      if (this.source.type === 'wms') {
+        // WMS tiles are view-specific (bbox encoded in URL), so stale ones are useless.
+        // Evict immediately, matching TileLayer's behavior for WMS.
+        for (const k of [...this.tiles.keys()]) {
+          if (k !== spec.key && !this._neededKeys.has(k)) this._evictTile(k)
+        }
+      } else if (this.tiles.size > MAX_TILE_CACHE) {
         for (const k of this.accessOrder) {
           if (k !== spec.key && this.tiles.has(k)) {
             this._evictTile(k)
@@ -397,7 +482,9 @@ class DtmTileManager {
       this.tiles.delete(spec.key)
       const i = this.accessOrder.indexOf(spec.key)
       if (i >= 0) this.accessOrder.splice(i, 1)
-      console.warn(`[TerrainTileLayer] ${err.message}`)
+      console.warn(`[TerrainTileLayer] ${err.message}`,
+        '| spec.bbox', spec.bbox, '| dtmTileCrs', this.dtmTileCrs,
+        '| plotCrs', this.plotCrs, '| satTileCrs', this.satTileCrs)
     }
   }
 
@@ -427,6 +514,7 @@ class SatTileCache {
     }
     const cx = (satCrsBbox.minX + satCrsBbox.maxX) / 2
     const cy = (satCrsBbox.minY + satCrsBbox.maxY) / 2
+    if (!isFinite(cx) || !isFinite(cy)) return null
     const minZoom = source.minZoom ?? 0
     const maxZoom = source.maxZoom ?? 19
     // Start at the zoom level matching the DTM tile size. Starting higher risks finding
@@ -470,6 +558,16 @@ class SatTileCache {
     const maxZ = Math.min(source.maxZoom ?? 19, dtmZoomGuess)
     const z = optimalZoom(satCrsBbox, pixelSize, pixelSize, source.minZoom ?? 0, maxZ)
     const [tx, ty] = mercToTileXY(cx, cy, z)
+
+    // Guard: if satCrsBbox is degenerate (Infinity/NaN from an empty or mis-projected mesh),
+    // the tile coords will be invalid. Log and bail rather than requesting a nonsense URL.
+    const maxTile = Math.pow(2, z) - 1
+    if (!isFinite(tx) || !isFinite(ty) || tx < 0 || ty < 0 || tx > maxTile || ty > maxTile) {
+      console.warn('[SatTileCache.requestForBbox] invalid tile coords — satCrsBbox likely degenerate',
+        { satCrsBbox, cx, cy, bboxExtent, dtmZoomGuess, maxZ, z, tx, ty })
+      return
+    }
+
     const key = `${z}/${tx}/${ty}`
     if (!this.tiles.has(key)) {
       const url    = source.type === 'wmts' ? buildWmtsUrl(source, z, tx, ty) : buildXyzUrl(source, z, tx, ty)
