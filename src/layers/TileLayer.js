@@ -59,12 +59,52 @@ export const SAT_PRESETS = [
     source: { xyz: { url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', subdomains: ['a', 'b', 'c'], maxZoom: 19, crs: 'EPSG:3857' } },
   },
   {
+    title: 'ESRI World Imagery (preset)',
+    // ArcGIS tile path order is z/row/col — buildXyzUrl substitutes {x}=col {y}=row by name, so this is correct.
+    source: { xyz: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', maxZoom: 19, crs: 'EPSG:3857' } },
+  },
+  {
+    title: 'EOX Sentinel-2 Cloudless 2024 WMTS (preset)',
+    // 10 m global annual composite, CC BY-NC-SA 4.0. RESTful WMTS: {z}/{y}/{x} = TileMatrix/TileRow/TileCol.
+    source: { wmts: { url: 'https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2024_3857/default/g/{z}/{y}/{x}.jpg', layer: 's2cloudless-2024_3857', tileMatrixSet: 'g', format: 'image/jpeg', maxZoom: 14, crs: 'EPSG:3857' } },
+  },
+  {
+    title: 'USGS Imagery Only WMTS (preset)',
+    // ~1 m NAIP aerial imagery for CONUS; 15 m elsewhere.
+    source: { wmts: { url: 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/WMTS', layer: 'USGSImageryOnly', tileMatrixSet: 'GoogleMapsCompatible', format: 'image/jpeg', crs: 'EPSG:3857' } },
+  },
+  {
     title: 'NASA GIBS Blue Marble WMS (preset)',
     source: { wms: { url: 'https://gibs.earthdata.nasa.gov/wms/epsg3857/best/wms.cgi', layers: 'BlueMarble_NextGeneration', format: 'image/jpeg', transparent: false, version: '1.1.1', crs: 'EPSG:3857' } },
   },
   {
+    title: 'NASA GIBS MODIS NDVI 8-Day (preset)',
+    // NDVI vegetation index, 250 m, most-recent 8-day composite (omitting TIME returns latest).
+    source: { wms: { url: 'https://gibs.earthdata.nasa.gov/wms/epsg3857/best/wms.cgi', layers: 'MODIS_Terra_NDVI_8Day', format: 'image/png', transparent: true, version: '1.1.1', crs: 'EPSG:3857' } },
+  },
+  {
+    title: 'NASA GIBS MODIS Land Surface Temp (preset)',
+    // Daytime land surface temperature, 1 km (latest available date when TIME is omitted).
+    source: { wms: { url: 'https://gibs.earthdata.nasa.gov/wms/epsg3857/best/wms.cgi', layers: 'MODIS_Terra_Land_Surface_Temp_Day', format: 'image/png', transparent: true, version: '1.1.1', crs: 'EPSG:3857' } },
+  },
+  {
+    title: 'NASA GIBS MODIS Chlorophyll-A (preset)',
+    // Ocean chlorophyll-a concentration, 4 km (latest available date when TIME is omitted).
+    source: { wms: { url: 'https://gibs.earthdata.nasa.gov/wms/epsg3857/best/wms.cgi', layers: 'MODIS_Terra_Chlorophyll_A', format: 'image/png', transparent: true, version: '1.1.1', crs: 'EPSG:3857' } },
+  },
+  {
+    title: 'NASA GIBS VIIRS Night Lights (preset)',
+    // Day/Night Band nighttime lights, ~500 m (latest available date when TIME is omitted).
+    source: { wms: { url: 'https://gibs.earthdata.nasa.gov/wms/epsg3857/best/wms.cgi', layers: 'VIIRS_SNPP_DayNightBand_ENCC', format: 'image/jpeg', transparent: false, version: '1.1.1', crs: 'EPSG:3857' } },
+  },
+  {
     title: 'USGS National Map Topo WMTS (preset)',
     source: { wmts: { url: 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/WMTS', layer: 'USGSTopo', tileMatrixSet: 'GoogleMapsCompatible', format: 'image/jpeg', crs: 'EPSG:3857' } },
+  },
+  {
+    title: 'GEBCO Bathymetry WMS (preset)',
+    // Global ocean + land relief, ~450 m. CRS EPSG:4326 — axis swap handled by buildWmsUrl for WMS 1.3.0.
+    source: { wms: { url: 'https://wms.gebco.net/mapserv', layers: 'gebco_latest', format: 'image/png', version: '1.3.0', transparent: false, crs: 'EPSG:4326' } },
   },
 ]
 
