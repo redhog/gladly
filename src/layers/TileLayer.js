@@ -129,16 +129,19 @@ export const DTM_PRESETS = [
     title: 'USGS 3DEP WMTS — grayscale (preset)',
     source: { wmts: { url: 'https://elevation.nationalmap.gov/arcgis/rest/services/3DEPElevation/ImageServer/WMTS', layer: '3DEPElevation', tileMatrixSet: 'GoogleMapsCompatible', format: 'image/png', encoding: 'grayscale', crs: 'EPSG:3857' } },
   },
-  {
-    title: 'Copernicus GLO-30 COG collection (preset)',
-    // 30 m global DEM, float32 metres, EPSG:4326. One 1°×1° COG per degree square on AWS S3.
-    source: { cogTiles: { url: 'https://copernicus-dem-30m.s3.amazonaws.com/Copernicus_DSM_COG_10_{NS}{latAbs2}_00_{EW}{lonAbs3}_00_DEM/Copernicus_DSM_COG_10_{NS}{latAbs2}_00_{EW}{lonAbs3}_00_DEM.tif', encoding: 'float32', crs: 'EPSG:4326' } },
-  },
-  {
-    title: 'OpenTopography SRTM GL1 COG collection (preset)',
-    // 30 m SRTM, float32 metres, EPSG:4326. One 1°×1° COG per degree square on OpenTopography S3.
-    source: { cogTiles: { url: 'https://opentopography.s3.sdsc.edu/raster/SRTMGL1/SRTMGL1_{NS}{latAbs2}{EW}{lonAbs3}.tif', encoding: 'float32', crs: 'EPSG:4326' } },
-  },
+  // Disabled: public COG elevation datasets lack CORS headers for browser fetch.
+  // Uncomment and supply a CORS-enabled URL (self-hosted or proxied) to use cogTiles.
+  // {
+  //   title: 'Copernicus GLO-30 COG collection (preset)',
+  //   // 30 m global DEM, float32 metres, EPSG:4326. One 1°×1° COG per degree square.
+  //   // Azure: elevationeuwest.blob.core.windows.net/copernicus-dem/COP30_hh/Copernicus_DSM_COG_10_{NS}{latAbs2}_00_{EW}{lonAbs3}_00_DEM.tif
+  //   source: { cogTiles: { url: 'https://elevationeuwest.blob.core.windows.net/copernicus-dem/COP30_hh/Copernicus_DSM_COG_10_{NS}{latAbs2}_00_{EW}{lonAbs3}_00_DEM.tif', encoding: 'float32', crs: 'EPSG:4326' } },
+  // },
+  // {
+  //   title: 'OpenTopography SRTM GL1 COG collection (preset)',
+  //   // 30 m SRTM, float32 metres, EPSG:4326. One 1°×1° COG per degree square on OpenTopography S3.
+  //   source: { cogTiles: { url: 'https://opentopography.s3.sdsc.edu/raster/SRTMGL1/SRTMGL1_{NS}{latAbs2}{EW}{lonAbs3}.tif', encoding: 'float32', crs: 'EPSG:4326' } },
+  // },
 ]
 
 // ─── Source schema builder ─────────────────────────────────────────────────────
@@ -571,15 +574,17 @@ class TileManager {
       const latMax = Math.floor(tileBbox.maxY / th) * th
       const nX = Math.round((lonMax - lonMin) / tw) + 1
       const nY = Math.round((latMax - latMin) / th) + 1
-      if (nX * nY > 64) {
+      if (nX * nY > 256) {
         console.warn(`[TileLayer] cogTiles range too large (${nX}×${nY}), skipping`)
         return []
       }
+      // Scale per-tile fetch resolution down as tile count grows so total pixels stay ~constant.
+      const tileRes = Math.max(32, Math.floor(256 / Math.sqrt(nX * nY)))
       const tiles = []
       for (let lat = latMin; lat <= latMax; lat += th) {
         for (let lon = lonMin; lon <= lonMax; lon += tw) {
           const url = buildCogTilesUrl(source, lat, lon)
-          tiles.push({ key: url, bbox: { minX: lon, maxX: lon + tw, minY: lat, maxY: lat + th }, type: 'cogTiles', width: 256, height: 256 })
+          tiles.push({ key: `${url}@${tileRes}`, url, bbox: { minX: lon, maxX: lon + tw, minY: lat, maxY: lat + th }, type: 'cogTiles', width: tileRes, height: tileRes })
         }
       }
       return tiles
@@ -670,7 +675,8 @@ class TileManager {
     try {
       let imgTex
       if (tileSpec.type === 'cog' || tileSpec.type === 'cogTiles') {
-        const result = await fetchCogData(this.source, tileSpec.bbox, tileSpec.width, tileSpec.height)
+        const cogSource = tileSpec.type === 'cogTiles' ? { ...this.source, url: tileSpec.url } : this.source
+        const result = await fetchCogData(cogSource, tileSpec.bbox, tileSpec.width, tileSpec.height)
         if (!this.tiles.has(tileSpec.key)) return
         if (!result) throw new Error(`COG fetch returned no data for tile ${tileSpec.key}`)
         const format = result.bands >= 4 ? 'rgba' : 'rgb'

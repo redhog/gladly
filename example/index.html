@@ -491,6 +491,7 @@
     <!-- UMD packages that have no ESM build: loaded as globals before any module scripts -->
     <script src="/node_modules/regl/dist/regl.js"></script>
     <script src="/node_modules/proj4/dist/proj4.js"></script>
+    <script src="/node_modules/geotiff/dist-browser/geotiff.js"></script>
     <script src="/node_modules/@json-editor/json-editor/dist/jsoneditor.js"></script>
 
     <!-- Resolve bare specifiers to local node_modules ES module sources -->
@@ -537,7 +538,8 @@
         "apache-arrow":             "/node_modules/apache-arrow/Arrow.dom.mjs",
         "ktx-parse":                "/node_modules/ktx-parse/dist/ktx-parse.esm.js",
         "tslib":                    "/node_modules/tslib/tslib.es6.mjs",
-        "flatbuffers":              "/node_modules/flatbuffers/mjs/flatbuffers.js"
+        "flatbuffers":              "/node_modules/flatbuffers/mjs/flatbuffers.js",
+        "geotiff":                  "/example/vendor/geotiff.js"
       }
     }
     </script>

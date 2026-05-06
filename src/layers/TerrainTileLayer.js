@@ -263,15 +263,17 @@ class DtmTileManager {
       const latMax = Math.floor(bbox.maxY / th) * th
       const nX = Math.round((lonMax - lonMin) / tw) + 1
       const nY = Math.round((latMax - latMin) / th) + 1
-      if (nX * nY > 64) {
+      if (nX * nY > 256) {
         console.warn(`[TerrainTileLayer] cogTiles range too large (${nX}×${nY}), skipping`)
         return []
       }
+      // Scale per-tile fetch resolution down as tile count grows so total pixels stay ~constant.
+      const tileRes = Math.max(32, Math.floor(256 / Math.sqrt(nX * nY)))
       const tiles = []
       for (let lat = latMin; lat <= latMax; lat += th) {
         for (let lon = lonMin; lon <= lonMax; lon += tw) {
           const url = buildCogTilesUrl(source, lat, lon)
-          tiles.push({ key: url, bbox: { minX: lon, maxX: lon + tw, minY: lat, maxY: lat + th }, type: 'cogTiles', z: 0, x: lon, y: lat, width: 256, height: 256 })
+          tiles.push({ key: `${url}@${tileRes}`, url, bbox: { minX: lon, maxX: lon + tw, minY: lat, maxY: lat + th }, type: 'cogTiles', z: 0, x: lon, y: lat, width: tileRes, height: tileRes })
         }
       }
       return tiles
@@ -454,7 +456,8 @@ class DtmTileManager {
     try {
       let dtmTex
       if (spec.type === 'cog' || spec.type === 'cogTiles') {
-        const result = await fetchCogData(this.source, spec.bbox, spec.width, spec.height, 'nearest')
+        const cogSource = spec.type === 'cogTiles' ? { ...this.source, url: spec.url } : this.source
+        const result = await fetchCogData(cogSource, spec.bbox, spec.width, spec.height, 'nearest')
         if (!this.tiles.has(spec.key)) return
         if (!result) throw new Error(`COG DTM fetch returned no data for ${spec.key}`)
         if (result.isFloat) {
