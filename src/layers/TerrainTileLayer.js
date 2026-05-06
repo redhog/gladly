@@ -8,7 +8,7 @@ import {
   buildXyzUrl, buildWmtsUrl, buildWmsUrl, optimalZoom,
   mercToTileXY, tileToMercBbox, resolveSource,
   makeSourceSchema, SAT_PRESETS, DTM_PRESETS,
-  fetchCogData,
+  fetchCogData, buildCogTilesUrl,
 } from './TileLayer.js'
 
 const DOMAIN_CHANGE_THRESHOLD = 0.02
@@ -251,6 +251,32 @@ class DtmTileManager {
       return [{ key, bbox: tileBbox, type: 'cog', z: 0, x: 0, y: 0, width: viewport.width, height: viewport.height }]
     }
 
+    if (source.type === 'cogTiles') {
+      const bbox = tileBbox ?? rawBbox
+      if (!bbox || !isFinite(bbox.minX) || !isFinite(bbox.maxX) ||
+                   !isFinite(bbox.minY) || !isFinite(bbox.maxY)) return []
+      const tw = source.tileWidth  ?? 1
+      const th = source.tileHeight ?? 1
+      const lonMin = Math.floor(bbox.minX / tw) * tw
+      const lonMax = Math.floor(bbox.maxX / tw) * tw
+      const latMin = Math.floor(bbox.minY / th) * th
+      const latMax = Math.floor(bbox.maxY / th) * th
+      const nX = Math.round((lonMax - lonMin) / tw) + 1
+      const nY = Math.round((latMax - latMin) / th) + 1
+      if (nX * nY > 64) {
+        console.warn(`[TerrainTileLayer] cogTiles range too large (${nX}×${nY}), skipping`)
+        return []
+      }
+      const tiles = []
+      for (let lat = latMin; lat <= latMax; lat += th) {
+        for (let lon = lonMin; lon <= lonMax; lon += tw) {
+          const url = buildCogTilesUrl(source, lat, lon)
+          tiles.push({ key: url, bbox: { minX: lon, maxX: lon + tw, minY: lat, maxY: lat + th }, type: 'cogTiles', z: 0, x: lon, y: lat, width: 256, height: 256 })
+        }
+      }
+      return tiles
+    }
+
     // For XYZ/WMTS: tile index math handles out-of-range by clamping to [0, 2^z-1].
     // Fall back to rawBbox when dtmTileCrs isn't EPSG:3857 and _clampToBounds returns null.
     const xyzBbox = tileBbox ?? rawBbox
@@ -319,8 +345,8 @@ class DtmTileManager {
     // itself (full mesh) or a sub-region of a loaded ancestor (no overlap guaranteed).
     const renderItems = []
 
-    if (this.source.type === 'wms' || this.source.type === 'cog') {
-      // WMS/COG have no tile hierarchy — only render directly loaded needed tiles.
+    if (this.source.type === 'wms' || this.source.type === 'cog' || this.source.type === 'cogTiles') {
+      // WMS/COG/cogTiles have no zoom hierarchy — only render directly loaded needed tiles.
       for (const [key, tile] of this.tiles.entries()) {
         if (tile.status === 'loaded' && this._neededKeys.has(key)) {
           renderItems.push({ slot: tile.slot, range: [0, 0, 1, 1] })
@@ -427,7 +453,7 @@ class DtmTileManager {
     this.accessOrder.push(spec.key)
     try {
       let dtmTex
-      if (spec.type === 'cog') {
+      if (spec.type === 'cog' || spec.type === 'cogTiles') {
         const result = await fetchCogData(this.source, spec.bbox, spec.width, spec.height, 'nearest')
         if (!this.tiles.has(spec.key)) return
         if (!result) throw new Error(`COG DTM fetch returned no data for ${spec.key}`)

@@ -46,8 +46,8 @@ export function optimalZoom(bboxInTileCrs, pixelWidth, pixelHeight, minZoom, max
 // ─── Source resolution ────────────────────────────────────────────────────────
 
 export function resolveSource(source) {
-  const type = Object.keys(source).find(k => k === 'xyz' || k === 'wms' || k === 'wmts' || k === 'cog')
-  if (!type) throw new Error(`source must have exactly one key of: xyz, wms, wmts, cog`)
+  const type = Object.keys(source).find(k => k === 'xyz' || k === 'wms' || k === 'wmts' || k === 'cog' || k === 'cogTiles')
+  if (!type) throw new Error(`source must have exactly one key of: xyz, wms, wmts, cog, cogTiles`)
   return { type, ...source[type] }
 }
 
@@ -129,6 +129,16 @@ export const DTM_PRESETS = [
     title: 'USGS 3DEP WMTS — grayscale (preset)',
     source: { wmts: { url: 'https://elevation.nationalmap.gov/arcgis/rest/services/3DEPElevation/ImageServer/WMTS', layer: '3DEPElevation', tileMatrixSet: 'GoogleMapsCompatible', format: 'image/png', encoding: 'grayscale', crs: 'EPSG:3857' } },
   },
+  {
+    title: 'Copernicus GLO-30 COG collection (preset)',
+    // 30 m global DEM, float32 metres, EPSG:4326. One 1°×1° COG per degree square on AWS S3.
+    source: { cogTiles: { url: 'https://copernicus-dem-30m.s3.amazonaws.com/Copernicus_DSM_COG_10_{NS}{latAbs2}_00_{EW}{lonAbs3}_00_DEM/Copernicus_DSM_COG_10_{NS}{latAbs2}_00_{EW}{lonAbs3}_00_DEM.tif', encoding: 'float32', crs: 'EPSG:4326' } },
+  },
+  {
+    title: 'OpenTopography SRTM GL1 COG collection (preset)',
+    // 30 m SRTM, float32 metres, EPSG:4326. One 1°×1° COG per degree square on OpenTopography S3.
+    source: { cogTiles: { url: 'https://opentopography.s3.sdsc.edu/raster/SRTMGL1/SRTMGL1_{NS}{latAbs2}{EW}{lonAbs3}.tif', encoding: 'float32', crs: 'EPSG:4326' } },
+  },
 ]
 
 // ─── Source schema builder ─────────────────────────────────────────────────────
@@ -192,24 +202,32 @@ export function makeSourceSchema(presets, { includeEncoding = false } = {}) {
     additionalProperties: false,
   })
 
+  const cogCrs = { type: 'string', default: 'EPSG:4326', description: 'CRS of the COG. Use detectCogCrs(url) to auto-detect.', examples: ['EPSG:4326', 'EPSG:32632'] }
   const cogProps = {
     url: { type: 'string', description: 'URL to a Cloud Optimized GeoTIFF (.tif / .tiff)' },
     ...extra,
-    // Override crs default — COGs are typically geographic (4326) not Mercator.
-    crs: { type: 'string', default: 'EPSG:4326', description: 'CRS of the COG. Use detectCogCrs(url) to auto-detect.', examples: ['EPSG:4326', 'EPSG:32632'] },
+    crs: cogCrs,
+  }
+  const cogTilesProps = {
+    url: { type: 'string', description: 'URL template. Variables: {NS}, {EW}, {latAbs2} (2-digit), {lonAbs3} (3-digit), {lat}, {lon}.' },
+    tileWidth:  { type: 'number', default: 1, description: 'Longitude extent per tile (degrees).' },
+    tileHeight: { type: 'number', default: 1, description: 'Latitude extent per tile (degrees).' },
+    ...extra,
+    crs: cogCrs,
   }
 
   const baseAlts = [
-    makeAlt('XYZ',  'xyz',  xyzProps,  ['url'],           null),
-    makeAlt('WMS',  'wms',  wmsProps,  ['url', 'layers'], null),
-    makeAlt('WMTS', 'wmts', wmtsProps, ['url', 'layer'],  null),
-    makeAlt('COG',  'cog',  cogProps,  ['url'],           null),
+    makeAlt('XYZ',          'xyz',      xyzProps,      ['url'],           null),
+    makeAlt('WMS',          'wms',      wmsProps,      ['url', 'layers'], null),
+    makeAlt('WMTS',         'wmts',     wmtsProps,     ['url', 'layer'],  null),
+    makeAlt('COG',          'cog',      cogProps,      ['url'],           null),
+    makeAlt('COG Tiles',    'cogTiles', cogTilesProps, ['url'],           null),
   ]
 
   const presetAlts = presets.map(p => {
     const type = Object.keys(p.source)[0]
-    const props = type === 'xyz' ? xyzProps : type === 'wms' ? wmsProps : wmtsProps
-    const required = type === 'xyz' ? ['url'] : type === 'wms' ? ['url', 'layers'] : ['url', 'layer']
+    const props = type === 'xyz' ? xyzProps : type === 'wms' ? wmsProps : type === 'wmts' ? wmtsProps : type === 'cog' ? cogProps : cogTilesProps
+    const required = type === 'xyz' ? ['url'] : type === 'wms' ? ['url', 'layers'] : ['url']
     return makeAlt(p.title, type, props, required, p.source[type])
   })
 
@@ -294,6 +312,19 @@ async function openCog(url) {
     _cogTiffCache.set(url, fromUrl(url))
   }
   return _cogTiffCache.get(url)
+}
+
+// Builds a tile URL from a template. Variables: {NS} {EW} {lat} {lon} {latAbs2} {lonAbs3}.
+// lat/lon are the SW corner of the tile (integer degrees).
+export function buildCogTilesUrl(source, lat, lon) {
+  const ns = lat >= 0 ? 'N' : 'S'
+  const ew = lon >= 0 ? 'E' : 'W'
+  const latAbs2 = String(Math.abs(lat)).padStart(2, '0')
+  const lonAbs3 = String(Math.abs(lon)).padStart(3, '0')
+  return source.url
+    .replace(/{NS}/g, ns).replace(/{EW}/g, ew)
+    .replace(/{lat}/g, lat).replace(/{lon}/g, lon)
+    .replace(/{latAbs2}/g, latAbs2).replace(/{lonAbs3}/g, lonAbs3)
 }
 
 // Returns the EPSG code string embedded in a COG's GeoTIFF metadata, or 'EPSG:4326' as fallback.
@@ -529,6 +560,31 @@ class TileManager {
       return [{ key, bbox: tileBbox, type: 'cog', width: viewport.width, height: viewport.height }]
     }
 
+    if (source.type === 'cogTiles') {
+      if (!isFinite(tileBbox.minX) || !isFinite(tileBbox.maxX) ||
+          !isFinite(tileBbox.minY) || !isFinite(tileBbox.maxY)) return []
+      const tw = source.tileWidth  ?? 1
+      const th = source.tileHeight ?? 1
+      const lonMin = Math.floor(tileBbox.minX / tw) * tw
+      const lonMax = Math.floor(tileBbox.maxX / tw) * tw
+      const latMin = Math.floor(tileBbox.minY / th) * th
+      const latMax = Math.floor(tileBbox.maxY / th) * th
+      const nX = Math.round((lonMax - lonMin) / tw) + 1
+      const nY = Math.round((latMax - latMin) / th) + 1
+      if (nX * nY > 64) {
+        console.warn(`[TileLayer] cogTiles range too large (${nX}×${nY}), skipping`)
+        return []
+      }
+      const tiles = []
+      for (let lat = latMin; lat <= latMax; lat += th) {
+        for (let lon = lonMin; lon <= lonMax; lon += tw) {
+          const url = buildCogTilesUrl(source, lat, lon)
+          tiles.push({ key: url, bbox: { minX: lon, maxX: lon + tw, minY: lat, maxY: lat + th }, type: 'cogTiles', width: 256, height: 256 })
+        }
+      }
+      return tiles
+    }
+
     const minZoom = source.minZoom ?? 0
     const maxZoom = source.maxZoom ?? 19
     const z = optimalZoom(tileBbox, viewport.width, viewport.height, minZoom, maxZoom)
@@ -613,7 +669,7 @@ class TileManager {
 
     try {
       let imgTex
-      if (tileSpec.type === 'cog') {
+      if (tileSpec.type === 'cog' || tileSpec.type === 'cogTiles') {
         const result = await fetchCogData(this.source, tileSpec.bbox, tileSpec.width, tileSpec.height)
         if (!this.tiles.has(tileSpec.key)) return
         if (!result) throw new Error(`COG fetch returned no data for tile ${tileSpec.key}`)

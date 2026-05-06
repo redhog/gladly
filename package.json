@@ -24,7 +24,7 @@
   "optionalDependencies": {
     "@loaders.gl/core": "^4.4.1",
     "@loaders.gl/gltf": "^4.4.1",
-    "geotiff": "^2.4.0"
+    "geotiff": "^3.0.5"
   },
   "browserslist": [
     "last 2 Chrome versions",
