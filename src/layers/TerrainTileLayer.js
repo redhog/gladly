@@ -8,6 +8,7 @@ import {
   buildXyzUrl, buildWmtsUrl, buildWmsUrl, optimalZoom,
   mercToTileXY, tileToMercBbox, resolveSource,
   makeSourceSchema, SAT_PRESETS, DTM_PRESETS,
+  fetchCogData,
 } from './TileLayer.js'
 
 const DOMAIN_CHANGE_THRESHOLD = 0.02
@@ -243,6 +244,13 @@ class DtmTileManager {
       const url = buildWmsUrl(source, tileBbox, this.dtmTileCrs, viewport.width, viewport.height)
       return [{ key: url, bbox: tileBbox, url, type: 'wms' }]
     }
+
+    if (source.type === 'cog') {
+      if (!tileBbox) return []
+      const key = `cog:${tileBbox.minX.toFixed(1)},${tileBbox.minY.toFixed(1)},${tileBbox.maxX.toFixed(1)},${tileBbox.maxY.toFixed(1)}`
+      return [{ key, bbox: tileBbox, type: 'cog', z: 0, x: 0, y: 0, width: viewport.width, height: viewport.height }]
+    }
+
     // For XYZ/WMTS: tile index math handles out-of-range by clamping to [0, 2^z-1].
     // Fall back to rawBbox when dtmTileCrs isn't EPSG:3857 and _clampToBounds returns null.
     const xyzBbox = tileBbox ?? rawBbox
@@ -289,10 +297,10 @@ class DtmTileManager {
     if (!satCache) return
     for (const [key, tile] of this.tiles.entries()) {
       if (tile.status !== 'loaded') continue
-      // For WMS, only request sat tiles for the current needed tile(s).
-      // Old WMS tiles accumulate in the cache (different bbox per pan position)
+      // For WMS/COG, only request sat tiles for the current needed tile(s).
+      // Old tiles accumulate in the cache (different bbox per pan position)
       // and would otherwise trigger sat tile requests for stale positions every frame.
-      if (this.source.type === 'wms' && !this._neededKeys.has(key)) continue
+      if ((this.source.type === 'wms' || this.source.type === 'cog') && !this._neededKeys.has(key)) continue
       satCache.requestForBbox(tile.slot.satCrsBbox, viewport)
     }
   }
@@ -311,8 +319,8 @@ class DtmTileManager {
     // itself (full mesh) or a sub-region of a loaded ancestor (no overlap guaranteed).
     const renderItems = []
 
-    if (this.source.type === 'wms') {
-      // WMS has no tile hierarchy — only render directly loaded needed tiles.
+    if (this.source.type === 'wms' || this.source.type === 'cog') {
+      // WMS/COG have no tile hierarchy — only render directly loaded needed tiles.
       for (const [key, tile] of this.tiles.entries()) {
         if (tile.status === 'loaded' && this._neededKeys.has(key)) {
           renderItems.push({ slot: tile.slot, range: [0, 0, 1, 1] })
@@ -418,20 +426,32 @@ class DtmTileManager {
     this.tiles.set(spec.key, { status: 'loading' })
     this.accessOrder.push(spec.key)
     try {
-      const img = new Image()
-      img.crossOrigin = 'anonymous'
-      await new Promise((resolve, reject) => {
-        img.onload = resolve
-        img.onerror = () => reject(new Error(`Failed to load DTM tile: ${spec.url}`))
-        img.src = spec.url
-      })
-      if (!this.tiles.has(spec.key)) return
-
-      const dtmTex = this.regl.texture({
-        data: img, flipY: false,
-        min: 'nearest', mag: 'nearest',
-        format: 'rgba', type: 'uint8',
-      })
+      let dtmTex
+      if (spec.type === 'cog') {
+        const result = await fetchCogData(this.source, spec.bbox, spec.width, spec.height, 'nearest')
+        if (!this.tiles.has(spec.key)) return
+        if (!result) throw new Error(`COG DTM fetch returned no data for ${spec.key}`)
+        if (result.isFloat) {
+          // Pad single-channel float32 into RGBA float so WebGL 2 can sample it.
+          const n = result.width * result.height
+          const rgba = new Float32Array(n * 4)
+          for (let k = 0; k < n; k++) rgba[k * 4] = result.data[k]
+          dtmTex = this.regl.texture({ data: rgba, width: result.width, height: result.height, format: 'rgba', type: 'float', flipY: false, min: 'nearest', mag: 'nearest' })
+        } else {
+          const format = result.bands >= 4 ? 'rgba' : 'rgb'
+          dtmTex = this.regl.texture({ data: result.data, width: result.width, height: result.height, format, type: 'uint8', flipY: false, min: 'nearest', mag: 'nearest' })
+        }
+      } else {
+        const img = new Image()
+        img.crossOrigin = 'anonymous'
+        await new Promise((resolve, reject) => {
+          img.onload = resolve
+          img.onerror = () => reject(new Error(`Failed to load DTM tile: ${spec.url}`))
+          img.src = spec.url
+        })
+        if (!this.tiles.has(spec.key)) return
+        dtmTex = this.regl.texture({ data: img, flipY: false, min: 'nearest', mag: 'nearest', format: 'rgba', type: 'uint8' })
+      }
 
       const { positions, satPositions, vertexCount, satCrsBbox } =
         buildTerrainTileMesh(spec.bbox, this.dtmTileCrs, this.plotCrs, this.satTileCrs, this.tessellation)
@@ -456,9 +476,8 @@ class DtmTileManager {
       const xTex = uploadToTexture(this.regl, xArr)
       const zTex = uploadToTexture(this.regl, zArr)
 
-      if (this.source.type === 'wms') {
-        // WMS tiles are view-specific (bbox encoded in URL), so stale ones are useless.
-        // Evict immediately, matching TileLayer's behavior for WMS.
+      if (this.source.type === 'wms' || this.source.type === 'cog') {
+        // WMS/COG tiles are view-specific, so stale ones are useless — evict immediately.
         for (const k of [...this.tiles.keys()]) {
           if (k !== spec.key && !this._neededKeys.has(k)) this._evictTile(k)
         }
@@ -643,7 +662,8 @@ float decodeElev(vec4 col) {
   float B = col.b * 255.0;
   if (u_dtm_encoding < 0.5) return col.r;
   if (u_dtm_encoding < 1.5) return -10000.0 + (R * 65536.0 + G * 256.0 + B) * 0.1;
-  return R * 256.0 + G + B / 256.0 - 32768.0;
+  if (u_dtm_encoding < 2.5) return R * 256.0 + G + B / 256.0 - 32768.0;
+  return col.r;  // float32: raw value already in R channel
 }
 
 void main() {
@@ -779,7 +799,7 @@ class TerrainTileLayerType extends LayerType {
     const dtmManagerRef = { manager: null }
     const satCacheRef   = { cache: null }
 
-    const encodingMap  = { grayscale: 0, mapbox: 1, terrarium: 2 }
+    const encodingMap  = { grayscale: 0, mapbox: 1, terrarium: 2, float32: 3 }
     const dtmEncodingF = encodingMap[dtmEncoding] ?? 0
 
     const syncFn = (renderPlot) => {

@@ -46,8 +46,8 @@ export function optimalZoom(bboxInTileCrs, pixelWidth, pixelHeight, minZoom, max
 // ─── Source resolution ────────────────────────────────────────────────────────
 
 export function resolveSource(source) {
-  const type = Object.keys(source).find(k => k === 'xyz' || k === 'wms' || k === 'wmts')
-  if (!type) throw new Error(`source must have exactly one key of: xyz, wms, wmts`)
+  const type = Object.keys(source).find(k => k === 'xyz' || k === 'wms' || k === 'wmts' || k === 'cog')
+  if (!type) throw new Error(`source must have exactly one key of: xyz, wms, wmts, cog`)
   return { type, ...source[type] }
 }
 
@@ -149,9 +149,9 @@ export function makeSourceSchema(presets, { includeEncoding = false } = {}) {
   const encodingProp = includeEncoding ? {
     encoding: {
       type: 'string',
-      enum: ['terrarium', 'mapbox', 'grayscale'],
+      enum: ['terrarium', 'mapbox', 'grayscale', 'float32'],
       default: 'terrarium',
-      description: 'Elevation encoding. terrarium: AWS RGB (R×256+G+B/256−32768 m). mapbox: Mapbox/MapTiler RGB. grayscale: single-channel 0–1 (calibrate yAxis to real elevation range).',
+      description: 'Elevation encoding. terrarium: AWS RGB (R×256+G+B/256−32768 m). mapbox: Mapbox/MapTiler RGB. grayscale: single-channel 0–1 (calibrate yAxis). float32: native float metres (COG only).',
     },
   } : {}
   const extra = { ...crsProp, ...encodingProp }
@@ -192,10 +192,18 @@ export function makeSourceSchema(presets, { includeEncoding = false } = {}) {
     additionalProperties: false,
   })
 
+  const cogProps = {
+    url: { type: 'string', description: 'URL to a Cloud Optimized GeoTIFF (.tif / .tiff)' },
+    ...extra,
+    // Override crs default — COGs are typically geographic (4326) not Mercator.
+    crs: { type: 'string', default: 'EPSG:4326', description: 'CRS of the COG. Use detectCogCrs(url) to auto-detect.', examples: ['EPSG:4326', 'EPSG:32632'] },
+  }
+
   const baseAlts = [
     makeAlt('XYZ',  'xyz',  xyzProps,  ['url'],           null),
     makeAlt('WMS',  'wms',  wmsProps,  ['url', 'layers'], null),
     makeAlt('WMTS', 'wmts', wmtsProps, ['url', 'layer'],  null),
+    makeAlt('COG',  'cog',  cogProps,  ['url'],           null),
   ]
 
   const presetAlts = presets.map(p => {
@@ -274,6 +282,64 @@ export function buildWmsUrl(source, bbox, tileCrs, pixelWidth, pixelHeight) {
     ...(source.styles ? { STYLES: source.styles } : {}),
   })
   return `${source.url}?${params}`
+}
+
+// ─── COG helpers ──────────────────────────────────────────────────────────────
+
+const _cogTiffCache = new Map()  // url → Promise<GeoTIFF>; module-level so layers share open tiffs
+
+async function openCog(url) {
+  if (!_cogTiffCache.has(url)) {
+    const { fromUrl } = await import('geotiff')
+    _cogTiffCache.set(url, fromUrl(url))
+  }
+  return _cogTiffCache.get(url)
+}
+
+// Returns the EPSG code string embedded in a COG's GeoTIFF metadata, or 'EPSG:4326' as fallback.
+export async function detectCogCrs(url) {
+  const tiff = await openCog(url)
+  const image = await tiff.getImage()
+  const geoKeys = image.getGeoKeys()
+  const code = geoKeys.ProjectedCSTypeGeoKey || geoKeys.GeographicTypeGeoKey
+  return (code && code > 0 && code < 32767) ? `EPSG:${code}` : 'EPSG:4326'
+}
+
+// Fetches a region of a COG as a TypedArray resampled to outW×outH pixels.
+// bboxInCogCrs must be in the COG's native CRS (same as source.crs).
+// resampleMethod: 'bilinear' for imagery, 'nearest' for RGB-encoded DTM.
+// Returns { data, width, height, bands, isFloat } or null if bbox is outside the COG.
+export async function fetchCogData(source, bboxInCogCrs, outW, outH, resampleMethod = 'bilinear') {
+  const tiff  = await openCog(source.url)
+  const image = await tiff.getImage()
+  const [origX, origY] = image.getOrigin()
+  const [resX,  resY]  = image.getResolution()  // resY negative (raster top-down)
+  const absResY = Math.abs(resY)
+  const fullW   = image.getWidth()
+  const fullH   = image.getHeight()
+
+  // Map bbox (CRS coords, minY=south) to pixel window (top-down, y0=north row)
+  const x0 = Math.round((bboxInCogCrs.minX - origX) / resX)
+  const x1 = Math.round((bboxInCogCrs.maxX - origX) / resX)
+  const y0 = Math.round((origY - bboxInCogCrs.maxY) / absResY)
+  const y1 = Math.round((origY - bboxInCogCrs.minY) / absResY)
+
+  const cx0 = Math.max(0, x0), cx1 = Math.min(fullW, x1)
+  const cy0 = Math.max(0, y0), cy1 = Math.min(fullH, y1)
+  if (cx0 >= cx1 || cy0 >= cy1) return null
+
+  const rasters = await image.readRasters({
+    window: [cx0, cy0, cx1, cy1],
+    width: outW, height: outH,
+    interleave: true,
+    resampleMethod,
+  })
+
+  const bands = image.getSamplesPerPixel()
+  const sf    = image.getSampleFormat()
+  const isFloat = (Array.isArray(sf) ? sf[0] : sf) === 3
+
+  return { data: rasters, width: outW, height: outH, bands, isFloat }
 }
 
 // ─── Tessellated mesh builder ──────────────────────────────────────────────────
@@ -458,6 +524,11 @@ class TileManager {
       return [{ key: wmsUrl, bbox: tileBbox, url: wmsUrl, type: 'wms' }]
     }
 
+    if (source.type === 'cog') {
+      const key = `cog:${tileBbox.minX.toFixed(1)},${tileBbox.minY.toFixed(1)},${tileBbox.maxX.toFixed(1)},${tileBbox.maxY.toFixed(1)}`
+      return [{ key, bbox: tileBbox, type: 'cog', width: viewport.width, height: viewport.height }]
+    }
+
     const minZoom = source.minZoom ?? 0
     const maxZoom = source.maxZoom ?? 19
     const z = optimalZoom(tileBbox, viewport.width, viewport.height, minZoom, maxZoom)
@@ -541,18 +612,26 @@ class TileManager {
     this.accessOrder.push(tileSpec.key)
 
     try {
-      const img = new Image()
-      img.crossOrigin = 'anonymous'
-      await new Promise((resolve, reject) => {
-        img.onload = resolve
-        img.onerror = () => reject(new Error(`Failed to load tile: ${tileSpec.url}`))
-        img.src = tileSpec.url
-      })
-
-      if (!this.tiles.has(tileSpec.key)) return
+      let imgTex
+      if (tileSpec.type === 'cog') {
+        const result = await fetchCogData(this.source, tileSpec.bbox, tileSpec.width, tileSpec.height)
+        if (!this.tiles.has(tileSpec.key)) return
+        if (!result) throw new Error(`COG fetch returned no data for tile ${tileSpec.key}`)
+        const format = result.bands >= 4 ? 'rgba' : 'rgb'
+        imgTex = this.regl.texture({ data: result.data, width: result.width, height: result.height, format, type: 'uint8', flipY: false, min: 'linear', mag: 'linear' })
+      } else {
+        const img = new Image()
+        img.crossOrigin = 'anonymous'
+        await new Promise((resolve, reject) => {
+          img.onload = resolve
+          img.onerror = () => reject(new Error(`Failed to load tile: ${tileSpec.url}`))
+          img.src = tileSpec.url
+        })
+        if (!this.tiles.has(tileSpec.key)) return
+        imgTex = this.regl.texture({ data: img, flipY: false, min: 'linear', mag: 'linear' })
+      }
 
       const mesh = buildTileMesh(tileSpec.bbox, this.tileCrs, this.plotCrs, this.tessellation)
-      const imgTex = this.regl.texture({ data: img, flipY: false, min: 'linear', mag: 'linear' })
 
       // De-interleave xy positions into separate packed float textures
       const n = mesh.vertexCount
@@ -568,7 +647,7 @@ class TileManager {
       this.tiles.set(tileSpec.key, { status: 'loaded', imgTex, xTex, yTex })
 
       const neededKeys = this._neededKeys
-      if (this.source.type === 'wms') {
+      if (this.source.type === 'wms' || this.source.type === 'cog') {
         for (const key of [...this.tiles.keys()]) {
           if (key !== tileSpec.key && !neededKeys.has(key)) this._evictTile(key)
         }
