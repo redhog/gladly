@@ -17,7 +17,11 @@ Gladly combines WebGL rendering (via regl) with D3.js for interactive axes and z
 - 🎨 Supports all standard colorscales
 - 🔗 Subplot axis linking
 - 🌈 Axis to coloring or filtering linking
-- 🌎 Basemap layer with XYZ,WMS and WMTS support and CRS reprojection
+- 🌎 GIS layers:
+  - 🗺️ Tile sources: XYZ, WMS, WMTS, COG
+  - 🌍 Basemap layer
+  - 🏔️ 3D terrain layer: satellite imagery draped over DTM elevation meshes
+  - 🌐 CRS reprojection
 
 ## Extensions
 
