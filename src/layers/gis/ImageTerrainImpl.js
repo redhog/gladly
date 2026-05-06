@@ -1,9 +1,8 @@
 import proj4 from 'proj4'
-import { LayerType } from '../core/LayerType.js'
-import { ColumnData, uploadToTexture } from '../data/ColumnData.js'
-import { AXES } from '../axes/AxisRegistry.js'
-import { registerLayerType } from '../core/LayerTypeRegistry.js'
-import { parseCrsCode, crsToQkX, crsToQkY, ensureCrsDefined } from '../geo/EpsgUtils.js'
+import { LayerType } from '../../core/LayerType.js'
+import { ColumnData, uploadToTexture } from '../../data/ColumnData.js'
+import { AXES } from '../../axes/AxisRegistry.js'
+import { parseCrsCode, crsToQkX, crsToQkY, ensureCrsDefined } from '../../geo/EpsgUtils.js'
 import {
   buildXyzUrl, buildWmtsUrl, buildWmsUrl, optimalZoom,
   mercToTileXY, tileToMercBbox, resolveSource,
@@ -407,9 +406,10 @@ class DtmTileManager {
       }
 
       // Compute sat UV textures once per slot (shared across multiple sub-mesh render items
-      // that reference the same ancestor tile).
-      if (!computedSlots.has(s)) {
+      // that reference the same ancestor tile). Recompute whenever the sat tile key changes.
+      if (!computedSlots.has(s) || s._lastSatKey !== sat.key) {
         computedSlots.add(s)
+        s._lastSatKey = sat.key
         const vCount = s.satXArr.length
         const uvXArr = new Float32Array(vCount)
         const uvYArr = new Float32Array(vCount)
@@ -543,7 +543,7 @@ class DtmTileManager {
 
 // ─── SatTileCache ─────────────────────────────────────────────────────────────
 
-class SatTileCache {
+export class SatTileCache {
   constructor({ regl, source, satTileCrs, onLoad }) {
     this.regl = regl
     this.source = source
@@ -553,12 +553,14 @@ class SatTileCache {
     this.accessOrder = []
   }
 
+  // Returns { texture, bounds, key } for the best available sat tile covering satCrsBbox,
+  // or null if no tile is loaded yet. The key allows callers to detect sat tile changes.
   getBestAvailable(satCrsBbox) {
     const source = this.source
     if (source.type === 'wms') {
       const key  = this._wmsKey(satCrsBbox)
       const tile = this.tiles.get(key)
-      return tile?.status === 'loaded' ? { texture: tile.texture, bounds: satCrsBbox } : null
+      return tile?.status === 'loaded' ? { texture: tile.texture, bounds: satCrsBbox, key } : null
     }
     const cx = (satCrsBbox.minX + satCrsBbox.maxX) / 2
     const cy = (satCrsBbox.minY + satCrsBbox.maxY) / 2
@@ -575,7 +577,7 @@ class SatTileCache {
       const [tx, ty] = mercToTileXY(cx, cy, z)
       const key  = `${z}/${tx}/${ty}`
       const tile = this.tiles.get(key)
-      if (tile?.status === 'loaded') return { texture: tile.texture, bounds: tileToMercBbox(tx, ty, z) }
+      if (tile?.status === 'loaded') return { texture: tile.texture, bounds: tileToMercBbox(tx, ty, z), key }
     }
     return null
   }
@@ -708,7 +710,7 @@ void main() {
 }
 `
 
-const TERRAIN_FRAG = `#version 300 es
+export const TERRAIN_FRAG = `#version 300 es
 precision highp float;
 
 in vec2 v_sat_uv;
@@ -724,15 +726,16 @@ void main() {
 }
 `
 
-// ─── TerrainTileLayerType ─────────────────────────────────────────────────────
-// See docs/dtm-sources.md for a list of public DTM/DEM tile sources.
+// ─── ImageTerrainImpl ─────────────────────────────────────────────────────────
+// Image-based terrain implementation: decodes elevation from RGB-encoded DTM tiles.
+// Not registered directly; used by the outer TerrainTileLayerType shell.
 
 const DTM_SOURCE_SCHEMA = makeSourceSchema(DTM_PRESETS, { includeEncoding: true })
 const SAT_SOURCE_SCHEMA = makeSourceSchema(SAT_PRESETS)
 
-class TerrainTileLayerType extends LayerType {
+export class ImageTerrainImpl extends LayerType {
   constructor() {
-    super({ name: 'terrain', vert: TERRAIN_VERT, frag: TERRAIN_FRAG, suppressWarnings: true })
+    super({ name: 'terrain-image', vert: TERRAIN_VERT, frag: TERRAIN_FRAG, suppressWarnings: true })
   }
 
   schema(_data) {
@@ -916,7 +919,3 @@ class TerrainTileLayerType extends LayerType {
     return { ...drawConfig, depth: { enable: true }, blend: { enable: false } }
   }
 }
-
-export const terrainTileLayerType = new TerrainTileLayerType()
-registerLayerType('terrain', terrainTileLayerType)
-export { TerrainTileLayerType }

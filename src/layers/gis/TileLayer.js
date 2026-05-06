@@ -1,9 +1,9 @@
 import proj4 from 'proj4'
-import { LayerType } from '../core/LayerType.js'
-import { ColumnData, uploadToTexture } from '../data/ColumnData.js'
-import { AXES } from '../axes/AxisRegistry.js'
-import { registerLayerType } from '../core/LayerTypeRegistry.js'
-import { parseCrsCode, crsToQkX, crsToQkY, ensureCrsDefined } from '../geo/EpsgUtils.js'
+import { LayerType } from '../../core/LayerType.js'
+import { ColumnData, uploadToTexture } from '../../data/ColumnData.js'
+import { AXES } from '../../axes/AxisRegistry.js'
+import { registerLayerType } from '../../core/LayerTypeRegistry.js'
+import { parseCrsCode, crsToQkX, crsToQkY, ensureCrsDefined } from '../../geo/EpsgUtils.js'
 
 // ─── Tile math (standard Web Mercator / "slippy map" grid) ────────────────────
 
@@ -43,11 +43,52 @@ export function optimalZoom(bboxInTileCrs, pixelWidth, pixelHeight, minZoom, max
   return Math.min(Math.max(Math.floor(isFinite(z) ? z : maxZoom), minZoom), maxZoom)
 }
 
+// ─── Geographic tile math (Cesium WGS84 scheme) ───────────────────────────────
+// At zoom z: 2^(z+1) columns × 2^z rows covering [-180,180] × [-90,90].
+// y=0 is south (TMS convention), matching quantized-mesh tile servers.
+
+export function geographicToTileXY(lon, lat, z) {
+  const cols = Math.pow(2, z + 1)
+  const rows = Math.pow(2, z)
+  return [
+    Math.max(0, Math.min(cols - 1, Math.floor((lon + 180) / (360 / cols)))),
+    Math.max(0, Math.min(rows - 1, Math.floor((lat + 90)  / (180 / rows)))),
+  ]
+}
+
+export function tileToGeographicBbox(tx, ty, z) {
+  const cols = Math.pow(2, z + 1)
+  const rows = Math.pow(2, z)
+  const colWidth  = 360 / cols
+  const rowHeight = 180 / rows
+  return {
+    west:  -180 + tx       * colWidth,
+    east:  -180 + (tx + 1) * colWidth,
+    south:  -90 + ty       * rowHeight,
+    north:  -90 + (ty + 1) * rowHeight,
+  }
+}
+
+// Compute optimal zoom for the geographic tiling scheme.
+// lonExtent / latExtent are in degrees; viewport in pixels.
+export function optimalZoomGeographic(bboxInDegrees, pixelWidth, pixelHeight, minZoom, maxZoom) {
+  const lonExtent = Math.abs(bboxInDegrees.east  - bboxInDegrees.west)
+  const latExtent = Math.abs(bboxInDegrees.north - bboxInDegrees.south)
+  // At zoom z: column width = 360 / 2^(z+1), so z = log2(px*360/(256*lon)) - 1
+  const zx = lonExtent > 0 ? Math.log2(pixelWidth  * 360 / (256 * lonExtent)) - 1 : Infinity
+  // At zoom z: row height = 180 / 2^z,        so z = log2(px*180/(256*lat))
+  const zy = latExtent > 0 ? Math.log2(pixelHeight * 180 / (256 * latExtent))     : Infinity
+  const z = Math.min(zx, zy)
+  return Math.min(Math.max(Math.floor(isFinite(z) ? z : maxZoom), minZoom), maxZoom)
+}
+
 // ─── Source resolution ────────────────────────────────────────────────────────
 
 export function resolveSource(source) {
-  const type = Object.keys(source).find(k => k === 'xyz' || k === 'wms' || k === 'wmts' || k === 'cog' || k === 'cogTiles')
-  if (!type) throw new Error(`source must have exactly one key of: xyz, wms, wmts, cog, cogTiles`)
+  const type = Object.keys(source).find(k =>
+    k === 'xyz' || k === 'wms' || k === 'wmts' || k === 'cog' || k === 'cogTiles' || k === 'quantizedMesh'
+  )
+  if (!type) throw new Error(`source must have exactly one key of: xyz, wms, wmts, cog, cogTiles, quantizedMesh`)
   return { type, ...source[type] }
 }
 
@@ -129,17 +170,24 @@ export const DTM_PRESETS = [
     title: 'USGS 3DEP WMTS — grayscale (preset)',
     source: { wmts: { url: 'https://elevation.nationalmap.gov/arcgis/rest/services/3DEPElevation/ImageServer/WMTS', layer: '3DEPElevation', tileMatrixSet: 'GoogleMapsCompatible', format: 'image/png', encoding: 'grayscale', crs: 'EPSG:3857' } },
   },
+  {
+    title: 'Cesium World Terrain (preset)',
+    // Requires a Cesium Ion access token — replace TOKEN with your token from cesium.com/ion.
+    source: { quantizedMesh: { url: 'https://assets.cesium.com/1/{z}/{x}/{y}.terrain?v=1.2.0&extensions=octvertexnormals-watermask-metadata&access_token=TOKEN', maxZoom: 15, crs: 'EPSG:4326' } },
+  },
+  {
+    title: 'MapTiler Terrain QM (preset)',
+    // Requires a MapTiler API key — replace KEY with your key from maptiler.com.
+    source: { quantizedMesh: { url: 'https://api.maptiler.com/tiles/terrain-quantized-mesh/{z}/{x}/{y}.terrain?key=KEY', maxZoom: 12, crs: 'EPSG:4326' } },
+  },
   // Disabled: public COG elevation datasets lack CORS headers for browser fetch.
   // Uncomment and supply a CORS-enabled URL (self-hosted or proxied) to use cogTiles.
   // {
   //   title: 'Copernicus GLO-30 COG collection (preset)',
-  //   // 30 m global DEM, float32 metres, EPSG:4326. One 1°×1° COG per degree square.
-  //   // Azure: elevationeuwest.blob.core.windows.net/copernicus-dem/COP30_hh/Copernicus_DSM_COG_10_{NS}{latAbs2}_00_{EW}{lonAbs3}_00_DEM.tif
   //   source: { cogTiles: { url: 'https://elevationeuwest.blob.core.windows.net/copernicus-dem/COP30_hh/Copernicus_DSM_COG_10_{NS}{latAbs2}_00_{EW}{lonAbs3}_00_DEM.tif', encoding: 'float32', crs: 'EPSG:4326' } },
   // },
   // {
   //   title: 'OpenTopography SRTM GL1 COG collection (preset)',
-  //   // 30 m SRTM, float32 metres, EPSG:4326. One 1°×1° COG per degree square on OpenTopography S3.
   //   source: { cogTiles: { url: 'https://opentopography.s3.sdsc.edu/raster/SRTMGL1/SRTMGL1_{NS}{latAbs2}{EW}{lonAbs3}.tif', encoding: 'float32', crs: 'EPSG:4326' } },
   // },
 ]
@@ -195,6 +243,12 @@ export function makeSourceSchema(presets, { includeEncoding = false } = {}) {
     maxZoom:       { type: 'integer', default: 19 },
     ...extra,
   }
+  const qmProps = {
+    url:     { type: 'string', description: 'URL template with {z}, {x}, {y}' },
+    minZoom: { type: 'integer', default: 0 },
+    maxZoom: { type: 'integer', default: 13 },
+    crs:     { type: 'string', default: 'EPSG:4326', description: 'CRS of the quantized-mesh tile scheme. Standard servers use EPSG:4326.' },
+  }
 
   const makeAlt = (title, type, props, required, defaultVal) => ({
     title,
@@ -220,23 +274,30 @@ export function makeSourceSchema(presets, { includeEncoding = false } = {}) {
   }
 
   const baseAlts = [
-    makeAlt('XYZ',          'xyz',      xyzProps,      ['url'],           null),
-    makeAlt('WMS',          'wms',      wmsProps,      ['url', 'layers'], null),
-    makeAlt('WMTS',         'wmts',     wmtsProps,     ['url', 'layer'],  null),
-    makeAlt('COG',          'cog',      cogProps,      ['url'],           null),
-    makeAlt('COG Tiles',    'cogTiles', cogTilesProps, ['url'],           null),
+    makeAlt('XYZ',             'xyz',           xyzProps,      ['url'],           null),
+    makeAlt('WMS',             'wms',           wmsProps,      ['url', 'layers'], null),
+    makeAlt('WMTS',            'wmts',          wmtsProps,     ['url', 'layer'],  null),
+    makeAlt('COG',             'cog',           cogProps,      ['url'],           null),
+    makeAlt('COG Tiles',       'cogTiles',      cogTilesProps, ['url'],           null),
+    makeAlt('Quantized Mesh',  'quantizedMesh', qmProps,       ['url'],           null),
   ]
+
+  const propsByType = {
+    xyz: xyzProps, wms: wmsProps, wmts: wmtsProps,
+    cog: cogProps, cogTiles: cogTilesProps, quantizedMesh: qmProps,
+  }
+  const requiredByType = {
+    xyz: ['url'], wms: ['url', 'layers'], wmts: ['url'], cog: ['url'], cogTiles: ['url'], quantizedMesh: ['url'],
+  }
 
   const presetAlts = presets.map(p => {
     const type = Object.keys(p.source)[0]
-    const props = type === 'xyz' ? xyzProps : type === 'wms' ? wmsProps : type === 'wmts' ? wmtsProps : type === 'cog' ? cogProps : cogTilesProps
-    const required = type === 'xyz' ? ['url'] : type === 'wms' ? ['url', 'layers'] : ['url']
-    return makeAlt(p.title, type, props, required, p.source[type])
+    return makeAlt(p.title, type, propsByType[type] ?? xyzProps, requiredByType[type] ?? ['url'], p.source[type])
   })
 
   return {
     type: 'object',
-    description: 'Tile source. Exactly one of xyz, wms, or wmts must be present.',
+    description: 'Tile source. Exactly one of xyz, wms, wmts, cog, cogTiles, or quantizedMesh must be present.',
     anyOf: [...baseAlts, ...presetAlts],
     default: presets.length > 0 ? presets[0].source : undefined,
   }
@@ -303,6 +364,14 @@ export function buildWmsUrl(source, bbox, tileCrs, pixelWidth, pixelHeight) {
     ...(source.styles ? { STYLES: source.styles } : {}),
   })
   return `${source.url}?${params}`
+}
+
+// Builds a quantized-mesh tile URL. Uses TMS y convention (y=0 at south, matching Cesium).
+export function buildQuantizedMeshUrl(source, z, x, y) {
+  return source.url
+    .replace('{z}', z)
+    .replace('{x}', x)
+    .replace('{y}', y)
 }
 
 // ─── COG helpers ──────────────────────────────────────────────────────────────
