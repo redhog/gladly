@@ -13,7 +13,9 @@
   "scripts": {
     "dev": "npx serve . -l 1234",
     "build:example": "bash scripts/build-example.sh",
-    "build:lib": "rollup -c"
+    "build:lib": "rollup -c",
+    "pretest": "node scripts/bundle-test-vendors.mjs",
+    "test": "web-test-runner"
   },
   "dependencies": {
     "d3": "^7.8.5",
@@ -33,11 +35,15 @@
     "last 2 Safari versions"
   ],
   "devDependencies": {
+    "@esm-bundle/chai": "^4.3.4-fix.0",
     "@json-editor/json-editor": "^2.15.1",
     "@rollup/plugin-commonjs": "^29.0.2",
     "@rollup/plugin-json": "^6.1.0",
     "@rollup/plugin-node-resolve": "^15.3.1",
     "@rollup/plugin-terser": "^1.0.0",
+    "@web/dev-server-rollup": "^0.6.4",
+    "@web/test-runner": "^0.20.2",
+    "@web/test-runner-playwright": "^0.11.1",
     "rollup": "^4.59.1"
   }
 }

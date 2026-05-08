@@ -43,6 +43,28 @@ Gladly combines WebGL rendering (via regl) with D3.js for interactive axes and z
 - **Module Format**: ES6 modules
 - **Build Tool**: Parcel v2.9.0
 
+## Development
+
+Install dependencies:
+
+```bash
+npm install
+```
+
+Run the test suite (launches a real Chromium browser via Playwright):
+
+```bash
+npm test
+```
+
+Tests live in `test/`. The `pretest` script pre-bundles CJS dependencies (regl, proj4) to ESM before the runner starts. On first run, Playwright downloads its Chromium binary automatically.
+
+To run a subset of tests by name:
+
+```bash
+npm test -- --grep "uploadToTexture"
+```
+
 ## License
 
 MIT
