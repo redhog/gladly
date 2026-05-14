@@ -97,13 +97,12 @@ export class ArrayColumn extends ColumnData {
   }
 
   resolve(path, regl) {
-    const ref = this._upload(regl)
     const uName = `u_col_${path}`
     const shape = this.shape
     if (shape.length === 1) {
-      return { glslExpr: `sampleColumn(${uName}, a_pickId)`, textures: { [uName]: [() => ref.texture] }, shape }
+      return { glslExpr: `sampleColumn(${uName}, a_pickId)`, textures: { [uName]: [() => this._upload(regl).texture] }, shape }
     }
-    return { glslExpr: null, textures: { [uName]: [() => ref.texture] }, shape }
+    return { glslExpr: null, textures: { [uName]: [() => this._upload(regl).texture] }, shape }
   }
 
   toTexture(regl) { return [this._upload(regl).texture] }
