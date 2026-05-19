@@ -1010,6 +1010,12 @@ void main() {
       width: this.plotWidth,
       height: this.plotHeight
     }
+    const fullViewport = {
+      x: 0,
+      y: 0,
+      width: this.width,
+      height: this.height
+    }
     const axesConfig = this.currentConfig?.axes
 
     // Camera MVP for data layers (maps unit cube to NDC within the plot-area viewport).
@@ -1079,8 +1085,8 @@ void main() {
         yScaleType: yIsLog ? 1.0 : 0.0,
         zScaleType: zIsLog ? 1.0 : 0.0,
         u_is3D:    this._is3D ? 1.0 : 0.0,
-        u_mvp:     cameraMvp,
-        viewport: viewport,
+        u_mvp:     this._is3D ? axisMvp : cameraMvp,
+        viewport:  this._is3D ? fullViewport : viewport,
         count: layer.vertexCount ?? Object.values(layer.attributes).find(v => v instanceof Float32Array)?.length ?? 0,
         u_pickingMode: 0.0,
         u_pickLayerIndex: 0.0,
