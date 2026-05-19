@@ -292,10 +292,16 @@ export class Plot extends GlBase {
       for (const axisId of AXES) {
         const scale = this.axisRegistry.getScale(axisId)
         if (scale) {
-          const [min, max] = scale.domain()
-          const qk    = this.axisRegistry.getQkForSlot(axisId)
-          const qkDef = qk ? getAxisQuantityKind(qk) : {}
-          axes[axisId] = { ...qkDef, ...(axes[axisId] ?? {}), min, max, ...(qk ? { quantity_kind: qk } : {}) }
+          const qk          = this.axisRegistry.getQkForSlot(axisId)
+          const qkDef       = qk ? getAxisQuantityKind(qk) : {}
+          const initialized = qk ? this.axisRegistry.getDomain(qk) != null : false
+          const [min, max]  = scale.domain()
+          axes[axisId] = {
+            ...qkDef,
+            ...(axes[axisId] ?? {}),
+            ...(initialized ? { min, max } : {}),
+            ...(qk ? { quantity_kind: qk } : {}),
+          }
         }
       }
     }
@@ -756,9 +762,9 @@ void main() {
 
       // Register spatial axes (null means no axis for that direction).
       // Pass any scale override from config (e.g. "log") so the D3 scale is created correctly.
-      if (ac.xAxis) this.axisRegistry.ensureSpatialSlot(ac.xAxis, ac.xAxisQuantityKind, axesConfig[ac.xAxis]?.scale ?? axesConfig[ac.xAxisQuantityKind]?.scale)
-      if (ac.yAxis) this.axisRegistry.ensureSpatialSlot(ac.yAxis, ac.yAxisQuantityKind, axesConfig[ac.yAxis]?.scale ?? axesConfig[ac.yAxisQuantityKind]?.scale)
-      if (ac.zAxis) this.axisRegistry.ensureSpatialSlot(ac.zAxis, ac.zAxisQuantityKind, axesConfig[ac.zAxis]?.scale ?? axesConfig[ac.zAxisQuantityKind]?.scale)
+      if (ac.xAxis && ac.xAxisQuantityKind != null) this.axisRegistry.ensureSpatialSlot(ac.xAxis, ac.xAxisQuantityKind, axesConfig[ac.xAxis]?.scale ?? axesConfig[ac.xAxisQuantityKind]?.scale)
+      if (ac.yAxis && ac.yAxisQuantityKind != null) this.axisRegistry.ensureSpatialSlot(ac.yAxis, ac.yAxisQuantityKind, axesConfig[ac.yAxis]?.scale ?? axesConfig[ac.yAxisQuantityKind]?.scale)
+      if (ac.zAxis && ac.zAxisQuantityKind != null) this.axisRegistry.ensureSpatialSlot(ac.zAxis, ac.zAxisQuantityKind, axesConfig[ac.zAxis]?.scale ?? axesConfig[ac.zAxisQuantityKind]?.scale)
 
       // Register color axes (colorscale comes from config or quantity kind registry, not from here)
       for (const quantityKind of Object.values(ac.colorAxisQuantityKinds)) {

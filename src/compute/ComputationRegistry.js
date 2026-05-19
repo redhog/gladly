@@ -114,7 +114,13 @@ export async function resolveAttributeExpr(regl, expr, attrShaderName, plot) {
 export function resolveQuantityKind(expr, data) {
   if (expr instanceof ColumnData) return expr.quantityKind
   if (typeof expr === 'string') {
-    return (data ? data.getQuantityKind(expr) : null) ?? expr
+    const qk = data ? data.getQuantityKind(expr) : null
+    if (qk != null) return qk
+    // Only fall back to expr as the QK when the column actually exists in data.
+    // If getData returns null/undefined the dataset isn't in the hierarchy yet
+    // (e.g. lazy-loading pending), so return undefined to signal "no QK known".
+    if (data?.getData?.(expr) != null) return expr
+    return undefined
   }
   if (expr && typeof expr === 'object') {
     const keys = Object.keys(expr)
@@ -159,30 +165,20 @@ export function computationSchema(data) {
     defs[`params_${name}`] = comp.schema(data)
   }
 
-  if (cols.length === 0) {
-    defs.expression = false
-    defs.expression_opt = {
-      anyOf: [{ type: 'string', const: 'none', enum: ['none'], title: 'none', readOnly: true }]
-    }
-  } else {
-    defs.expression = {
-      anyOf: [
-        ...cols.map(col => ({ type: 'string', const: col, enum: [col], title: col, readOnly: true })),
-        ...[...textureComputations, ...glslComputations].map(([name]) => ({
-          type: 'object',
-          title: name,
-          properties: { [name]: { '$ref': `#/$defs/params_${name}` } },
-          required: [name],
-          additionalProperties: false
-        }))
-      ]
-    }
-    defs.expression_opt = {
-      anyOf: [
-        { type: 'string', const: 'none', enum: ['none'], title: 'none', readOnly: true },
-        ...defs.expression.anyOf
-      ]
-    }
+  const colBranches = cols.map(col => ({ type: 'string', const: col, enum: [col], title: col }))
+  const computationBranches = [...textureComputations, ...glslComputations].map(([name]) => ({
+    type: 'object',
+    title: name,
+    properties: { [name]: { '$ref': `#/$defs/params_${name}` } },
+    required: [name],
+    additionalProperties: false
+  }))
+  const anyOf = [{ type: 'string' }, ...colBranches, ...computationBranches]
+
+  defs.expression = { 'x-format': 'expression', anyOf }
+  defs.expression_opt = {
+    'x-format': 'expression',
+    anyOf: [{ type: 'string', const: 'none', enum: ['none'], title: 'none' }, ...anyOf]
   }
 
   return { '$defs': defs, '$ref': '#/$defs/expression' }
