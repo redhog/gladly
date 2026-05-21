@@ -715,31 +715,30 @@ Add `map_color_s_sel()` to `buildColorGlsl()`:
 ```glsl
 // Like map_color_s but modulates based on a selection value.
 // selected < -0.5: no active selection (identity — no visual change)
-// selected = 0.0: not selected
-// selected = 1.0: selected
-// Default behavior: dim unselected points. Colorscales can register a GLSL override.
+// selected = 0.0: not selected → full color unchanged
+// selected = 1.0: selected → mix with 30% black
 vec4 map_color_s_sel(int cs, vec2 range, float v, float scaleType, float useAlpha, float selected) {
   vec4 color = map_color_s(cs, range, v, scaleType, useAlpha);
-  if (selected > -0.5) {
-    float selectionFactor = selected > 0.5 ? 1.0 : 0.2;
-    color.a *= selectionFactor;
+  if (selected > 0.5) {
+    color.rgb = mix(color.rgb, vec3(0.0), 0.3);
   }
   return color;
 }
 ```
 
-Add optional registration for colorscale-specific override GLSL:
+The 30% black mix applies to selected points regardless of which colorscale is active; unselected points are rendered with their normal colorscale values unchanged. Colorscales that want different selection behaviour can register a GLSL override:
 
 ```js
 const colorscaleSelectionOverrides = new Map()  // name → glsl string
 
 export function registerColorscaleSelectionOverride(name, glslFn) {
   // glslFn: string defining vec4 colorscale_sel_<name>(vec4 base, float selected)
+  // base is already the full computed color; selected is 0.0 or 1.0
   colorscaleSelectionOverrides.set(name, glslFn)
 }
 ```
 
-In `buildColorGlsl()`, if any overrides are registered, generate a dispatch function `map_color_s_sel_dispatch()` that checks the `cs` index and calls the override; falls back to the default.
+In `buildColorGlsl()`, if any overrides are registered, emit a dispatch function that switches on `cs` index and calls the override for matching colorscales, falling back to the default 30%-black mix for all others.
 
 ### `src/core/LayerType.js` — selection column injection
 
