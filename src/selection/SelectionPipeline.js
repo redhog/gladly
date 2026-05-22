@@ -62,6 +62,9 @@ export class SelectionPipeline {
 
     if (hi - lo <= 1) return  // fully resolved — single item
 
+    // Only recurse if any lasso-covered pixel still has count > 1 (overlapping items)
+    if (!this._gather.hasAmbiguousPixels(this._pickCount.countFbo, this._mask.fbo)) return
+
     const mid = Math.floor((lo + hi) / 2)
     await this._halvingStep(layer, layerIdx, selCol, lo,  mid, depth + 1, maxDepth)
     await this._halvingStep(layer, layerIdx, selCol, mid, hi,  depth + 1, maxDepth)

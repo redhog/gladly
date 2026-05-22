@@ -1,3 +1,34 @@
+const CHECK_VERT = `#version 300 es
+precision highp float;
+precision highp sampler2D;
+
+in vec2 a_pixel;
+uniform sampler2D u_countTex;
+uniform sampler2D u_maskTex;
+uniform vec2 u_screenSize;
+
+void main() {
+  gl_PointSize = 1.0;
+  vec2 uv = (a_pixel + 0.5) / u_screenSize;
+
+  float mask  = texture(u_maskTex,  uv).r;
+  float count = texture(u_countTex, uv).r;
+
+  if (mask < 0.5 || count <= 1.5 / 255.0) {
+    gl_Position = vec4(10.0, 0.0, 0.0, 1.0);
+    return;
+  }
+
+  gl_Position = vec4(0.0, 0.0, 0.0, 1.0);
+}`
+
+const CHECK_FRAG = `#version 300 es
+precision highp float;
+out vec4 fragColor;
+void main() {
+  fragColor = vec4(1.0 / 255.0, 0.0, 0.0, 0.0);
+}`
+
 const GATHER_VERT = `#version 300 es
 precision highp float;
 precision highp sampler2D;
@@ -72,6 +103,22 @@ export class GatherPass {
     this._regl = regl
     this._pixelBuf = this._buildBuffer(regl, canvasW, canvasH)
     this._pixelCount = canvasW * canvasH
+    this._checkFbo = regl.framebuffer({ width: 1, height: 1, colorFormat: 'rgba', colorType: 'float' })
+    this._checkCmd = regl({
+      vert: CHECK_VERT,
+      frag: CHECK_FRAG,
+      attributes: { a_pixel: { buffer: regl.prop('pixelBuf'), size: 2 } },
+      uniforms: {
+        u_countTex:   regl.prop('countTex'),
+        u_maskTex:    regl.prop('maskTex'),
+        u_screenSize: regl.prop('screenSize'),
+      },
+      framebuffer: this._checkFbo,
+      primitive: 'points',
+      count: regl.prop('count'),
+      depth: { enable: false },
+      blend: { enable: true, func: { src: 'one', dst: 'one' } },
+    })
     this._cmd = regl({
       vert: GATHER_VERT,
       frag: GATHER_FRAG,
@@ -123,6 +170,24 @@ export class GatherPass {
     })
   }
 
+  hasAmbiguousPixels(countFbo, maskFbo) {
+    this._regl({ framebuffer: this._checkFbo })(() => {
+      this._regl.clear({ color: [0, 0, 0, 0] })
+    })
+    this._checkCmd({
+      countTex:   countFbo.color[0],
+      maskTex:    maskFbo.color[0],
+      screenSize: [countFbo.width, countFbo.height],
+      pixelBuf:   this._pixelBuf,
+      count:      this._pixelCount,
+    })
+    const data = new Float32Array(4)
+    this._regl({ framebuffer: this._checkFbo })(() => {
+      this._regl.read({ data })
+    })
+    return data[0] > 0
+  }
+
   resize(w, h) {
     this._pixelBuf.destroy()
     this._pixelBuf = this._buildBuffer(this._regl, w, h)
@@ -131,5 +196,6 @@ export class GatherPass {
 
   destroy() {
     this._pixelBuf.destroy()
+    this._checkFbo.destroy()
   }
 }
