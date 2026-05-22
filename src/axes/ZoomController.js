@@ -219,6 +219,9 @@ export class ZoomController {
 
     canvas.addEventListener('mousedown', (e) => {
       e.preventDefault()
+      // Shift+drag is reserved for lasso selection — do not pan
+      if (e.button === 0 && e.shiftKey) return
+
       dragRect = canvas.getBoundingClientRect()
       const mx = e.clientX - dragRect.left
       const my = e.clientY - dragRect.top

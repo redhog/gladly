@@ -1,4 +1,4 @@
-import { Plot, PlotGroup } from "../src/index.js"
+import { Plot, PlotGroup, LassoInteraction } from "../src/index.js"
 import { JSONEditor } from '@json-editor/json-editor'
 import { data as dataPromise, showStatus } from "./shared.js"
 
@@ -101,7 +101,8 @@ let plot1Config = {
         "vData": "input.v1",
         "vData2": "input.v2",
         "xAxis": "xaxis_bottom",
-        "yAxis": "yaxis_left"
+        "yAxis": "yaxis_left",
+        "selection": "brush1"
       }
     }
   ],
@@ -160,7 +161,8 @@ let plot2Config = {
         "vData": "input.v1",
         "vData2": "none",
         "xAxis": "xaxis_top",
-        "yAxis": "yaxis_left"
+        "yAxis": "yaxis_left",
+        "selection": "brush1"
       }
     }
   ],
@@ -227,6 +229,11 @@ await group.update({
 })
 plot1Config = plot1.getConfig()
 plot2Config = plot2.getConfig()
+
+// Shift-drag on either plot to draw a lasso; selection propagates automatically
+// to the other plot via the shared 'brush1' selection channel.
+const lasso1 = new LassoInteraction(plot1, { trigger: 'shift' })
+const lasso2 = new LassoInteraction(plot2, { trigger: 'shift' })
 
 function attachPickHandler(plot) {
   const status = document.getElementById('tab1-pick-status')

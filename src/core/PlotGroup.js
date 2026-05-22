@@ -117,6 +117,12 @@ export class PlotGroup {
     // Collect all axes grouped by quantity kind across all plots.
     // Spatial, color, and filter axes are all handled uniformly:
     // plot._getAxis(id) returns a stable Axis instance for any id.
+    //
+    // Selection linking is implicit: PlotGroup.update() passes the same
+    // normalised DataGroup instance to every plot, so all layers with the
+    // same selection name share a SelectionRegistry entry keyed by that
+    // shared data reference.  selectLasso() + notifyFromGpu() propagate GPU
+    // results to all other subscribers automatically — no explicit wiring here.
     const qkAxes = new Map() // QK → [{ plotName, axisId }]
 
     for (const [plotName, plot] of this._plots) {

@@ -28,6 +28,9 @@ export { Computation, TextureComputation, GlslComputation, ComputedData } from "
 export { ArrayColumn } from "./data/ColumnData.js"
 export { EXPRESSION_REF, computationSchema, buildTransformSchema, registerTextureComputation, registerGlslComputation, registerComputedData, getComputedData, resolveQuantityKind } from "./compute/ComputationRegistry.js"
 export { ComputedDataNode } from "./data/Data.js"
+export { SelectionColumn } from "./selection/SelectionColumn.js"
+export { SelectionRegistry, globalSelectionRegistry } from "./selection/SelectionRegistry.js"
+export { LassoInteraction } from "./selection/LassoInteraction.js"
 
 // Register all matplotlib colorscales (side-effect import)
 import "./colorscales/MatplotlibColorscales.js"

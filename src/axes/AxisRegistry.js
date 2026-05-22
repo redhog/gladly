@@ -2,6 +2,40 @@ import * as d3 from "d3-scale"
 import { getAxisQuantityKind, getScaleTypeFloat } from "./AxisQuantityKindRegistry.js"
 import { getColorscaleIndex } from "../colorscales/ColorscaleRegistry.js"
 
+export function buildSpatialGlsl() {
+  return `uniform vec2 xDomain;
+uniform vec2 yDomain;
+uniform vec2 zDomain;
+uniform float xScaleType;
+uniform float yScaleType;
+uniform float zScaleType;
+uniform float u_is3D;
+uniform mat4 u_mvp;
+out vec3 v_clip_pos;
+float normalize_axis(float v, vec2 domain, float scaleType) {
+  float vt = scaleType > 0.5 ? log(v) : v;
+  float d0 = scaleType > 0.5 ? log(domain.x) : domain.x;
+  float d1 = scaleType > 0.5 ? log(domain.y) : domain.y;
+  return (vt - d0) / (d1 - d0);
+}
+vec4 plot_pos_3d(vec3 pos) {
+  float nx = normalize_axis(pos.x, xDomain, xScaleType);
+  float ny = normalize_axis(pos.y, yDomain, yScaleType);
+  float nz = normalize_axis(pos.z, zDomain, zScaleType);
+  v_clip_pos = vec3(nx, ny, nz);
+  return u_mvp * vec4(nx*2.0-1.0, ny*2.0-1.0, nz*2.0-1.0, 1.0);
+}
+vec4 plot_pos(vec2 pos) {
+  float nx = normalize_axis(pos.x, xDomain, xScaleType);
+  float ny = normalize_axis(pos.y, yDomain, yScaleType);
+  if (u_is3D > 0.5) {
+    return plot_pos_3d(vec3(pos, zDomain.x));
+  }
+  v_clip_pos = vec3(nx, ny, 0.5);
+  return u_mvp * vec4(nx*2.0-1.0, ny*2.0-1.0, 0.0, 1.0);
+}`
+}
+
 export const AXIS_GEOMETRY = {
   'xaxis_bottom':      { dir: 'x', fixed: { y: -1, z: +1 }, outward: [0, -1, 0] },
   'xaxis_top':         { dir: 'x', fixed: { y: +1, z: +1 }, outward: [0, +1, 0] },

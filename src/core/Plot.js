@@ -12,6 +12,8 @@ import { DataGroup, normalizeData } from "../data/Data.js"
 import { enqueueRegl, compileEnqueuedShaders } from "./ShaderQueue.js"
 import { GlBase } from "./GlBase.js"
 import { tdrYield } from "../tdr.js"
+import { globalSelectionRegistry } from "../selection/SelectionRegistry.js"
+import { SelectionPipeline } from "../selection/SelectionPipeline.js"
 
 // Throttle linked-plot renders when the source plot's "blocked lag" is high.
 // Blocked lag = max(0, RAF_wait - own_render_time): high when other plots' renders
@@ -78,10 +80,19 @@ function buildPlotSchema(data, config) {
           type: "object",
           oneOf: layerTypes.map(typeName => {
             const layerType = getLayerType(typeName)
+            const layerSchema = layerType.schema(fullSchemaData)
+            const layerSchemaWithSelection = {
+              ...layerSchema,
+              properties: {
+                ...(layerSchema.properties ?? {}),
+                selection: { type: 'string', default: '', description: 'Selection channel name. Layers sharing the same name and data object are linked.' },
+              },
+              required: [...(layerSchema.required ?? []), 'selection'],
+            }
             return {
               title: typeName,
               properties: {
-                [typeName]: layerType.schema(fullSchemaData)
+                [typeName]: layerSchemaWithSelection
               },
               required: [typeName],
               additionalProperties: false
@@ -209,6 +220,7 @@ export class Plot extends GlBase {
     if (config !== undefined) this.currentConfig = config
     if (data !== undefined) {
       this._rawData = normalizeData(data)  // normalise once; kept immutable
+      this._lastRawDataArg = data          // keep reference for selection registry keying
     }
 
     if (!this.currentConfig || !this._rawData) return
@@ -233,6 +245,7 @@ export class Plot extends GlBase {
 
     this._warnedMissingDomains = false
     await this._initialize()
+    this._selectionPipeline?.resize(Math.max(1, width), Math.max(1, height))
     this._syncFloats()
   }
 
@@ -345,6 +358,13 @@ export class Plot extends GlBase {
       // Notify regl of any canvas dimension change so its internal state stays
       // consistent (e.g. default framebuffer size used by regl.clear).
       this.regl.poll()
+    }
+
+    // Unregister selection columns from previous layer set
+    for (const layer of this.layers) {
+      if (layer.selectionName) {
+        globalSelectionRegistry.unregister(this._lastRawDataArg, layer.selectionName, this)
+      }
     }
 
     // Destroy GPU buffers owned by the previous layer set before rebuilding.
@@ -588,6 +608,63 @@ void main() {
     }
   }
 
+  // Build the regl props for a single layer draw call. Used by render(), pick(),
+  // and the selection pipeline.
+  _buildLayerProps(layer, layerIdx, { pickMode = 0.0, idLo = 0, idHi = 1e9, viewport = null, mvp = null } = {}) {
+    const xIsLog = layer.xAxis ? this.axisRegistry.isLogScale(layer.xAxis) : false
+    const yIsLog = layer.yAxis ? this.axisRegistry.isLogScale(layer.yAxis) : false
+    const zIsLog = layer.zAxis ? this.axisRegistry.isLogScale(layer.zAxis) : false
+    const zScale = layer.zAxis ? this.axisRegistry.getScale(layer.zAxis) : null
+    const camMvp = this._camera ? this._camera.getMVP() : mat4Identity()
+
+    const resolvedMvp = mvp ?? camMvp
+    const resolvedViewport = viewport ?? {
+      x: this.margin.left,
+      y: this.margin.bottom,
+      width: this.plotWidth,
+      height: this.plotHeight,
+    }
+
+    const props = {
+      xDomain: layer.xAxis ? (this.axisRegistry.getScale(layer.xAxis)?.domain() ?? [0, 1]) : [0, 1],
+      yDomain: layer.yAxis ? (this.axisRegistry.getScale(layer.yAxis)?.domain() ?? [0, 1]) : [0, 1],
+      zDomain: zScale ? zScale.domain() : [0, 1],
+      xScaleType: xIsLog ? 1.0 : 0.0,
+      yScaleType: yIsLog ? 1.0 : 0.0,
+      zScaleType: zIsLog ? 1.0 : 0.0,
+      u_is3D:    this._is3D ? 1.0 : 0.0,
+      u_mvp:     resolvedMvp,
+      viewport:  resolvedViewport,
+      count: layer.vertexCount ?? Object.values(layer.attributes).find(v => v instanceof Float32Array)?.length ?? 0,
+      u_pickingMode:    pickMode,
+      u_pickLayerIndex: layerIdx,
+      u_idLo: idLo,
+      u_idHi: idHi,
+    }
+
+    if (layer.instanceCount !== null) {
+      props.instances = layer.instanceCount
+    }
+
+    for (const qk of Object.values(layer.colorAxes)) {
+      const pk = qk.replace(/\./g, '_')
+      props[`colorscale_${pk}`]        = this.axisRegistry.getColorscaleIndex(qk)
+      const domain = this.axisRegistry.getDomain(qk)
+      props[`color_range_${pk}`]       = domain ?? [0, 1]
+      props[`color_scale_type_${pk}`]  = this._getScaleTypeFloat(qk)
+      props[`alpha_blend_${pk}`]       = this.axisRegistry.getAlphaBlend(qk)
+      props[`color_filter_range_${pk}`]= this.axisRegistry.getColorFilterRangeUniform(qk)
+    }
+
+    for (const qk of Object.values(layer.filterAxes)) {
+      const pk = qk.replace(/\./g, '_')
+      props[`filter_range_${pk}`]      = this.axisRegistry.getFilterRangeUniform(qk)
+      props[`filter_scale_type_${pk}`] = this._getScaleTypeFloat(qk)
+    }
+
+    return props
+  }
+
   // Returns the quantity kind for any axis ID (spatial or color axis).
   // For color axes, the axis ID IS the quantity kind.
   getAxisQuantityKind(axisId) {
@@ -786,6 +863,23 @@ void main() {
       }
       if (this._initEpoch !== epoch) return
       for (const layer of gpuLayers) {
+        // Register selection column if the layer config declares a selection binding
+        const selectionName = parameters.selection || null
+        if (selectionName && this._lastRawDataArg != null) {
+          const N = layer.instanceCount ?? layer.vertexCount ?? 0
+          if (N > 0) {
+            const selCol = globalSelectionRegistry.register(
+              this._lastRawDataArg,
+              selectionName,
+              this,
+              this.regl,
+              N
+            )
+            layer.selectionName   = selectionName
+            layer.selectionColumn = selCol  // null if N mismatch
+          }
+        }
+
         layer.configLayerIndex = configLayerIndex
         try {
           layer.draw = await this._compileLayerDraw(layer)
@@ -804,10 +898,17 @@ void main() {
   }
 
   async _compileLayerDraw(layer) {
-    const drawConfig = await layer.type.createDrawCommand(this.regl, layer, this)
+    const drawConfigRaw = await layer.type.createDrawCommand(this.regl, layer, this)
 
     // If createDrawCommand returns a function, it fully owns the draw call — pass through.
-    if (typeof drawConfig === 'function') return drawConfig
+    if (typeof drawConfigRaw === 'function') return drawConfigRaw
+
+    // Extract optional count draw config (set by default createDrawCommand impl)
+    const countConfig = drawConfigRaw._countConfig ?? null
+    if (countConfig) delete drawConfigRaw._countConfig
+    if (countConfig && countConfig._countConfig) delete countConfig._countConfig
+
+    const drawConfig = drawConfigRaw
 
     const shaderKey = drawConfig.vert + '\0' + drawConfig.frag
 
@@ -867,7 +968,7 @@ void main() {
 
     layer._bufferProps = bufferProps
 
-    return (runtimeProps) => {
+    const drawFn = (runtimeProps) => {
       const baseProps = {}
       for (const [key, fn] of Object.entries(dynamicUniforms)) baseProps[key] = fn()
       let nTiles = 1
@@ -886,6 +987,62 @@ void main() {
         cmd({ ...bufferProps, ...baseProps, ...tileProps, ...runtimeProps })
       }
     }
+
+    // Compile count draw command if available (used by selection pipeline)
+    if (countConfig) {
+      const countShaderKey = countConfig.vert + '\0' + countConfig.frag
+      if (!this._shaderCache.has(countShaderKey)) {
+        const propAttrs = {}
+        for (const [key, val] of Object.entries(countConfig.attributes)) {
+          const rawBuf = val?.buffer instanceof Float32Array ? val.buffer
+            : val instanceof Float32Array ? val : null
+          if (rawBuf !== null) {
+            const divisor = val?.divisor
+            propAttrs[key] = divisor !== undefined
+              ? { buffer: this.regl.prop(`attr_${key}`), divisor }
+              : this.regl.prop(`attr_${key}`)
+          } else {
+            propAttrs[key] = val
+          }
+        }
+        const propUniforms = {}
+        for (const [key, val] of Object.entries(countConfig.uniforms)) {
+          propUniforms[key] = (typeof val === 'function' || isTiledTexClosure(val))
+            ? this.regl.prop(key) : val
+        }
+        this._shaderCache.set(countShaderKey, enqueueRegl(this.regl, { ...countConfig, attributes: propAttrs, uniforms: propUniforms }))
+      }
+      const countCmd = this._shaderCache.get(countShaderKey)
+
+      const countDynamicUniforms = {}
+      const countTiledClosures = {}
+      for (const [key, val] of Object.entries(countConfig.uniforms)) {
+        if (isTiledTexClosure(val)) countTiledClosures[key] = val
+        else if (typeof val === 'function') countDynamicUniforms[key] = val
+      }
+
+      layer.drawCount = (runtimeProps) => {
+        const baseProps = {}
+        for (const [key, fn] of Object.entries(countDynamicUniforms)) baseProps[key] = fn()
+        let nTiles = 1
+        for (const fns of Object.values(countTiledClosures)) {
+          if (fns.length > nTiles) nTiles = fns.length
+        }
+        for (let t = 0; t < nTiles; t++) {
+          const tileProps = {}
+          let skip = false
+          for (const [key, fns] of Object.entries(countTiledClosures)) {
+            const tex = (t < fns.length ? fns[t] : fns[0])?.()
+            if (tex == null) { skip = true; break }
+            tileProps[key] = tex
+          }
+          if (skip) continue
+          countCmd({ ...bufferProps, ...baseProps, ...tileProps, ...runtimeProps })
+        }
+      }
+    }
+
+    return drawFn
   }
 
   _setDomains(axesOverrides) {
@@ -1071,30 +1228,12 @@ void main() {
     await tdrYield()
     this.regl.clear({ color: [1,1,1,1], depth:1 })
 
-    for (const layer of this.layers) {
-      const xIsLog = layer.xAxis ? this.axisRegistry.isLogScale(layer.xAxis) : false
-      const yIsLog = layer.yAxis ? this.axisRegistry.isLogScale(layer.yAxis) : false
-      const zIsLog = layer.zAxis ? this.axisRegistry.isLogScale(layer.zAxis) : false
-      const zScale = layer.zAxis ? this.axisRegistry.getScale(layer.zAxis) : null
-      const zDomain = zScale ? zScale.domain() : [0, 1]
-      const props = {
-        xDomain: layer.xAxis ? (this.axisRegistry.getScale(layer.xAxis)?.domain() ?? [0, 1]) : [0, 1],
-        yDomain: layer.yAxis ? (this.axisRegistry.getScale(layer.yAxis)?.domain() ?? [0, 1]) : [0, 1],
-        zDomain,
-        xScaleType: xIsLog ? 1.0 : 0.0,
-        yScaleType: yIsLog ? 1.0 : 0.0,
-        zScaleType: zIsLog ? 1.0 : 0.0,
-        u_is3D:    this._is3D ? 1.0 : 0.0,
-        u_mvp:     this._is3D ? axisMvp : cameraMvp,
-        viewport:  this._is3D ? fullViewport : viewport,
-        count: layer.vertexCount ?? Object.values(layer.attributes).find(v => v instanceof Float32Array)?.length ?? 0,
-        u_pickingMode: 0.0,
-        u_pickLayerIndex: 0.0,
-      }
+    for (let i = 0; i < this.layers.length; i++) {
+      const layer = this.layers[i]
 
-      if (layer.instanceCount !== null) {
-        props.instances = layer.instanceCount
-      }
+      const layerViewport = this._is3D ? fullViewport : viewport
+      const layerMvp      = this._is3D ? axisMvp : cameraMvp
+      const props = this._buildLayerProps(layer, i, { viewport: layerViewport, mvp: layerMvp })
 
       // Warn once if this draw call will produce no geometry
       if (!layer._warnedZeroCount && !layer.type?.suppressWarnings) {
@@ -1106,22 +1245,6 @@ void main() {
           )
           layer._warnedZeroCount = true
         }
-      }
-
-      for (const qk of Object.values(layer.colorAxes)) {
-        const pk = qk.replace(/\./g, '_')
-        props[`colorscale_${pk}`] = this.axisRegistry.getColorscaleIndex(qk)
-        const domain = this.axisRegistry.getDomain(qk)
-        props[`color_range_${pk}`] = domain ?? [0, 1]
-        props[`color_scale_type_${pk}`] = this._getScaleTypeFloat(qk)
-        props[`alpha_blend_${pk}`] = this.axisRegistry.getAlphaBlend(qk)
-        props[`color_filter_range_${pk}`] = this.axisRegistry.getColorFilterRangeUniform(qk)
-      }
-
-      for (const qk of Object.values(layer.filterAxes)) {
-        const pk = qk.replace(/\./g, '_')
-        props[`filter_range_${pk}`] = this.axisRegistry.getFilterRangeUniform(qk)
-        props[`filter_scale_type_${pk}`] = this._getScaleTypeFloat(qk)
       }
 
       if (!failedLayers.has(layer)) {
@@ -1216,8 +1339,6 @@ void main() {
       colorFormat: 'rgba', colorType: 'uint8', depth: false,
     })
 
-    const axesConfig = this.currentConfig?.axes
-
     // Refresh transform nodes before picking (same as render)
     for (const node of this._dataTransformNodes) {
       await node.refreshIfNeeded(this)
@@ -1232,47 +1353,9 @@ void main() {
     try {
     this.regl({ framebuffer: fbo })(() => {
       this.regl.clear({ color: [0, 0, 0, 0] })
-      const viewport = {
-        x: this.margin.left, y: this.margin.bottom,
-        width: this.plotWidth, height: this.plotHeight
-      }
       for (let i = 0; i < this.layers.length; i++) {
         const layer = this.layers[i]
-
-        const xIsLog = layer.xAxis ? this.axisRegistry.isLogScale(layer.xAxis) : false
-        const yIsLog = layer.yAxis ? this.axisRegistry.isLogScale(layer.yAxis) : false
-        const zIsLog = layer.zAxis ? this.axisRegistry.isLogScale(layer.zAxis) : false
-        const zScale = layer.zAxis ? this.axisRegistry.getScale(layer.zAxis) : null
-        const camMvp = this._camera ? this._camera.getMVP() : mat4Identity()
-        const props = {
-          xDomain: layer.xAxis ? (this.axisRegistry.getScale(layer.xAxis)?.domain() ?? [0, 1]) : [0, 1],
-          yDomain: layer.yAxis ? (this.axisRegistry.getScale(layer.yAxis)?.domain() ?? [0, 1]) : [0, 1],
-          zDomain: zScale ? zScale.domain() : [0, 1],
-          xScaleType: xIsLog ? 1.0 : 0.0,
-          yScaleType: yIsLog ? 1.0 : 0.0,
-          zScaleType: zIsLog ? 1.0 : 0.0,
-          u_is3D:    this._is3D ? 1.0 : 0.0,
-          u_mvp:     camMvp,
-          viewport,
-          count: layer.vertexCount ?? Object.values(layer.attributes).find(v => v instanceof Float32Array)?.length ?? 0,
-          u_pickingMode: 1.0,
-          u_pickLayerIndex: i,
-        }
-        if (layer.instanceCount !== null) props.instances = layer.instanceCount
-        for (const qk of Object.values(layer.colorAxes)) {
-          const pk = qk.replace(/\./g, '_')
-          props[`colorscale_${pk}`] = this.axisRegistry.getColorscaleIndex(qk)
-          const domain = this.axisRegistry.getDomain(qk)
-          props[`color_range_${pk}`] = domain ?? [0, 1]
-          props[`color_scale_type_${pk}`] = this._getScaleTypeFloat(qk)
-          props[`alpha_blend_${pk}`] = this.axisRegistry.getAlphaBlend(qk)
-          props[`color_filter_range_${pk}`] = this.axisRegistry.getColorFilterRangeUniform(qk)
-        }
-        for (const qk of Object.values(layer.filterAxes)) {
-          const pk = qk.replace(/\./g, '_')
-          props[`filter_range_${pk}`] = this.axisRegistry.getFilterRangeUniform(qk)
-          props[`filter_scale_type_${pk}`] = this._getScaleTypeFloat(qk)
-        }
+        const props = this._buildLayerProps(layer, i, { pickMode: 1.0 })
         layer.draw(props)
       }
       var pixels;
@@ -1294,5 +1377,38 @@ void main() {
       fbo.destroy()
     }
     return result
+  }
+
+  // Run a GPU lasso selection on all layers that declare a selection binding.
+  // vertices: [[x, y], ...] in HTML canvas coords (top-left origin)
+  async selectLasso(vertices) {
+    if (!this.regl || !this.layers.length || !this._lastRawDataArg) return
+
+    // Build map of layerIdx → SelectionColumn for layers with active selection columns
+    const selectionColumns = new Map()
+    for (let i = 0; i < this.layers.length; i++) {
+      const layer = this.layers[i]
+      if (layer.selectionName && layer.selectionColumn) {
+        selectionColumns.set(i, layer.selectionColumn)
+      }
+    }
+    if (selectionColumns.size === 0) return
+
+    if (!this._selectionPipeline) {
+      this._selectionPipeline = new SelectionPipeline(this.regl, this)
+    }
+
+    await this._selectionPipeline.runLasso(vertices, selectionColumns)
+
+    // Propagate selection to CPU mirror and sync to all linked plots
+    for (const layer of this.layers) {
+      if (layer.selectionName && layer.selectionColumn) {
+        globalSelectionRegistry.notifyFromGpu(
+          this._lastRawDataArg,
+          layer.selectionName,
+          this
+        )
+      }
+    }
   }
 }

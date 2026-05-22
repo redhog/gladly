@@ -164,7 +164,8 @@ export function buildColorGlsl() {
   parts.push('  return vec4(0.5, 0.5, 0.5, 1.0);')
   parts.push('}')
 
-  // map_color_s — 1D with scale type, alpha blending, and picking
+  // map_color_s — 1D with scale type, alpha blending, and picking.
+  // Selection fading is handled by gladly_apply_color (always called by all color paths).
   parts.push('vec4 map_color_s(int cs, vec2 range, float v, float scaleType, float useAlpha) {')
   parts.push('  bool nan = (v != v);')
   parts.push('  float vt = scaleType > 0.5 ? log(v) : v;')

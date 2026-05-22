@@ -1,42 +1,8 @@
 import { Layer } from "./Layer.js"
 import { buildColorGlsl, getRegisteredColorscales } from "../colorscales/ColorscaleRegistry.js"
-import { buildFilterGlsl, buildColorFilterGlsl } from "../axes/AxisRegistry.js"
+import { buildFilterGlsl, buildColorFilterGlsl, buildSpatialGlsl } from "../axes/AxisRegistry.js"
 import { resolveAttributeExpr } from "../compute/ComputationRegistry.js"
 import { SAMPLE_COLUMN_GLSL, SAMPLE_COLUMN_ND_GLSL } from "../data/ColumnData.js"
-
-function buildSpatialGlsl() {
-  return `uniform vec2 xDomain;
-uniform vec2 yDomain;
-uniform vec2 zDomain;
-uniform float xScaleType;
-uniform float yScaleType;
-uniform float zScaleType;
-uniform float u_is3D;
-uniform mat4 u_mvp;
-out vec3 v_clip_pos;
-float normalize_axis(float v, vec2 domain, float scaleType) {
-  float vt = scaleType > 0.5 ? log(v) : v;
-  float d0 = scaleType > 0.5 ? log(domain.x) : domain.x;
-  float d1 = scaleType > 0.5 ? log(domain.y) : domain.y;
-  return (vt - d0) / (d1 - d0);
-}
-vec4 plot_pos_3d(vec3 pos) {
-  float nx = normalize_axis(pos.x, xDomain, xScaleType);
-  float ny = normalize_axis(pos.y, yDomain, yScaleType);
-  float nz = normalize_axis(pos.z, zDomain, zScaleType);
-  v_clip_pos = vec3(nx, ny, nz);
-  return u_mvp * vec4(nx*2.0-1.0, ny*2.0-1.0, nz*2.0-1.0, 1.0);
-}
-vec4 plot_pos(vec2 pos) {
-  float nx = normalize_axis(pos.x, xDomain, xScaleType);
-  float ny = normalize_axis(pos.y, yDomain, yScaleType);
-  if (u_is3D > 0.5) {
-    return plot_pos_3d(vec3(pos, zDomain.x));
-  }
-  v_clip_pos = vec3(nx, ny, 0.5);
-  return u_mvp * vec4(nx*2.0-1.0, ny*2.0-1.0, 0.0, 1.0);
-}`
-}
 
 function buildClipFragGlsl() {
   return `in vec3 v_clip_pos;
@@ -48,6 +14,7 @@ function buildApplyColorGlsl() {
 uniform float u_pickingMode;
 uniform float u_pickLayerIndex;
 in float v_pickId;
+in float v_selection;
 vec4 gladly_apply_color(vec4 color) {
   if (u_pickingMode > 0.5) {
     float layerIdx = u_pickLayerIndex + 1.0;
@@ -58,6 +25,10 @@ vec4 gladly_apply_color(vec4 color) {
       floor(mod(dataIdx, 65536.0) / 256.0) / 255.0,
       mod(dataIdx, 256.0) / 255.0
     );
+  }
+  if (v_selection >= -0.5 && v_selection < 0.5) {
+    color.rgb = mix(color.rgb, vec3(0.8), 0.6);
+    color.a *= 0.4;
   }
   return color;
 }`
@@ -87,7 +58,9 @@ function injectIntoMainStart(src, code) {
 function injectPickIdAssignment(src) {
   const lastBrace = src.lastIndexOf('}')
   if (lastBrace === -1) return src
-  return src.slice(0, lastBrace) + '  v_pickId = a_pickId;\n}'
+  // Clip vertices outside [u_idLo, u_idHi) before assigning pick ID
+  const rangeCheck = '  if (a_pickId < u_idLo || a_pickId >= u_idHi) { gl_Position = vec4(10.0, 0.0, 0.0, 1.0); return; }\n'
+  return src.slice(0, lastBrace) + rangeCheck + '  v_pickId = a_pickId;\n}'
 }
 
 function injectInto(src, helpers) {
@@ -264,6 +237,10 @@ export class LayerType {
       uniforms[`filter_scale_type${suffix}`] = regl.prop(`filter_scale_type_${pk}`)
     }
 
+    // Range-limited render uniforms (used by selection pipeline halving loop)
+    uniforms['u_idLo'] = regl.prop('u_idLo')
+    uniforms['u_idHi'] = regl.prop('u_idHi')
+
     // Strip spatial uniforms from vert (re-declared in buildSpatialGlsl)
     vertSrc = removeUniformDecl(vertSrc, 'xDomain')
     vertSrc = removeUniformDecl(vertSrc, 'yDomain')
@@ -280,7 +257,7 @@ export class LayerType {
       uniforms['u_colorscale_tex'] = [() => plot.colorscaleTexture]
     }
     const filterGlsl = Object.keys(layer.filterAxes).length > 0 ? buildFilterGlsl() : ''
-    const pickVertDecls = `in float a_pickId;\nout float v_pickId;`
+    const pickVertDecls = `in float a_pickId;\nout float v_pickId;\nuniform float u_idLo;\nuniform float u_idHi;`
 
     const hasNdColumns = ndColumnHelperLines.length > 0
     const ndColumnHelpersStr = ndColumnHelperLines.join('\n')
@@ -309,16 +286,40 @@ export class LayerType {
 
     const fnSuffix = (s) => s.replace(/^_+/, '')
 
+    // v_selection varying: always declared in all shaders.
+    // Defaults to -1.0 (no active selection); sampled from the selection texture
+    // when a selection column is bound.  gladly_apply_color reads it directly,
+    // so fading applies to ALL color paths (1D, 2D, custom).
+    const selCol = layer.selectionColumn ?? null
+    const selectionVertDecls = [
+      selCol && allDataColumns.length === 0 ? 'precision highp sampler2D;' : '',
+      selCol && allDataColumns.length === 0 ? SAMPLE_COLUMN_GLSL : '',
+      selCol ? 'uniform sampler2D u_sel_col;' : '',
+      selCol ? 'uniform float u_sel_length;' : '',
+      'out float v_selection;',
+    ].filter(Boolean).join('\n')
+    if (selCol) {
+      uniforms['u_sel_col']    = [() => layer.selectionColumn?._ref.texture]
+      // u_sel_length is 0 when no lasso has been drawn yet (_active = false),
+      // causing v_selection = -1.0 (no active selection → render all normally).
+      uniforms['u_sel_length'] = () => (layer.selectionColumn?._active ? layer.selectionColumn?._n : 0) ?? 0
+    }
+    const selExpr = selCol
+      ? `u_sel_length > 0.5 ? sampleColumn(u_sel_col, a_pickId) : -1.0`
+      : `-1.0`
+    vertSrc = injectIntoMainStart(vertSrc, `v_selection = ${selExpr};`)
+
     const colorHelperLines = []
     let fragSrc = this.frag
     for (const [suffix] of Object.entries(layer.colorAxes)) {
+      const colorFnCall = `map_color_s(colorscale${suffix}, color_range${suffix}, value, color_scale_type${suffix}, alpha_blend${suffix})`
       colorHelperLines.push(
         `uniform int colorscale${suffix};`,
         `uniform vec2 color_range${suffix};`,
         `uniform float color_scale_type${suffix};`,
         `uniform float alpha_blend${suffix};`,
         `vec4 map_color_${fnSuffix(suffix)}(float value) {`,
-        `  return map_color_s(colorscale${suffix}, color_range${suffix}, value, color_scale_type${suffix}, alpha_blend${suffix});`,
+        `  return ${colorFnCall};`,
         `}`,
         `vec4 map_color_2d_x_${fnSuffix(suffix)}(float value) {`,
         `  return map_color_s_2d(colorscale${suffix}, color_range${suffix}, value, color_scale_type${suffix}, alpha_blend${suffix},`,
@@ -372,8 +373,9 @@ export class LayerType {
     const colorFilterHelpers = colorFilterHelperLines.join('\n')
 
     const clipFragDiscard = `if (u_is3D > 0.5 && (v_clip_pos.x < 0.0 || v_clip_pos.x > 1.0 || v_clip_pos.y < 0.0 || v_clip_pos.y > 1.0 || v_clip_pos.z < 0.0 || v_clip_pos.z > 1.0)) discard;`
+
     const drawConfig = {
-      vert: injectPickIdAssignment(injectInto(vertSrc, [spatialGlsl, filterGlsl, filterHelpers, colorFilterGlsl, colorFilterHelpers, columnHelpers, pickVertDecls])),
+      vert: injectPickIdAssignment(injectInto(vertSrc, [spatialGlsl, filterGlsl, filterHelpers, colorFilterGlsl, colorFilterHelpers, columnHelpers, pickVertDecls, selectionVertDecls])),
       frag: injectIntoMainStart(injectInto(fragSrc, [buildApplyColorGlsl(), buildClipFragGlsl(), colorGlsl, colorHelpers, color2dHelpers, filterGlsl, filterHelpers, ndFragHelpers]), clipFragDiscard),
       attributes,
       uniforms,
@@ -388,6 +390,15 @@ export class LayerType {
 
     if (layer.instanceCount !== null) {
       drawConfig.instances = regl.prop("instances")
+    }
+
+    // Count draw command: same vert/attributes/uniforms, minimal frag, additive blend, no depth
+    const countFrag = `#version 300 es\nprecision highp float;\nout vec4 fragColor;\nvoid main() { fragColor = vec4(${(1.0 / 255.0).toFixed(8)}); }`
+    drawConfig._countConfig = {
+      ...drawConfig,
+      frag: countFrag,
+      blend: { enable: true, func: { src: 'one', dst: 'one' } },
+      depth: { enable: false },
     }
 
     return drawConfig
