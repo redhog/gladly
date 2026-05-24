@@ -638,6 +638,9 @@ void main() {
       count: layer.vertexCount ?? Object.values(layer.attributes).find(v => v instanceof Float32Array)?.length ?? 0,
       u_pickingMode:    pickMode,
       u_pickLayerIndex: layerIdx,
+      u_mode:             0.0,
+      u_capture_tex_size: [0, 0],
+      u_capture_endpoint: 0.0,
     }
 
     if (layer.instanceCount !== null) {
@@ -901,47 +904,71 @@ void main() {
     // If createDrawCommand returns a function, it fully owns the draw call — pass through.
     if (typeof drawConfigRaw === 'function') return drawConfigRaw
 
-    const drawConfig = drawConfigRaw
+    const captureConfigRaw = drawConfigRaw._captureConfig ?? null
+    if (captureConfigRaw) delete drawConfigRaw._captureConfig
+    if (captureConfigRaw?._captureConfig) delete captureConfigRaw._captureConfig
 
-    const shaderKey = drawConfig.vert + '\0' + drawConfig.frag
+    const drawConfig = drawConfigRaw
 
     // fn[] in uniforms whose first element is a function = tiled texture closures.
     const isTiledTexClosure = (v) => Array.isArray(v) && v.length > 0 && typeof v[0] === 'function'
 
-    if (!this._shaderCache.has(shaderKey)) {
-      // Build a version of the draw config where all layer-specific data
-      // (attribute buffers and texture closures) is replaced with regl.prop()
-      // references. This compiled command can then be reused for any layer
-      // that produces the same shader source, regardless of its data.
-      const propAttrs = {}
-      for (const [key, val] of Object.entries(drawConfig.attributes)) {
-        const rawBuf = val?.buffer instanceof Float32Array ? val.buffer
-          : val instanceof Float32Array ? val : null
-        if (rawBuf !== null) {
-          const propKey = `attr_${key}`
-          const divisor = val?.divisor
-          propAttrs[key] = divisor !== undefined
-            ? { buffer: this.regl.prop(propKey), divisor }
-            : this.regl.prop(propKey)
-        } else {
-          propAttrs[key] = val
+    // Compile a regl config into a cached draw fn. bufferProps are per-layer GPU buffers.
+    const compileConfig = (config) => {
+      const shaderKey = config.vert + '\0' + config.frag
+      if (!this._shaderCache.has(shaderKey)) {
+        const propAttrs = {}
+        for (const [key, val] of Object.entries(config.attributes)) {
+          const rawBuf = val?.buffer instanceof Float32Array ? val.buffer
+            : val instanceof Float32Array ? val : null
+          if (rawBuf !== null) {
+            const propKey = `attr_${key}`
+            const divisor = val?.divisor
+            propAttrs[key] = divisor !== undefined
+              ? { buffer: this.regl.prop(propKey), divisor }
+              : this.regl.prop(propKey)
+          } else {
+            propAttrs[key] = val
+          }
+        }
+        const propUniforms = {}
+        for (const [key, val] of Object.entries(config.uniforms)) {
+          propUniforms[key] = (typeof val === 'function' || isTiledTexClosure(val))
+            ? this.regl.prop(key) : val
+        }
+        this._shaderCache.set(shaderKey, enqueueRegl(this.regl, { ...config, attributes: propAttrs, uniforms: propUniforms }))
+      }
+      const cmd = this._shaderCache.get(shaderKey)
+
+      const tiledClosures = {}
+      const dynamicUniforms = {}
+      for (const [key, val] of Object.entries(config.uniforms)) {
+        if (isTiledTexClosure(val)) tiledClosures[key] = val
+        else if (typeof val === 'function') dynamicUniforms[key] = val
+      }
+
+      return (runtimeProps) => {
+        const baseProps = {}
+        for (const [key, fn] of Object.entries(dynamicUniforms)) baseProps[key] = fn()
+        let nTiles = 1
+        for (const fns of Object.values(tiledClosures)) {
+          if (fns.length > nTiles) nTiles = fns.length
+        }
+        for (let t = 0; t < nTiles; t++) {
+          const tileProps = {}
+          let skip = false
+          for (const [key, fns] of Object.entries(tiledClosures)) {
+            const tex = (t < fns.length ? fns[t] : fns[0])?.()
+            if (tex == null) { skip = true; break }
+            tileProps[key] = tex
+          }
+          if (skip) continue
+          cmd({ ...bufferProps, ...baseProps, ...tileProps, ...runtimeProps })
         }
       }
-
-      const propUniforms = {}
-      for (const [key, val] of Object.entries(drawConfig.uniforms)) {
-        propUniforms[key] = (typeof val === 'function' || isTiledTexClosure(val))
-          ? this.regl.prop(key) : val
-      }
-
-      const propConfig = { ...drawConfig, attributes: propAttrs, uniforms: propUniforms }
-      this._shaderCache.set(shaderKey, enqueueRegl(this.regl, propConfig))
     }
 
-    const cmd = this._shaderCache.get(shaderKey)
-
-    // Extract per-layer data: GPU buffers for Float32Array attributes,
-    // and texture closures for sampler uniforms.
+    // Extract per-layer GPU buffers for Float32Array attributes.
     const bufferProps = {}
     for (const [key, val] of Object.entries(drawConfig.attributes)) {
       const rawBuf = val?.buffer instanceof Float32Array ? val.buffer
@@ -951,33 +978,23 @@ void main() {
       }
     }
 
-    // fn[] = tiled texture closures (per-tile); plain fn = dynamic uniform (same across tiles).
-    const tiledTextureClosures = {}
-    const dynamicUniforms = {}
-    for (const [key, val] of Object.entries(drawConfig.uniforms)) {
-      if (isTiledTexClosure(val)) tiledTextureClosures[key] = val
-      else if (typeof val === 'function') dynamicUniforms[key] = val
-    }
-
     layer._bufferProps = bufferProps
 
-    const drawFn = (runtimeProps) => {
-      const baseProps = {}
-      for (const [key, fn] of Object.entries(dynamicUniforms)) baseProps[key] = fn()
-      let nTiles = 1
-      for (const fns of Object.values(tiledTextureClosures)) {
-        if (fns.length > nTiles) nTiles = fns.length
-      }
-      for (let t = 0; t < nTiles; t++) {
-        const tileProps = {}
-        let skip = false
-        for (const [key, fns] of Object.entries(tiledTextureClosures)) {
-          const tex = (t < fns.length ? fns[t] : fns[0])?.()
-          if (tex == null) { skip = true; break }
-          tileProps[key] = tex
+    const drawFn = compileConfig(drawConfig)
+
+    if (captureConfigRaw) {
+      const rawCaptureFn = compileConfig(captureConfigRaw)
+      if (layer.instanceCount !== null && 'attr_a_endPoint' in bufferProps) {
+        // Instanced layer (e.g. LinesLayer): run once per endpoint, count=1 per instance.
+        // Override a_endPoint buffer and count so only one endpoint is captured per pass.
+        const capBuf0 = this.regl.buffer(new Float32Array([0.0]))
+        const capBuf1 = this.regl.buffer(new Float32Array([1.0]))
+        layer.captureDrawCmd = (props) => {
+          const ep = props.u_capture_endpoint ?? 0
+          rawCaptureFn({ ...props, count: 1, attr_a_endPoint: ep < 0.5 ? capBuf0 : capBuf1 })
         }
-        if (skip) continue
-        cmd({ ...bufferProps, ...baseProps, ...tileProps, ...runtimeProps })
+      } else {
+        layer.captureDrawCmd = rawCaptureFn
       }
     }
 

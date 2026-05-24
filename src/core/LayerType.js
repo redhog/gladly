@@ -58,7 +58,21 @@ function injectIntoMainStart(src, code) {
 function injectPickIdAssignment(src) {
   const lastBrace = src.lastIndexOf('}')
   if (lastBrace === -1) return src
-  return src.slice(0, lastBrace) + '  v_pickId = a_pickId;\n}'
+  const captureBlock = `  v_pickId = a_pickId;
+  if (u_mode > 0.5) {
+    vec2 ndc = gl_Position.xy / gl_Position.w;
+    float texW = u_capture_tex_size.x;
+    float tx = mod(a_pickId, texW);
+    float ty = floor(a_pickId / texW);
+    gl_Position = vec4(
+        (tx + 0.5) / texW * 2.0 - 1.0,
+        (ty + 0.5) / u_capture_tex_size.y * 2.0 - 1.0,
+        0.0, 1.0);
+    gl_PointSize = 1.0;
+    v_capture_data = vec4(ndc, a_pickId, u_capture_endpoint);
+  }
+`
+  return src.slice(0, lastBrace) + captureBlock + '}'
 }
 
 function injectInto(src, helpers) {
@@ -235,6 +249,10 @@ export class LayerType {
       uniforms[`filter_scale_type${suffix}`] = regl.prop(`filter_scale_type_${pk}`)
     }
 
+    uniforms['u_mode']             = regl.prop('u_mode')
+    uniforms['u_capture_tex_size'] = regl.prop('u_capture_tex_size')
+    uniforms['u_capture_endpoint'] = regl.prop('u_capture_endpoint')
+
     // Strip spatial uniforms from vert (re-declared in buildSpatialGlsl)
     vertSrc = removeUniformDecl(vertSrc, 'xDomain')
     vertSrc = removeUniformDecl(vertSrc, 'yDomain')
@@ -251,7 +269,7 @@ export class LayerType {
       uniforms['u_colorscale_tex'] = [() => plot.colorscaleTexture]
     }
     const filterGlsl = Object.keys(layer.filterAxes).length > 0 ? buildFilterGlsl() : ''
-    const pickVertDecls = `in float a_pickId;\nout float v_pickId;`
+    const pickVertDecls = `in float a_pickId;\nout float v_pickId;\nout vec4 v_capture_data;\nuniform float u_mode;\nuniform vec2 u_capture_tex_size;\nuniform float u_capture_endpoint;`
 
     const hasNdColumns = ndColumnHelperLines.length > 0
     const ndColumnHelpersStr = ndColumnHelperLines.join('\n')
@@ -384,6 +402,15 @@ export class LayerType {
 
     if (layer.instanceCount !== null) {
       drawConfig.instances = regl.prop("instances")
+    }
+
+    const captureFrag = `#version 300 es\nprecision highp float;\nin vec4 v_capture_data;\nout vec4 fragColor;\nvoid main() { fragColor = v_capture_data; }`
+    drawConfig._captureConfig = {
+      ...drawConfig,
+      frag: captureFrag,
+      primitive: 'points',
+      depth: { enable: false },
+      blend: { enable: false },
     }
 
     return drawConfig
