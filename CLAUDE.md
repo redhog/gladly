@@ -24,7 +24,7 @@ For detailed information about using and understanding Gladly:
 - **[Configuring Plots](docs/configuration/PlotConfiguration.md)**: `plot.update()`, axes config, auto-range, multi-layer, interaction, examples
 - **[Built-in Layer Types](docs/configuration/BuiltInLayerTypes.md)**: points, lines, bars, histogram, tile, colorbar, filterbar
 - **[Computations](docs/configuration/Computations.md)**: Transforms and computed attributes
-- **[User API](docs/user-api/overview.md)**: `Plot`, `Axis`, `PlotGroup`, `Data`, `ComputePipeline`, `Widgets`
+- **[User API](docs/user-api/overview.md)**: `Plot`, `Axis`, `PlotGroup`, `Data`, `ComputePipeline`, `Widgets`, `Selection`
 - **[Writing Layer Types](docs/extension-api/LayerTypes.md)**: `LayerType` constructor, shaders, color/filter axes, GLSL helpers, constants
 - **[Extension API — Computations](docs/extension-api/Computations.md)**: Writing custom `TextureComputation` and `GlslComputation`
 - **[Architecture](docs/architecture/overview.md)**: Developer-facing architecture overview
@@ -120,7 +120,9 @@ npm start
 - Layer types provide JSON Schema (Draft 2020-12) for their parameters
 - Layer types include factory methods to create Layer instances
 - Plot auto-calculates domains from data, allows overrides via `axes` param
-- Axes use D3 scales with lazy initialization
+- Axes use D3 scales with lazy initialization; accessed via `plot.axes[name]` (stable Proxy)
+- Selections are GPU 0/1 masks per data point; accessed via `plot.selections[name]` (stable Proxy, same pattern as axes); implement `ColumnData` so they can be used as layer attributes
+- Cross-plot selection sync requires `linkSelections(selA, selB)` or `PlotGroup` with `autoLink: true`
 - Rendering uses dual surfaces: WebGL canvas + SVG overlay
 - Unit validation prevents incompatible data on same axis
 

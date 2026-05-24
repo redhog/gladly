@@ -35,6 +35,18 @@ export class SelectionColumn extends TextureColumn {
 
   activate() { this._active = true }
 
+  // Upload a packed CPU buffer (texW*texH*4) into this column's GPU texture and mark active.
+  upload(packed) {
+    const texDataLen = this._texW * this._texH * 4
+    let data = packed
+    if (packed.length !== texDataLen) {
+      data = new Float32Array(texDataLen)
+      data.set(packed.subarray(0, Math.min(packed.length, texDataLen)))
+    }
+    this._ref.texture.subimage({ data, width: this._texW, height: this._texH })
+    this._active = true
+  }
+
   destroy() {
     this._fbo.destroy()
   }

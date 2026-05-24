@@ -1356,14 +1356,12 @@ void main() {
 
     await this._selectionPipeline.runLasso(vertices, selectionColumns)
 
-    // Propagate selection to CPU mirror and sync to all linked plots
+    // Read back GPU → CPU and notify subscribers (which propagate to linked plots).
+    const notified = new Set()
     for (const layer of this.layers) {
-      if (layer.selectionName && layer.selectionColumn) {
-        globalSelectionRegistry.notifyFromGpu(
-          this._lastRawDataArg,
-          layer.selectionName,
-          this
-        )
+      if (layer.selectionName && layer.selectionColumn && !notified.has(layer.selectionName)) {
+        notified.add(layer.selectionName)
+        this._getSelection(layer.selectionName)._readbackAndNotify()
       }
     }
   }

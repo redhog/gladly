@@ -12,6 +12,7 @@ Programmatic APIs for working with plots, axes, data, and computations.
 - [Data](Data.md) — data normalisation, Data and DataGroup classes
 - [ComputePipeline](ComputePipeline.md) — headless GPU compute pipeline for data transforms
 - [Widgets](Widgets.md) — manual Colorbar, Colorbar2d, Float, Filterbar creation
+- [Selection](Selection.md) — plot.selections[name], LassoInteraction, linkSelections(), cross-plot linking
 
 ## Configuration Reference
 

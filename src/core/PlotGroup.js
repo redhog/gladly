@@ -1,5 +1,6 @@
 import { AXES } from "../axes/AxisRegistry.js"
 import { linkAxes } from "../axes/AxisLink.js"
+import { linkSelections } from "../selection/SelectionLink.js"
 import { normalizeData } from "../data/Data.js"
 
 /**
@@ -115,14 +116,6 @@ export class PlotGroup {
 
   _updateAutoLinks() {
     // Collect all axes grouped by quantity kind across all plots.
-    // Spatial, color, and filter axes are all handled uniformly:
-    // plot._getAxis(id) returns a stable Axis instance for any id.
-    //
-    // Selection linking is implicit: PlotGroup.update() passes the same
-    // normalised DataGroup instance to every plot, so all layers with the
-    // same selection name share a SelectionRegistry entry keyed by that
-    // shared data reference.  selectLasso() + notifyFromGpu() propagate GPU
-    // results to all other subscribers automatically — no explicit wiring here.
     const qkAxes = new Map() // QK → [{ plotName, axisId }]
 
     for (const [plotName, plot] of this._plots) {
@@ -164,7 +157,7 @@ export class PlotGroup {
       }
     }
 
-    // Create missing links.
+    // Create missing axis links.
     for (const [, entries] of qkAxes) {
       if (entries.length < 2) continue
       for (let i = 0; i < entries.length; i++) {
@@ -179,6 +172,32 @@ export class PlotGroup {
           // so linkAxes() will not throw.
           const handle = linkAxes(axisA, axisB)
           this._links.set(key, { unlink: handle.unlink, plotA: a.plotName, plotB: b.plotName })
+        }
+      }
+    }
+
+    // Collect selection names across plots and create missing selection links.
+    const selPlots = new Map() // selectionName → [plotName, ...]
+    for (const [plotName, plot] of this._plots) {
+      for (const layerSpec of plot.currentConfig?.layers ?? []) {
+        const selName = Object.values(layerSpec)[0]?.selection
+        if (selName) _push(selPlots, selName, plotName)
+      }
+    }
+
+    for (const [selName, plotNames] of selPlots) {
+      if (plotNames.length < 2) continue
+      for (let i = 0; i < plotNames.length; i++) {
+        for (let j = i + 1; j < plotNames.length; j++) {
+          const a = { plotName: plotNames[i], axisId: selName }
+          const b = { plotName: plotNames[j], axisId: selName }
+          const key = `sel:${_linkKey(a, b)}`
+          if (this._links.has(key)) continue
+
+          const selA = this._plots.get(plotNames[i]).selections[selName]
+          const selB = this._plots.get(plotNames[j]).selections[selName]
+          const handle = linkSelections(selA, selB)
+          this._links.set(key, { unlink: handle.unlink, plotA: plotNames[i], plotB: plotNames[j] })
         }
       }
     }
