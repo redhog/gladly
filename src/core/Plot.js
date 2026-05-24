@@ -610,7 +610,7 @@ void main() {
 
   // Build the regl props for a single layer draw call. Used by render(), pick(),
   // and the selection pipeline.
-  _buildLayerProps(layer, layerIdx, { pickMode = 0.0, idLo = 0, idHi = 1e9, viewport = null, mvp = null } = {}) {
+  _buildLayerProps(layer, layerIdx, { pickMode = 0.0, viewport = null, mvp = null } = {}) {
     const xIsLog = layer.xAxis ? this.axisRegistry.isLogScale(layer.xAxis) : false
     const yIsLog = layer.yAxis ? this.axisRegistry.isLogScale(layer.yAxis) : false
     const zIsLog = layer.zAxis ? this.axisRegistry.isLogScale(layer.zAxis) : false
@@ -638,8 +638,6 @@ void main() {
       count: layer.vertexCount ?? Object.values(layer.attributes).find(v => v instanceof Float32Array)?.length ?? 0,
       u_pickingMode:    pickMode,
       u_pickLayerIndex: layerIdx,
-      u_idLo: idLo,
-      u_idHi: idHi,
     }
 
     if (layer.instanceCount !== null) {
@@ -903,11 +901,6 @@ void main() {
     // If createDrawCommand returns a function, it fully owns the draw call — pass through.
     if (typeof drawConfigRaw === 'function') return drawConfigRaw
 
-    // Extract optional count draw config (set by default createDrawCommand impl)
-    const countConfig = drawConfigRaw._countConfig ?? null
-    if (countConfig) delete drawConfigRaw._countConfig
-    if (countConfig && countConfig._countConfig) delete countConfig._countConfig
-
     const drawConfig = drawConfigRaw
 
     const shaderKey = drawConfig.vert + '\0' + drawConfig.frag
@@ -985,60 +978,6 @@ void main() {
         }
         if (skip) continue
         cmd({ ...bufferProps, ...baseProps, ...tileProps, ...runtimeProps })
-      }
-    }
-
-    // Compile count draw command if available (used by selection pipeline)
-    if (countConfig) {
-      const countShaderKey = countConfig.vert + '\0' + countConfig.frag
-      if (!this._shaderCache.has(countShaderKey)) {
-        const propAttrs = {}
-        for (const [key, val] of Object.entries(countConfig.attributes)) {
-          const rawBuf = val?.buffer instanceof Float32Array ? val.buffer
-            : val instanceof Float32Array ? val : null
-          if (rawBuf !== null) {
-            const divisor = val?.divisor
-            propAttrs[key] = divisor !== undefined
-              ? { buffer: this.regl.prop(`attr_${key}`), divisor }
-              : this.regl.prop(`attr_${key}`)
-          } else {
-            propAttrs[key] = val
-          }
-        }
-        const propUniforms = {}
-        for (const [key, val] of Object.entries(countConfig.uniforms)) {
-          propUniforms[key] = (typeof val === 'function' || isTiledTexClosure(val))
-            ? this.regl.prop(key) : val
-        }
-        this._shaderCache.set(countShaderKey, enqueueRegl(this.regl, { ...countConfig, attributes: propAttrs, uniforms: propUniforms }))
-      }
-      const countCmd = this._shaderCache.get(countShaderKey)
-
-      const countDynamicUniforms = {}
-      const countTiledClosures = {}
-      for (const [key, val] of Object.entries(countConfig.uniforms)) {
-        if (isTiledTexClosure(val)) countTiledClosures[key] = val
-        else if (typeof val === 'function') countDynamicUniforms[key] = val
-      }
-
-      layer.drawCount = (runtimeProps) => {
-        const baseProps = {}
-        for (const [key, fn] of Object.entries(countDynamicUniforms)) baseProps[key] = fn()
-        let nTiles = 1
-        for (const fns of Object.values(countTiledClosures)) {
-          if (fns.length > nTiles) nTiles = fns.length
-        }
-        for (let t = 0; t < nTiles; t++) {
-          const tileProps = {}
-          let skip = false
-          for (const [key, fns] of Object.entries(countTiledClosures)) {
-            const tex = (t < fns.length ? fns[t] : fns[0])?.()
-            if (tex == null) { skip = true; break }
-            tileProps[key] = tex
-          }
-          if (skip) continue
-          countCmd({ ...bufferProps, ...baseProps, ...tileProps, ...runtimeProps })
-        }
       }
     }
 

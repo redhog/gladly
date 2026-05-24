@@ -58,9 +58,7 @@ function injectIntoMainStart(src, code) {
 function injectPickIdAssignment(src) {
   const lastBrace = src.lastIndexOf('}')
   if (lastBrace === -1) return src
-  // Clip vertices outside [u_idLo, u_idHi) before assigning pick ID
-  const rangeCheck = '  if (a_pickId < u_idLo || a_pickId >= u_idHi) { gl_Position = vec4(10.0, 0.0, 0.0, 1.0); return; }\n'
-  return src.slice(0, lastBrace) + rangeCheck + '  v_pickId = a_pickId;\n}'
+  return src.slice(0, lastBrace) + '  v_pickId = a_pickId;\n}'
 }
 
 function injectInto(src, helpers) {
@@ -237,10 +235,6 @@ export class LayerType {
       uniforms[`filter_scale_type${suffix}`] = regl.prop(`filter_scale_type_${pk}`)
     }
 
-    // Range-limited render uniforms (used by selection pipeline halving loop)
-    uniforms['u_idLo'] = regl.prop('u_idLo')
-    uniforms['u_idHi'] = regl.prop('u_idHi')
-
     // Strip spatial uniforms from vert (re-declared in buildSpatialGlsl)
     vertSrc = removeUniformDecl(vertSrc, 'xDomain')
     vertSrc = removeUniformDecl(vertSrc, 'yDomain')
@@ -257,7 +251,7 @@ export class LayerType {
       uniforms['u_colorscale_tex'] = [() => plot.colorscaleTexture]
     }
     const filterGlsl = Object.keys(layer.filterAxes).length > 0 ? buildFilterGlsl() : ''
-    const pickVertDecls = `in float a_pickId;\nout float v_pickId;\nuniform float u_idLo;\nuniform float u_idHi;`
+    const pickVertDecls = `in float a_pickId;\nout float v_pickId;`
 
     const hasNdColumns = ndColumnHelperLines.length > 0
     const ndColumnHelpersStr = ndColumnHelperLines.join('\n')
@@ -390,15 +384,6 @@ export class LayerType {
 
     if (layer.instanceCount !== null) {
       drawConfig.instances = regl.prop("instances")
-    }
-
-    // Count draw command: same vert/attributes/uniforms, minimal frag, additive blend, no depth
-    const countFrag = `#version 300 es\nprecision highp float;\nout vec4 fragColor;\nvoid main() { fragColor = vec4(${(1.0 / 255.0).toFixed(8)}); }`
-    drawConfig._countConfig = {
-      ...drawConfig,
-      frag: countFrag,
-      blend: { enable: true, func: { src: 'one', dst: 'one' } },
-      depth: { enable: false },
     }
 
     return drawConfig
