@@ -35,7 +35,18 @@ export async function compileEnqueuedShaders(regl) {
   const queue = regl._shaderQueue ?? []
   regl._shaderQueue = null
 
-  if (queue.length === 0) return
+  if (queue.length === 0) {
+    // If another compilation batch is in progress (started before this call),
+    // wait for it to finish so all handles are resolved before we return.
+    // Without this, a second _initialize() triggered during compilation would
+    // find an empty queue, return immediately, and schedule a render before
+    // the handles from the first batch are resolved — producing a blank frame.
+    if (regl._pendingCompilation) await regl._pendingCompilation
+    return
+  }
+
+  let resolvePending
+  regl._pendingCompilation = new Promise(r => { resolvePending = r })
 
   const gl = regl._gl
 
@@ -89,14 +100,19 @@ export async function compileEnqueuedShaders(regl) {
   // Phase 3: create real regl commands (driver binary cache hit), yielding between
   // each so a batch of many shaders doesn't monopolise the main thread.
   // Skip handles whose pre-compilation failed or whose context is lost.
-  for (let i = 0; i < queue.length; i++) {
-    if (!failed.has(i) && !gl.isContextLost()) {
-      try {
-        queue[i]._resolve(regl(queue[i]._config))
-      } catch (e) {
-        console.error('[gladly] Failed to create regl command (context may be lost):', e)
+  try {
+    for (let i = 0; i < queue.length; i++) {
+      if (!failed.has(i) && !gl.isContextLost()) {
+        try {
+          queue[i]._resolve(regl(queue[i]._config))
+        } catch (e) {
+          console.error('[gladly] Failed to create regl command (context may be lost):', e)
+        }
       }
+      await yieldToEventLoop()
     }
-    await yieldToEventLoop()
+  } finally {
+    regl._pendingCompilation = null
+    resolvePending()
   }
 }
