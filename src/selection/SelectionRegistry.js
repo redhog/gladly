@@ -68,6 +68,16 @@ export class SelectionRegistry {
     })
     entry.data.set(floatData)
 
+    // If no points were selected, deactivate all subscribers and re-render
+    const anySelected = entry.data.some(v => v > 0.5)
+    if (!anySelected) {
+      for (const [plot, col] of entry.subscribers) {
+        col.clear()
+        plot.scheduleRender()
+      }
+      return
+    }
+
     // Upload CPU mirror to all other subscribers and schedule re-render
     for (const [plot, col] of entry.subscribers) {
       col.activate()
