@@ -10,12 +10,15 @@ export class PositionCapture {
       width: w, height: h,
       colorFormat: 'rgba', colorType: 'float', depth: false
     })
-    this._regl({ framebuffer: fbo })(() => this._regl.clear({ color: [0, 0, 0, 0] }))
-    captureDrawCmd({
-      ...layerProps,
-      u_mode:             1.0,
-      u_capture_tex_size: [w, h],
-      u_capture_endpoint: endPoint,
+    this._regl({ framebuffer: fbo })(() => {
+      this._regl.clear({ color: [0, 0, 0, 0] })
+      captureDrawCmd({
+        ...layerProps,
+        u_mode:             1.0,
+        u_capture_tex_size: [w, h],
+        u_capture_endpoint: endPoint,
+        viewport:           { x: 0, y: 0, width: w, height: h },
+      })
     })
     return fbo
   }

@@ -19,12 +19,12 @@ export class SelectionPipeline {
 
     // Convert lasso from HTML canvas coords (top-left origin, pixels) to NDC,
     // then upload as a float RGBA texture (width=N, height=1, RG = x,y).
-    const w = plot.width, h = plot.height
+    const h = plot.height
     const lassoN   = vertices.length
     const lassoRaw = new Float32Array(lassoN * 4)
     for (let i = 0; i < lassoN; i++) {
-      lassoRaw[i*4+0] =  vertices[i][0] / w * 2.0 - 1.0
-      lassoRaw[i*4+1] = -(vertices[i][1] / h * 2.0 - 1.0)  // flip Y: HTML top-left → GL bottom-left
+      lassoRaw[i*4+0] = (vertices[i][0] - plot.margin.left)        / plot.plotWidth  * 2.0 - 1.0
+      lassoRaw[i*4+1] = (h - vertices[i][1] - plot.margin.bottom)  / plot.plotHeight * 2.0 - 1.0
     }
     const lassoTex = this._regl.texture({
       width: lassoN, height: 1,
