@@ -26,10 +26,6 @@ vec4 gladly_apply_color(vec4 color) {
       mod(dataIdx, 256.0) / 255.0
     );
   }
-  if (v_selection >= -0.5 && v_selection < 0.5) {
-    color.rgb = mix(color.rgb, vec3(0.8), 0.6);
-    color.a *= 0.4;
-  }
   return color;
 }`
 }
