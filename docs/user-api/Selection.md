@@ -54,6 +54,22 @@ Number of data points tracked by this selection channel, or `null` if no layer h
 
 ## Selection methods
 
+### `selection.clear()`
+
+Clears the selection and marks it inactive. Triggers a re-render and notifies subscribers.
+
+```js
+plot.selections['brush1'].clear()
+```
+
+### `selection.applyFrom(otherSelection)`
+
+Copies the selection state from another `Selection` object into this one. Triggers a re-render and notifies subscribers. Used by `linkSelections` internally; also useful for manual cross-plot or cross-component propagation.
+
+```js
+plot2.selections['brush1'].applyFrom(plot1.selections['brush1'])
+```
+
 ### `selection.subscribe(callback)`
 
 Registers a callback fired whenever the selection changes (after any lasso on any linked plot). Returns `{ remove() }` to unregister.

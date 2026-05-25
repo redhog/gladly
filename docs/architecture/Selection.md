@@ -67,7 +67,7 @@ After `SelectionPipeline.runLasso()` completes, `Plot.selectLasso()` calls `sele
 
 1. **GPU readback** — reads the `SelectionColumn` FBO into a `Float32Array` (`selection._packed`, `texW×texH×4` elements). If no points are selected the column is cleared and `_packed` is set to `null`.
 2. **`selection._notify()`** — fires all registered subscribers with the `Selection` as argument.
-3. **Linked plot update** (if `linkSelections` was called) — the subscriber calls `otherSelection._applyFromCpu(selection._packed)`, which uploads the packed buffer to the other plot's `SelectionColumn` GPU texture and schedules its re-render.
+3. **Linked plot update** (if `linkSelections` was called) — the subscriber calls `otherSelection.applyFrom(selection)`, which reads `_packed` from the source, uploads it to the other plot's `SelectionColumn` GPU texture, schedules its re-render, and notifies its own subscribers.
 4. **`otherSelection._notify()`** — fires the other selection's own subscribers, enabling chains (A → B → C). A `_propagating` flag on each `Selection` breaks cycles.
 
 ```
@@ -78,7 +78,7 @@ selectLasso()
        └─ col.activate() / col.clear()
        └─ plot.scheduleRender()
        └─ _notify() → subscribers
-            └─ otherSelection._applyFromCpu(_packed)
+            └─ otherSelection.applyFrom(selection)
                  └─ col.upload(packed)     [GPU: subimage into other plot's SelectionColumn]
                  └─ plot.scheduleRender()
                  └─ _notify() → …

@@ -1,5 +1,5 @@
 export function linkSelections(selA, selB) {
-  const handleA = selA.subscribe(sel => selB._applyFromCpu(sel._packed))
-  const handleB = selB.subscribe(sel => selA._applyFromCpu(sel._packed))
+  const handleA = selA.subscribe(sel => selB.applyFrom(sel))
+  const handleB = selB.subscribe(sel => selA.applyFrom(sel))
   return { unlink: () => { handleA.remove(); handleB.remove() } }
 }

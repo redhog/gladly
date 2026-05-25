@@ -45,6 +45,31 @@ export class Selection extends ColumnData {
     return out
   }
 
+  // Clears the selection and marks it inactive. Notifies subscribers.
+  clear() {
+    const col = this._column
+    if (col) col.clear()
+    this._packed = null
+    this._plot.scheduleRender()
+    this._notify()
+  }
+
+  // Copies selection state from another Selection object. Notifies subscribers.
+  applyFrom(otherSel) {
+    const packed = otherSel._packed
+    const col = this._column
+    if (!col) return
+    if (!packed || !packed.some(v => v > 0.5)) {
+      col.clear()
+      this._packed = null
+    } else {
+      col.upload(packed)
+      this._packed = packed
+    }
+    this._plot.scheduleRender()
+    this._notify()
+  }
+
   // Returns { remove() } handle, like plot.on().
   subscribe(callback) {
     this._listeners.add(callback)
@@ -79,23 +104,6 @@ export class Selection extends ColumnData {
     } else {
       col.clear()
       this._packed = null
-    }
-
-    this._plot.scheduleRender()
-    this._notify()
-  }
-
-  // Called by linkSelections() subscribers to apply a packed CPU buffer from another plot.
-  _applyFromCpu(packed) {
-    const col = this._column
-    if (!col) return
-
-    if (!packed || !packed.some(v => v > 0.5)) {
-      col.clear()
-      this._packed = null
-    } else {
-      col.upload(packed)
-      this._packed = packed
     }
 
     this._plot.scheduleRender()
