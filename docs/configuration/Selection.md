@@ -1,31 +1,61 @@
 # Selection
 
-Layers opt into selection by adding a `selection` key to their layer specification. This page covers the configuration format and visual behaviour. For the programmatic API (`LassoInteraction`, `plot.selectLasso()`) see [Selection — User API](../user-api/Selection.md). For the GPU pipeline internals see [Selection — Architecture](../architecture/Selection.md).
+Layers opt into selection by adding a `selection` key to their layer specification. This page covers the configuration format and visual behaviour. For the programmatic API (`plot.selectLasso()`, `LassoInteraction`) see [Selection — User API](../user-api/Selection.md). For the GPU pipeline internals see [Selection — Architecture](../architecture/Selection.md).
 
 ---
 
 ## Quick Start
 
 ```js
-import { Plot, LassoInteraction } from 'gladly'
+import { Plot } from 'gladly'
 
 const plot = new Plot(container)
 await plot.update({
   data: myData,
-  layers: [
-    {
-      points: {
-        xData: 'input.x',
-        yData: 'input.y',
-        color: 'input.value',
-        selection: 'brush1'   // opt this layer into a named selection channel
+  config: {
+    layers: [
+      {
+        points: {
+          xData: 'input.x',
+          yData: 'input.y',
+          color: 'input.value',
+          selection: 'brush1'   // opt this layer into a named selection channel
+        }
       }
-    }
-  ]
+    ],
+    interactions: { lasso: true }   // shift-drag to draw a lasso over any selection
+  }
 })
-
-const lasso = new LassoInteraction(plot, { selectionName: 'brush1', trigger: 'shift' })
 ```
+
+---
+
+## `interactions.lasso`
+
+The `interactions` config key enables interactive behaviours. Setting `lasso: true` attaches a shift-drag lasso to the plot, targeting every selection name declared in the layers:
+
+```js
+config: {
+  layers: [{ points: { ..., selection: 'brush1' } }],
+  interactions: { lasso: true }
+}
+```
+
+For different triggers per selection channel, pass an explicit array:
+
+```js
+interactions: {
+  lasso: [
+    { selection: 'brush1', trigger: 'shift' },
+    { selection: 'brush2', trigger: 'ctrl' }
+  ]
+}
+```
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `selection` | — | Selection channel name to target |
+| `trigger` | `'shift'` | Activation modifier: `'shift'` or `'ctrl'` |
 
 ---
 

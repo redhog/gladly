@@ -1,6 +1,6 @@
 # Selection
 
-Programmatic API for lasso selection, reading selection results, and cross-plot selection linking. For the configuration key that opts layers into selection see [Selection — Configuration](../configuration/Selection.md). For the GPU pipeline internals see [Selection — Architecture](../architecture/Selection.md).
+API for reading selection results, cross-plot selection linking, and (when needed) programmatic lasso control. The preferred way to enable lasso is via the declarative `interactions.lasso` config key — see [Selection — Configuration](../configuration/Selection.md). For the GPU pipeline internals see [Selection — Architecture](../architecture/Selection.md).
 
 ---
 
@@ -90,7 +90,7 @@ Removes a previously registered callback by reference.
 
 ## LassoInteraction
 
-Attaches mouse event handlers to a plot's canvas and calls `plot.selectLasso()` on `mouseup`.
+Low-level class that attaches mouse event handlers to a plot's canvas and calls `plot.selectLasso()` on `mouseup`. Prefer the declarative `interactions.lasso` config key for typical use — instantiate `LassoInteraction` directly only when you need runtime control (e.g. toggling lasso on/off without re-calling `update()`).
 
 ```js
 import { LassoInteraction } from 'gladly'
@@ -152,13 +152,14 @@ Cross-plot cycles are prevented: the `_propagating` flag on each `Selection` sto
 const plot1 = new Plot(container1)
 const plot2 = new Plot(container2)
 
-await plot1.update({ data: myData, layers: [{ points: { xData: 'input.x', yData: 'input.y', selection: 'brush1' } }] })
-await plot2.update({ data: myData, layers: [{ points: { xData: 'input.x', yData: 'input.z', selection: 'brush1' } }] })
+const config1 = { layers: [{ points: { xData: 'input.x', yData: 'input.y', selection: 'brush1' } }], interactions: { lasso: true } }
+const config2 = { layers: [{ points: { xData: 'input.x', yData: 'input.z', selection: 'brush1' } }], interactions: { lasso: true } }
+
+await plot1.update({ data: myData, config: config1 })
+await plot2.update({ data: myData, config: config2 })
 
 linkSelections(plot1.selections['brush1'], plot2.selections['brush1'])
-
-const lasso = new LassoInteraction(plot1, { trigger: 'shift' })
-// Lasso on plot1 propagates to plot2 via the link
+// Lasso on either plot propagates to the other via the link
 ```
 
 ---
@@ -173,13 +174,10 @@ const group = new PlotGroup({ plot1, plot2 }, { autoLink: true })
 await group.update({
   data: { input: myData },
   plots: {
-    plot1: { layers: [{ points: { xData: 'input.x', yData: 'input.y', selection: 'brush1' } }] },
-    plot2: { layers: [{ points: { xData: 'input.x', yData: 'input.z', selection: 'brush1' } }] },
+    plot1: { layers: [{ points: { xData: 'input.x', yData: 'input.y', selection: 'brush1' } }], interactions: { lasso: true } },
+    plot2: { layers: [{ points: { xData: 'input.x', yData: 'input.z', selection: 'brush1' } }], interactions: { lasso: true } },
   }
 })
-
-const lasso1 = new LassoInteraction(plot1, { trigger: 'shift' })
-const lasso2 = new LassoInteraction(plot2, { trigger: 'shift' })
 // A lasso on either plot propagates to the other automatically
 ```
 

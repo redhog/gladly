@@ -1,4 +1,4 @@
-import { Plot, PlotGroup, LassoInteraction } from "../src/index.js"
+import { Plot, PlotGroup } from "../src/index.js"
 import { JSONEditor } from '@json-editor/json-editor'
 import { data as dataPromise, showStatus } from "./shared.js"
 
@@ -149,7 +149,8 @@ let plot1Config = {
       "yAxis": "temperature_K",
       "colorscale": "bilinear4corner"
     }
-  ]
+  ],
+  "interactions": { "lasso": true }
 }
     
 let plot2Config = {
@@ -187,7 +188,8 @@ let plot2Config = {
       "colorbar": "horizontal"
     }
   },
-  "colorbars": []
+  "colorbars": [],
+  "interactions": { "lasso": true }
 }
   
 async function updatePlot(plotId, plotConfig) {
@@ -229,11 +231,6 @@ await group.update({
 })
 plot1Config = plot1.getConfig()
 plot2Config = plot2.getConfig()
-
-// Shift-drag on either plot to draw a lasso; selection propagates automatically
-// to the other plot via the shared 'brush1' selection channel.
-const lasso1 = new LassoInteraction(plot1, { trigger: 'shift' })
-const lasso2 = new LassoInteraction(plot2, { trigger: 'shift' })
 
 function attachPickHandler(plot) {
   const status = document.getElementById('tab1-pick-status')

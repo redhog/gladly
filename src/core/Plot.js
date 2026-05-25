@@ -14,6 +14,7 @@ import { GlBase } from "./GlBase.js"
 import { tdrYield } from "../tdr.js"
 import { globalSelectionRegistry } from "../selection/SelectionRegistry.js"
 import { SelectionPipeline } from "../selection/SelectionPipeline.js"
+import { LassoInteraction } from "../selection/LassoInteraction.js"
 
 // Throttle linked-plot renders when the source plot's "blocked lag" is high.
 // Blocked lag = max(0, RAF_wait - own_render_time): high when other plots' renders
@@ -151,6 +152,31 @@ function buildPlotSchema(data, config) {
             }
           }
         }
+      },
+      interactions: {
+        type: "object",
+        description: "Interactive behaviours. All share the same data-point selection mechanism.",
+        properties: {
+          lasso: {
+            description: "Lasso selection. true = one lasso per selection name found in layers, trigger=shift. Array = explicit list.",
+            oneOf: [
+              { type: "boolean", const: true },
+              {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    selection: { type: "string", description: "Selection channel name matching the layer's selection field." },
+                    trigger: { type: "string", enum: ["shift", "ctrl"], default: "shift" }
+                  },
+                  required: ["selection"],
+                  additionalProperties: false
+                }
+              }
+            ]
+          }
+        },
+        additionalProperties: false
       }
     }
   }
@@ -350,7 +376,7 @@ export class Plot extends GlBase {
 
   async _initialize() {
     const epoch = ++this._initEpoch
-    const { layers = [], axes = {}, colorbars = [], transforms = [] } = this.currentConfig
+    const { layers = [], axes = {}, colorbars = [], transforms = [], interactions = {} } = this.currentConfig
 
     if (!this.regl) {
       this._initRegl(this.canvas)
@@ -439,6 +465,24 @@ export class Plot extends GlBase {
     }
 
     if (!this._zoomController) this._zoomController = new ZoomController(this)
+
+    for (const i of (this._interactions ?? [])) i.destroy()
+    this._interactions = []
+    if (interactions.lasso != null && interactions.lasso !== false) {
+      let lassoSpecs
+      if (interactions.lasso === true) {
+        const selectionNames = [...new Set(
+          layers.flatMap(layerSpec => Object.values(layerSpec).map(cfg => cfg.selection).filter(Boolean))
+        )]
+        lassoSpecs = selectionNames.map(selection => ({ selection, trigger: 'shift' }))
+      } else {
+        lassoSpecs = interactions.lasso
+      }
+      this._interactions = lassoSpecs.map(({ selection, trigger = 'shift' }) =>
+        new LassoInteraction(this, { selectionName: selection, trigger })
+      )
+    }
+
     this.scheduleRender()
   }
 
@@ -813,6 +857,9 @@ void main() {
       this.regl.destroy()
       this.regl = null
     }
+
+    for (const i of (this._interactions ?? [])) i.destroy()
+    this._interactions = []
 
     this._renderCallbacks.clear()
     this.canvas.remove()
