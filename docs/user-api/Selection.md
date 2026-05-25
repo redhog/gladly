@@ -167,4 +167,4 @@ const lasso2 = new LassoInteraction(plot2, { trigger: 'shift' })
 // A lasso on either plot propagates to the other automatically
 ```
 
-Unlike axis auto-linking (which matches by quantity kind), selection auto-linking matches by selection name alone.
+Unlike axis auto-linking (which matches by quantity kind), selection auto-linking matches by **dataset object and selection name together** — both plots must receive the same data object reference and use the same name string for auto-linking to connect them.

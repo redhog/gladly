@@ -9,8 +9,8 @@ The GPU-driven lasso selection pipeline finds **all** data points inside the dra
 | Component | File | Purpose |
 |-----------|------|---------|
 | `SelectionColumn` | `src/selection/SelectionColumn.js` | Float texture FBO storing 0/1 selection values, 4-packed per texel; `upload(packed)` pushes a CPU buffer to the GPU texture |
-| `SelectionRegistry` | `src/selection/SelectionRegistry.js` | `WeakMap<dataRef, Map<name, entry>>` — allocates and owns one `SelectionColumn` per (plot, name) pair; no propagation logic |
-| `Selection` | `src/selection/Selection.js` | User-facing wrapper for one (plot, name) pair; implements `ColumnData`; owns the CPU mirror (`_packed`); fires subscribers on change |
+| `SelectionRegistry` | `src/selection/SelectionRegistry.js` | `WeakMap<dataRef, Map<name, entry>>` — allocates and owns one `SelectionColumn` per (dataRef, plot, name) triple; two plots share an entry only when they hold the same data object reference **and** the same name; no propagation logic |
+| `Selection` | `src/selection/Selection.js` | User-facing wrapper for one (dataRef, plot, name) triple; implements `ColumnData`; owns the CPU mirror (`_packed`); fires subscribers on change |
 | `SelectionLink` | `src/selection/SelectionLink.js` | `linkSelections(selA, selB)` — wires two `Selection` objects bidirectionally via their `subscribe` APIs |
 | `LassoMask` | `src/selection/LassoMask.js` | SVG polyline overlay drawn while the user drags; no role in the GPU pipeline |
 | `PositionCapture` | `src/selection/PositionCapture.js` | Pass 1 — runs the layer's vertex shader in capture mode, scatter-writing NDC positions into a float FBO |
@@ -84,7 +84,7 @@ selectLasso()
                  └─ _notify() → …
 ```
 
-Cross-plot links are established either manually via `linkSelections(selA, selB)` or automatically by `PlotGroup._updateAutoLinks()` when `autoLink: true`.
+Cross-plot links are established either manually via `linkSelections(selA, selB)` or automatically by `PlotGroup._updateAutoLinks()` when `autoLink: true`. Auto-linking matches on **both the dataset object reference and the selection name** — plots sharing the same name but different data objects are not linked.
 
 ---
 

@@ -37,7 +37,7 @@ Add `selection` to any layer spec to opt that layer into a named selection chann
 { points: { xData: 'input.x', yData: 'input.y', selection: 'brush1' } }
 ```
 
-The value is an arbitrary string that names the **selection channel**. To synchronise a selection across multiple plots, use [`linkSelections()`](../user-api/Selection.md#linkselections) or [`PlotGroup`](../user-api/PlotGroup.md) with `autoLink: true` — the name is used to match layers across plots, analogous to how quantity kinds match axes.
+The value is an arbitrary string that names the **selection channel**. A selection channel is identified by the combination of **dataset object** and **name** — two layers share a channel only when they reference the same data object *and* the same name string. To synchronise a selection across multiple plots, use [`linkSelections()`](../user-api/Selection.md#linkselections) or [`PlotGroup`](../user-api/PlotGroup.md) with `autoLink: true` — both the dataset and the name must match for auto-linking to connect the layers.
 
 Multiple named selections can coexist:
 
