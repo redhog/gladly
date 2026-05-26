@@ -679,7 +679,10 @@ void main() {
       u_is3D:    this._is3D ? 1.0 : 0.0,
       u_mvp:     resolvedMvp,
       viewport:  resolvedViewport,
-      count: layer.vertexCount ?? Object.values(layer.attributes).find(v => v instanceof Float32Array)?.length ?? 0,
+      count: layer.vertexCount
+        ?? Object.values(layer.attributes).find(v => v instanceof Float32Array)?.length
+        ?? Object.values(layer.attributes).find(v => Array.isArray(v) && v.length > 0 && v[0] instanceof Float32Array)?.[0]?.length
+        ?? 0,
       u_pickingMode:    pickMode,
       u_pickLayerIndex: layerIdx,
       u_mode:             0.0,
@@ -959,6 +962,8 @@ void main() {
 
     // fn[] in uniforms whose first element is a function = tiled texture closures.
     const isTiledTexClosure = (v) => Array.isArray(v) && v.length > 0 && typeof v[0] === 'function'
+    // Float32Array[] in attributes = tiled buffer attributes (one array per tile).
+    const isTiledBuffer = (v) => Array.isArray(v) && v.length > 0 && v[0] instanceof Float32Array
 
     // Compile a regl config into a cached draw fn. bufferProps are per-layer GPU buffers.
     const compileConfig = (config) => {
@@ -966,16 +971,21 @@ void main() {
       if (!this._shaderCache.has(shaderKey)) {
         const propAttrs = {}
         for (const [key, val] of Object.entries(config.attributes)) {
-          const rawBuf = val?.buffer instanceof Float32Array ? val.buffer
-            : val instanceof Float32Array ? val : null
-          if (rawBuf !== null) {
-            const propKey = `attr_${key}`
-            const divisor = val?.divisor
-            propAttrs[key] = divisor !== undefined
-              ? { buffer: this.regl.prop(propKey), divisor }
-              : this.regl.prop(propKey)
+          if (isTiledBuffer(val)) {
+            // Tiled buffer: prop placeholder; per-tile GPU buffer injected in tile loop.
+            propAttrs[key] = this.regl.prop(`attr_${key}`)
           } else {
-            propAttrs[key] = val
+            const rawBuf = val?.buffer instanceof Float32Array ? val.buffer
+              : val instanceof Float32Array ? val : null
+            if (rawBuf !== null) {
+              const propKey = `attr_${key}`
+              const divisor = val?.divisor
+              propAttrs[key] = divisor !== undefined
+                ? { buffer: this.regl.prop(propKey), divisor }
+                : this.regl.prop(propKey)
+            } else {
+              propAttrs[key] = val
+            }
           }
         }
         const propUniforms = {}
@@ -994,6 +1004,24 @@ void main() {
         else if (typeof val === 'function') dynamicUniforms[key] = val
       }
 
+      // Per-tile pick ID offset for texture tiles: all tiles share one a_pickId buffer,
+      // so offset = t * that buffer's length.
+      const pickAttrVal = config.attributes['a_pickId']
+      const pickBuf = pickAttrVal?.buffer instanceof Float32Array ? pickAttrVal.buffer
+        : pickAttrVal instanceof Float32Array ? pickAttrVal : null
+      const pickCountPerTile = pickBuf?.length ?? 0
+
+      // Per-tile pick offsets for typed-array-tiled attrs: cumulative sum of tile lengths.
+      // Null when no tiled buffer attrs are present (texture tiles use pickCountPerTile instead).
+      let typedArrayPickOffsets = null
+      for (const [, val] of Object.entries(config.attributes)) {
+        if (isTiledBuffer(val)) {
+          let offset = 0
+          typedArrayPickOffsets = val.map(arr => { const o = offset; offset += arr.length; return o })
+          break
+        }
+      }
+
       return (runtimeProps) => {
         const baseProps = {}
         for (const [key, fn] of Object.entries(dynamicUniforms)) baseProps[key] = fn()
@@ -1001,6 +1029,13 @@ void main() {
         for (const fns of Object.values(tiledClosures)) {
           if (fns.length > nTiles) nTiles = fns.length
         }
+        for (const bufs of Object.values(tiledGpuBuffers)) {
+          if (bufs.length > nTiles) nTiles = bufs.length
+        }
+        // Keep layer's tile pick offsets current so pick() can decode tile + index.
+        layer._tilePickOffsets = Array.from({ length: nTiles }, (_, t) =>
+          typedArrayPickOffsets ? (typedArrayPickOffsets[t] ?? 0) : t * pickCountPerTile
+        )
         for (let t = 0; t < nTiles; t++) {
           const tileProps = {}
           let skip = false
@@ -1010,14 +1045,28 @@ void main() {
             tileProps[key] = tex
           }
           if (skip) continue
-          cmd({ ...bufferProps, ...baseProps, ...tileProps, ...runtimeProps })
+          for (const [propKey, bufs] of Object.entries(tiledGpuBuffers)) {
+            tileProps[propKey] = bufs[t < bufs.length ? t : 0]
+          }
+          tileProps['u_tile_pick_offset'] = typedArrayPickOffsets
+            ? (typedArrayPickOffsets[t] ?? 0)
+            : t * pickCountPerTile
+          const tileCount = tiledBufferCounts.length > 0 ? tiledBufferCounts[t] : null
+          cmd({ ...bufferProps, ...baseProps, ...tileProps, ...runtimeProps, ...(tileCount !== null ? { count: tileCount } : {}) })
         }
       }
     }
 
-    // Extract per-layer GPU buffers for Float32Array attributes.
+    // Extract per-layer GPU buffers. Float32Array → single buffer; Float32Array[] → tiled buffers.
     const bufferProps = {}
+    const tiledGpuBuffers = {}   // propKey → regl.buffer[] (one per tile)
+    const tiledBufferCounts = [] // vertex count per tile (from first tiled buffer attr found)
     for (const [key, val] of Object.entries(drawConfig.attributes)) {
+      if (isTiledBuffer(val)) {
+        tiledGpuBuffers[`attr_${key}`] = val.map(arr => this.regl.buffer(arr))
+        if (tiledBufferCounts.length === 0) val.forEach(arr => tiledBufferCounts.push(arr.length))
+        continue
+      }
       const rawBuf = val?.buffer instanceof Float32Array ? val.buffer
         : val instanceof Float32Array ? val : null
       if (rawBuf !== null) {
@@ -1373,7 +1422,13 @@ void main() {
         const layerIndex = pixels[0] - 1
         const dataIndex = (pixels[1] << 16) | (pixels[2] << 8) | pixels[3]
         const layer = this.layers[layerIndex]
-        result = { layerIndex, configLayerIndex: layer.configLayerIndex, dataIndex, layer }
+        const offsets = layer._tilePickOffsets ?? [0]
+        let tile = 0
+        for (let t = offsets.length - 1; t >= 0; t--) {
+          if (offsets[t] <= dataIndex) { tile = t; break }
+        }
+        const index = dataIndex - offsets[tile]
+        result = { layerIndex, configLayerIndex: layer.configLayerIndex, tile, index, layer }
       }
     })
     } finally {

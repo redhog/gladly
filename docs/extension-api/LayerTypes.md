@@ -745,6 +745,22 @@ void main() {
 
 Double-calling `gladly_apply_color` is safe: in pick mode it always returns the correct pick encoding regardless of input.
 
+### Tiled layers
+
+For tiled layers (texture tiles or `Float32Array[]` buffer attributes), `plot.pick()` returns `{ tile, index }` identifying which tile and which vertex within that tile was clicked — no manual decoding is needed.
+
+The vertex shader receives `a_pickId` (local 0..N-1 within a tile, used for texture sampling) and a `u_tile_pick_offset` uniform (set per tile by the render loop). The pick colour is encoded from the global pick ID automatically:
+
+```glsl
+// injected automatically — no action needed in the layer shader
+float global_pick_id = a_pickId + u_tile_pick_offset;
+v_pickId = global_pick_id;
+```
+
+After each draw the render loop stores the per-tile offset table on `layer._tilePickOffsets`. `plot.pick()` uses this to decode `tile` and `index` before returning.
+
+See [Tiled Data](../tiled-data.md) for the internal offset model.
+
 ### Instanced layers
 
 For instanced layers (`instanceCount !== null`), `a_pickId` is a per-instance attribute (divisor 1). The `dataIndex` returned by `plot.pick()` is therefore the **instance** index into the per-instance attribute arrays. When reading back picked values, filter out per-vertex attributes:

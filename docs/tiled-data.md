@@ -46,7 +46,10 @@ A `_createLayer` gpuConfig attribute value may be a plain `Float32Array` (single
 tile, wrapped internally to `[Float32Array]`) or `Float32Array[]` (one typed array
 per tile).  Both produce `{ kind: 'buffer-tiled', values }` inside
 `resolveAttributeExpr`.  Tiled buffer attributes drive per-tile GPU buffer
-bindings, per-tile vertex counts, and per-tile `a_pickId` arrays.
+bindings, per-tile vertex counts, and per-tile `u_tile_pick_offset` values.
+
+Tiles in a `Float32Array[]` attribute **may have different lengths** — the tile
+loop uses each tile's own array length as the vertex count for that draw call.
 
 ---
 
@@ -55,7 +58,7 @@ bindings, per-tile vertex counts, and per-tile `a_pickId` arrays.
 All tiled things in **one layer** must agree on N.  Concretely:
 
 * Every `fn[]` value across all resolved texture columns must have the same length.
-* Every buffer attribute produces `values` whose length sets or must match N.
+* Every buffer attribute that is `Float32Array[]` must have the same array count.
 * The above must also agree with each other.
 
 Validation happens inside `LayerType.createDrawCommand`; a mismatch throws.
@@ -72,12 +75,43 @@ columns in a layer must share the same N.
 ```
 for t in 0..N-1:
     bind tile-t textures for every tiled uniform
-    bind tile-t GPU buffer for every tiled buffer attr + a_pickId
-    call compiled shader with per-tile count (or runtimeProps.count if no buffer tiling)
+    bind tile-t GPU buffer for every tiled buffer attr
+    set u_tile_pick_offset = cumulative pick offset for tile t
+    set count = tile-t vertex count (for tiled buffer attrs) or runtimeProps.count
+    call compiled shader
 ```
 
 No `regl.clear` is issued between tiles — each tile's geometry is drawn on top
 of the previous tile, giving a seamless merged result.
+
+---
+
+## Pick IDs and Tile Identification
+
+`a_pickId` is always a **single shared buffer** (0 .. N-1) regardless of tiling.
+It is used for texture sampling (`sampleColumn`) which is tile-local.
+
+The pick colour written to the framebuffer uses the **global pick ID**:
+
+```glsl
+float global_pick_id = a_pickId + u_tile_pick_offset;
+v_pickId = global_pick_id;
+```
+
+`u_tile_pick_offset` is set per tile by the render loop:
+
+| Tile kind | Offset for tile t |
+|-----------|-------------------|
+| Texture tiles (uniform N per tile) | `t × N` |
+| Buffer-array tiles | cumulative sum of `tile[0].length + … + tile[t-1].length` |
+
+After each draw the render loop stores the per-tile offset table on
+`layer._tilePickOffsets` (an array of length N, one entry per tile).
+`plot.pick()` uses this table to automatically decode the global pick ID back into
+`{ tile, index }` — **no manual decoding is required by callers.**
+
+The same global pick ID is used in the capture texture for lasso selection, so
+selection works correctly across all tiles.
 
 ---
 

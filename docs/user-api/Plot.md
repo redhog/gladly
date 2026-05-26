@@ -157,7 +157,7 @@ plot.on('no-error', () => {
 
 ### `pick(x, y)`
 
-GPU-based hit-testing: renders all layers to an offscreen framebuffer with pick-encoded colors, reads back one pixel, and decodes which layer and data point occupies that position.
+GPU-based hit-testing: renders all layers to an offscreen framebuffer with pick-encoded colors, reads back one pixel, and decodes which layer, tile, and data point occupies that position.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
@@ -168,35 +168,39 @@ Returns `null` if nothing was hit, or:
 
 ```javascript
 {
-  configLayerIndex: 0,    // index into config.layers[] (the user-facing layer list)
-  layerIndex: 0,          // index into the internal GPU layer array (may differ when a layer type emits multiple draw calls)
-  dataIndex: 12345,       // vertex index (non-instanced) or instance index (instanced layers)
-  layer: <Layer>          // the Layer object — layer.attributes holds the raw Float32Arrays
+  configLayerIndex: 0,  // index into config.layers[] (the user-facing layer list)
+  layerIndex: 0,        // index into the internal GPU layer array (may differ when a layer type emits multiple draw calls)
+  tile: 0,              // tile index (0 for non-tiled layers; 0..N-1 for N-tile layers)
+  index: 12345,         // vertex index within the tile (non-instanced) or instance index (instanced layers)
+  layer: <Layer>        // the Layer object — layer.attributes holds the raw data
 }
 ```
 
 To read the data values at the picked point:
 
 ```javascript
-plot.on('mouseup', (e) => {
+plot.on('mouseup', async (e) => {
   const rect = plot.container.getBoundingClientRect()
-  const result = plot.pick(e.clientX - rect.left, e.clientY - rect.top)
+  const result = await plot.pick(e.clientX - rect.left, e.clientY - rect.top)
   if (!result) return
 
-  const { configLayerIndex, dataIndex, layer } = result
+  const { configLayerIndex, tile, index, layer } = result
   const isInstanced = layer.instanceCount !== null
-  const row = Object.fromEntries(
-    Object.entries(layer.attributes)
-      .filter(([k]) => !isInstanced || (layer.attributeDivisors[k] ?? 0) === 1)
-      .map(([k, v]) => [k, v[dataIndex]])
+
+  // For non-tiled layers: tile is always 0, index is the row in the attribute arrays.
+  // For tiled layers (Float32Array[] attributes): index is the row within tile `tile`.
+  const attrs = Object.entries(layer.attributes)
+    .filter(([k]) => !isInstanced || (layer.attributeDivisors[k] ?? 0) === 1)
+  const tileAttrs = Object.fromEntries(
+    attrs.map(([k, v]) => [k, Array.isArray(v) ? v[tile]?.[index] : v[index]])
   )
-  console.log(`layer=${configLayerIndex} index=${dataIndex}`, row)
+  console.log(`layer=${configLayerIndex} tile=${tile} index=${index}`, tileAttrs)
 })
 ```
 
-For instanced layers (e.g. `rects`), `dataIndex` is the **instance** index. Filter out per-vertex attributes (divisor 0) using `layer.attributeDivisors`.
+For instanced layers (e.g. `rects`), `index` is the **instance** index. Filter out per-vertex attributes (divisor 0) using `layer.attributeDivisors`.
 
-`configLayerIndex` indexes into the `config.layers` array you passed to `plot.update()` and is the most useful identifier for application code. `layerIndex` indexes the internal GPU draw-call array, which may differ from `configLayerIndex` when a single layer spec produces multiple draw calls.
+`configLayerIndex` indexes into the `config.layers` array you passed to `plot.update()` and is the most useful identifier for application code. `layerIndex` indexes the internal GPU draw-call array, which may differ when a single layer spec produces multiple draw calls.
 
 Pick supports up to 255 layers and ~16 million data points per layer.
 

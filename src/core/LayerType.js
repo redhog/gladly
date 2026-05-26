@@ -54,18 +54,19 @@ function injectIntoMainStart(src, code) {
 function injectPickIdAssignment(src) {
   const lastBrace = src.lastIndexOf('}')
   if (lastBrace === -1) return src
-  const captureBlock = `  v_pickId = a_pickId;
+  const captureBlock = `  float global_pick_id = a_pickId + u_tile_pick_offset;
+  v_pickId = global_pick_id;
   if (u_mode > 0.5) {
     vec2 ndc = gl_Position.xy / gl_Position.w;
     float texW = u_capture_tex_size.x;
-    float tx = mod(a_pickId, texW);
-    float ty = floor(a_pickId / texW);
+    float tx = mod(global_pick_id, texW);
+    float ty = floor(global_pick_id / texW);
     gl_Position = vec4(
         (tx + 0.5) / texW * 2.0 - 1.0,
         (ty + 0.5) / u_capture_tex_size.y * 2.0 - 1.0,
         0.0, 1.0);
     gl_PointSize = 1.0;
-    v_capture_data = vec4(ndc, a_pickId, u_capture_endpoint);
+    v_capture_data = vec4(ndc, global_pick_id, u_capture_endpoint);
   }
 `
   return src.slice(0, lastBrace) + captureBlock + '}'
@@ -120,7 +121,8 @@ export class LayerType {
   async createDrawCommand(regl, layer, plot) {
     // --- Resolve attributes ---
     let vertSrc = this.vert
-    const bufferAttrs = {}         // name → Float32Array (fixed geometry)
+    const bufferAttrs = {}         // name → Float32Array (single-tile fixed geometry)
+    const tiledBufferAttrs = {}    // name → Float32Array[] (multi-tile fixed geometry)
     const allTextures = {}         // uniformName → fn[] (always arrays; length = nTiles)
     const allDataColumns = []      // ColumnData instances for refresh()
     const mainInjections = []      // float name = expr; injected inside main()
@@ -132,7 +134,11 @@ export class LayerType {
     for (const [key, expr] of Object.entries(layer.attributes)) {
       const result = await resolveAttributeExpr(regl, expr, key, plot)
       if (result.kind === 'buffer-tiled') {
-        bufferAttrs[key] = result.values[0]
+        if (result.values.length > 1) {
+          tiledBufferAttrs[key] = result.values
+        } else {
+          bufferAttrs[key] = result.values[0]
+        }
       } else {
         vertSrc = removeAttributeDecl(vertSrc, key)
         Object.assign(allTextures, result.textures)
@@ -159,12 +165,17 @@ export class LayerType {
       }
     }
 
-    // Validate consistency of tile counts across all texture columns.
+    // Validate consistency of tile counts across all texture columns and tiled buffer attrs.
     let nTiles = 1
     for (const [, fns] of Object.entries(allTextures)) {
       const n = fns.length
       if (nTiles === 1) nTiles = n
       else if (nTiles !== n) throw new Error(`[gladly] Layer '${this.name}': tile count mismatch in texture columns (${nTiles} vs ${n})`)
+    }
+    for (const [, arrs] of Object.entries(tiledBufferAttrs)) {
+      const n = arrs.length
+      if (nTiles === 1) nTiles = n
+      else if (nTiles !== n) throw new Error(`[gladly] Layer '${this.name}': tile count mismatch between tiled buffer attributes and texture columns (${nTiles} vs ${n})`)
     }
 
     layer._dataColumns = allDataColumns
@@ -184,9 +195,12 @@ export class LayerType {
 
     // Pick IDs
     const isInstanced = layer.instanceCount !== null
+    const tiledBufferKeys = Object.keys(tiledBufferAttrs)
     const pickCount = isInstanced ? layer.instanceCount :
       (layer.vertexCount ??
-        Object.values(bufferAttrs).find(v => v instanceof Float32Array)?.length ?? 0)
+        Object.values(bufferAttrs).find(v => v instanceof Float32Array)?.length ??
+        (tiledBufferKeys.length > 0 ? tiledBufferAttrs[tiledBufferKeys[0]][0].length : null) ??
+        0)
     if (pickCount === 0 && !this.suppressWarnings) {
       console.warn(
         `[gladly] Layer '${this.name}': ` +
@@ -209,6 +223,10 @@ export class LayerType {
           const divisor = layer.attributeDivisors[key]
           return [key, divisor !== undefined ? { buffer, divisor } : { buffer }]
         })
+      ),
+      // Tiled buffer attrs are emitted as Float32Array[] so Plot.js tile loop handles them.
+      ...Object.fromEntries(
+        Object.entries(tiledBufferAttrs).map(([key, arrays]) => [key, arrays])
       ),
       a_pickId: isInstanced ? { buffer: pickIds, divisor: 1 } : { buffer: pickIds }
     }
@@ -248,6 +266,7 @@ export class LayerType {
     uniforms['u_mode']             = regl.prop('u_mode')
     uniforms['u_capture_tex_size'] = regl.prop('u_capture_tex_size')
     uniforms['u_capture_endpoint'] = regl.prop('u_capture_endpoint')
+    uniforms['u_tile_pick_offset'] = regl.prop('u_tile_pick_offset')
 
     // Strip spatial uniforms from vert (re-declared in buildSpatialGlsl)
     vertSrc = removeUniformDecl(vertSrc, 'xDomain')
@@ -265,7 +284,7 @@ export class LayerType {
       uniforms['u_colorscale_tex'] = [() => plot.colorscaleTexture]
     }
     const filterGlsl = Object.keys(layer.filterAxes).length > 0 ? buildFilterGlsl() : ''
-    const pickVertDecls = `in float a_pickId;\nout float v_pickId;\nout vec4 v_capture_data;\nuniform float u_mode;\nuniform vec2 u_capture_tex_size;\nuniform float u_capture_endpoint;`
+    const pickVertDecls = `in float a_pickId;\nout float v_pickId;\nout vec4 v_capture_data;\nuniform float u_mode;\nuniform vec2 u_capture_tex_size;\nuniform float u_capture_endpoint;\nuniform float u_tile_pick_offset;`
 
     const hasNdColumns = ndColumnHelperLines.length > 0
     const ndColumnHelpersStr = ndColumnHelperLines.join('\n')
