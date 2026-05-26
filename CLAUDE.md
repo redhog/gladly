@@ -32,7 +32,7 @@ For detailed information about using and understanding Gladly:
 ## Technology Stack
 
 - **WebGL Rendering**: regl v2.1.0
-- **Axes & Interaction**: D3.js v7.8.5 (d3-selection, d3-scale, d3-axis, d3-zoom)
+- **Scale Math**: D3.js v7.8.5 (d3-scale only — no SVG/DOM rendering)
 - **Module Format**: ES6 modules
 - **Build Tool**: Parcel v2.9.0 (for examples)
 

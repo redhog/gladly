@@ -6,7 +6,7 @@ Gladly is a GPU-accelerated multi-axis plotting library built on WebGL (via regl
 
 **Key Architectural Principles:**
 - Declarative plot configuration — specify what to render, not how
-- GPU rendering for data points (WebGL canvas) + SVG overlay for axes
+- GPU rendering for data points, axes, ticks, and lasso outlines — entirely on the WebGL canvas
 - Layer type registry for extensibility without modifying core code
 - Auto range calculation from data, with opt-in overrides
 - Multi-axis system with quantity kind enforcement to prevent incompatible layer combinations
@@ -186,14 +186,9 @@ All shims live in `Plot._initialize()` in `src/core/Plot.js`.
 
 ---
 
-### 8. Separation of Concerns — Canvas + SVG
+### 8. WebGL-Only Rendering
 
-**Intent:** Leverage each technology for what it does best.
-
-- **WebGL canvas** renders data points (GPU-parallel, handles millions of points)
-- **SVG overlay** renders axes, ticks, and labels (crisp text; pointer events for zoom)
-
-The SVG sits on top with `pointer-events: none` on most elements so zoom/pan reach the canvas.
+Everything visible — data points, axes, tick labels, and lasso outlines — is drawn on the single WebGL canvas. D3 is used only for scale math (`d3-scale`), not for DOM or SVG rendering. Tick labels are rendered via `TickLabelAtlas` (a WebGL texture atlas). The lasso outline is drawn as a `line loop` regl command registered in `plot._renderCallbacks`.
 
 ---
 

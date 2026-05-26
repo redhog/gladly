@@ -110,11 +110,11 @@ const lasso = new LassoInteraction(plot, options)
 | `trigger` | `'shift'` | Activation modifier: `'shift'`, `'ctrl'`, or `'always'` |
 | `mode` | `'lasso'` | Currently only `'lasso'` is implemented |
 
-A SVG polyline overlay is drawn while the user drags. It is removed on `mouseup`.
+A blue `line loop` is drawn directly on the WebGL canvas while the user drags, via a regl draw command registered in `plot._renderCallbacks`. It is cleared on `mouseup`.
 
 **Methods:**
 
-- `lasso.destroy()` — removes all event listeners and the SVG overlay
+- `lasso.destroy()` — removes all event listeners and destroys the WebGL vertex buffer
 
 ---
 
