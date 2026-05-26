@@ -1,19 +1,25 @@
 import { ColumnData } from '../data/ColumnData.js'
 import { globalSelectionRegistry } from './SelectionRegistry.js'
 
+function arraysEqual(a, b) {
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false
+  return true
+}
+
 export class Selection extends ColumnData {
   constructor(plot, name) {
     super()
-    this._plot = plot
-    this._name = name
-    this._packed = null   // Float32Array (texW*texH*4) from last GPU readback, or null
-    this._listeners = new Set()
+    this._plot   = plot
+    this._name   = name
+    this._arrays = null   // Float32Array[] — one per tile, values 0 or 1; null when inactive
+    this._listeners   = new Set()
     this._propagating = false
   }
 
-  // ─── ColumnData interface — delegates to the SelectionColumn for this plot ───
+  // ─── ColumnData interface ────────────────────────────────────────────────────
 
-  get length()       { return this._column?.length ?? null }
+  get length()       { return this._column?._tiles.reduce((s, t) => s + t.n, 0) ?? null }
   get domain()       { return [0, 1] }
   get quantityKind() { return null }
 
@@ -35,42 +41,46 @@ export class Selection extends ColumnData {
 
   get active() { return this._column?.active ?? false }
 
-  // One Float32 (0 or 1) per data point. null when no selection is active.
-  get array() {
-    if (!this.active || !this._packed) return null
-    const n = this.length
-    if (n == null) return null
-    const out = new Float32Array(n)
-    for (let i = 0; i < n; i++) out[i] = this._packed[i] > 0.5 ? 1 : 0
-    return out
-  }
+  // One Float32Array per tile (values 0 or 1). Mirrors toTexture() for CPU access.
+  // Returns null when no lasso has been drawn or no points are selected.
+  // arrays[t][i] == 1 means local point i within tile t is selected.
+  get arrays() { return this._arrays }
 
-  // Clears the selection and marks it inactive. Notifies subscribers.
   clear() {
     const col = this._column
     if (col) col.clear()
-    this._packed = null
+    this._arrays = null
     this._plot.scheduleRender()
     this._notify()
   }
 
-  // Copies selection state from another Selection object. Notifies subscribers.
   applyFrom(otherSel) {
-    const packed = otherSel._packed
-    const col = this._column
-    if (!col) return
-    if (!packed || !packed.some(v => v > 0.5)) {
+    const arrays   = otherSel._arrays
+    const col      = this._column
+    const otherCol = otherSel._column
+    if (!col || !otherCol) return
+
+    col._onClear = () => { this._arrays = null; this._notify() }
+
+    const otherSizes = otherCol._tiles.map(t => t.n)
+    if (!arraysEqual(col._tiles.map(t => t.n), otherSizes)) {
+      const saved   = col._onClear
+      col._onClear  = null
+      col._rebuild(otherSizes)
+      col._onClear  = saved
+    }
+
+    if (!arrays || !arrays.some(a => a.some(v => v > 0.5))) {
       col.clear()
-      this._packed = null
+      this._arrays = null
     } else {
-      col.upload(packed)
-      this._packed = packed
+      col.upload(arrays)
+      this._arrays = arrays
     }
     this._plot.scheduleRender()
     this._notify()
   }
 
-  // Returns { remove() } handle, like plot.on().
   subscribe(callback) {
     this._listeners.add(callback)
     return { remove: () => this._listeners.delete(callback) }
@@ -86,24 +96,27 @@ export class Selection extends ColumnData {
     return globalSelectionRegistry.get(dataRef, this._name, this._plot)
   }
 
-  // Called by Plot.selectLasso() after the GPU pipeline completes.
-  // Reads the GPU texture back to CPU, updates active state, and notifies subscribers.
   _readbackAndNotify() {
     const col = this._column
     if (!col) return
 
-    const pixelCount = col.texW * col.texH * 4
-    const packed = new Float32Array(pixelCount)
-    this._plot.regl({ framebuffer: col.fbo })(() => {
-      this._plot.regl.read({ data: packed })
+    col._onClear = () => { this._arrays = null; this._notify() }
+
+    // Read each tile's FBO; keep as separate Float32Array per tile (values 0 or 1).
+    const arrays = col._tiles.map(tile => {
+      const raw = new Float32Array(tile.texW * tile.texH * 4)
+      this._plot.regl({ framebuffer: tile.fbo })(() => {
+        this._plot.regl.read({ data: raw })
+      })
+      return raw.slice(0, tile.n)   // trim padding; .slice gives a fresh copy
     })
 
-    if (packed.some(v => v > 0.5)) {
+    if (arrays.some(a => a.some(v => v > 0.5))) {
       col.activate()
-      this._packed = packed
+      this._arrays = arrays
     } else {
       col.clear()
-      this._packed = null
+      this._arrays = null
     }
 
     this._plot.scheduleRender()

@@ -2,6 +2,12 @@ import { PositionCapture }   from "./PositionCapture.js"
 import { SelectionTestPass } from "./SelectionTestPass.js"
 import { LassoMask }         from "./LassoMask.js"
 
+function arraysEqual(a, b) {
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false
+  return true
+}
+
 export class SelectionPipeline {
   constructor(regl, plot) {
     this._regl    = regl
@@ -40,27 +46,42 @@ export class SelectionPipeline {
     // Clear selection textures
     for (const col of selectionColumns.values()) col.clear()
 
-    // Two-pass selection per layer
+    // Two-pass selection per layer, per tile.
     for (const [layerIdx, selCol] of selectionColumns) {
       const layer = plot.layers[layerIdx]
       if (!layer.captureDrawCmd) continue
 
-      const props = plot._buildLayerProps(layer, layerIdx, {})
-      const N     = layer.instanceCount ?? layer.vertexCount ?? 0
-      if (N === 0) continue
+      // Ensure selection tile structure matches current render tile layout.
+      // layer._tileSizes is updated on every render; it may have changed since
+      // the last render if new tiled data arrived over the network.
+      const tileSizes = layer._tileSizes ?? [layer.instanceCount ?? layer.vertexCount ?? 0]
+      if (tileSizes.every(n => n > 0) && !arraysEqual(selCol._tiles.map(t => t.n), tileSizes)) {
+        selCol._rebuild(tileSizes)
+      }
 
-      if (layer.instanceCount != null) {
-        // Instanced layer (e.g. LinesLayer): capture both endpoints separately
-        const pos0 = this._capture.run(layer.captureDrawCmd, props, N, 0)
-        const pos1 = this._capture.run(layer.captureDrawCmd, props, N, 1)
-        this._test.runSegments(pos0, pos1, selCol, lassoTex, lassoN, N)
-        pos0.destroy()
-        pos1.destroy()
-      } else {
-        // Non-instanced layer (e.g. PointsLayer)
-        const pos = this._capture.run(layer.captureDrawCmd, props, N, 0)
-        this._test.runPoints(pos, selCol, lassoTex, lassoN, N)
-        pos.destroy()
+      const props = plot._buildLayerProps(layer, layerIdx, {})
+
+      for (let t = 0; t < selCol._tiles.length; t++) {
+        const tile = selCol._tiles[t]
+        if (tile.n === 0) continue
+
+        // _tileOnly: run only this tile's geometry.
+        // _captureTileOffset: force u_tile_pick_offset=0 so vertices are written at local
+        // pick IDs 0..tile.n-1, matching the per-tile selection texture's index space.
+        const tileProps = { ...props, _tileOnly: t, _captureTileOffset: 0 }
+
+        if (layer.instanceCount != null) {
+          // Instanced layer (e.g. LinesLayer): capture both endpoints separately.
+          const pos0 = this._capture.run(layer.captureDrawCmd, tileProps, tile.n, 0)
+          const pos1 = this._capture.run(layer.captureDrawCmd, tileProps, tile.n, 1)
+          this._test.runSegments(pos0, pos1, tile, lassoTex, lassoN, tile.n)
+          pos0.destroy()
+          pos1.destroy()
+        } else {
+          const pos = this._capture.run(layer.captureDrawCmd, tileProps, tile.n, 0)
+          this._test.runPoints(pos, tile, lassoTex, lassoN, tile.n)
+          pos.destroy()
+        }
       }
     }
 

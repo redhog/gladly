@@ -1,39 +1,17 @@
 import { SelectionColumn } from "./SelectionColumn.js"
 
-// SelectionEntry: one per (dataRef, name) pair
-// { n: number, subscribers: Map<Plot, SelectionColumn> }
-
 export class SelectionRegistry {
   constructor() {
-    this._entries = new WeakMap()   // dataRef → Map<name, SelectionEntry>
+    this._entries = new WeakMap()   // dataRef → Map<name, { subscribers: Map<Plot, SelectionColumn> }>
   }
 
-  _getOrCreateEntry(dataRef, name, n) {
+  register(dataRef, name, plot, regl, tileSizes) {
     if (!this._entries.has(dataRef)) this._entries.set(dataRef, new Map())
     const byName = this._entries.get(dataRef)
-    if (!byName.has(name)) {
-      byName.set(name, { n, subscribers: new Map() })
-    } else {
-      const entry = byName.get(name)
-      if (entry.n !== n) {
-        console.warn(
-          `[gladly] SelectionRegistry: selection "${name}" already registered with n=${entry.n}, ` +
-          `but new subscriber has n=${n}. These layers do not share the same dataset — ` +
-          `they will not be linked. Ensure both plots receive the same data object to link selections.`
-        )
-        return null
-      }
-    }
-    return byName.get(name)
-  }
-
-  register(dataRef, name, plot, regl, n) {
-    const entry = this._getOrCreateEntry(dataRef, name, n)
-    if (!entry) return null
-
+    if (!byName.has(name)) byName.set(name, { subscribers: new Map() })
+    const entry = byName.get(name)
     if (!entry.subscribers.has(plot)) {
-      const col = new SelectionColumn(regl, n)
-      entry.subscribers.set(plot, col)
+      entry.subscribers.set(plot, new SelectionColumn(regl, tileSizes))
     }
     return entry.subscribers.get(plot)
   }

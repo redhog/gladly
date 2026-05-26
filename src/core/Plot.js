@@ -23,6 +23,12 @@ const LINK_THROTTLE_MS      = 150   // ms between renders of a throttled linked 
 const BLOCKED_LAG_THRESHOLD = 30    // ms: throttle kicks in above this blocked lag
 const BLOCKED_LAG_ALPHA     = 0.5   // EMA weight — reacts within ~2 samples
 
+function arraysEqual(a, b) {
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false
+  return true
+}
+
 function buildPlotSchema(data, config) {
   const layerTypes = getRegisteredLayerTypes()
   // Normalise once — always a DataGroup (or null). Columns are e.g. "input.x1".
@@ -914,21 +920,21 @@ void main() {
       }
       if (this._initEpoch !== epoch) return
       for (const layer of gpuLayers) {
-        // Register selection column if the layer config declares a selection binding
+        // Register selection column if the layer config declares a selection binding.
+        // Initial tile structure is a best-guess single tile; it will be rebuilt to match
+        // the actual tiled data layout on the first render and before each lasso selection.
         const selectionName = parameters.selection || null
         if (selectionName && this._lastRawDataArg != null) {
           const N = layer.instanceCount ?? layer.vertexCount ?? 0
-          if (N > 0) {
-            const selCol = globalSelectionRegistry.register(
-              this._lastRawDataArg,
-              selectionName,
-              this,
-              this.regl,
-              N
-            )
-            layer.selectionName   = selectionName
-            layer.selectionColumn = selCol  // null if N mismatch
-          }
+          const selCol = globalSelectionRegistry.register(
+            this._lastRawDataArg,
+            selectionName,
+            this,
+            this.regl,
+            N > 0 ? [N] : []
+          )
+          layer.selectionName   = selectionName
+          layer.selectionColumn = selCol
         }
 
         layer.configLayerIndex = configLayerIndex
@@ -1032,11 +1038,35 @@ void main() {
         for (const bufs of Object.values(tiledGpuBuffers)) {
           if (bufs.length > nTiles) nTiles = bufs.length
         }
-        // Keep layer's tile pick offsets current so pick() can decode tile + index.
+        // Keep layer tile metadata current so pick() and SelectionPipeline can use it.
         layer._tilePickOffsets = Array.from({ length: nTiles }, (_, t) =>
           typedArrayPickOffsets ? (typedArrayPickOffsets[t] ?? 0) : t * pickCountPerTile
         )
+        layer._tileSizes = Array.from({ length: nTiles }, (_, t) =>
+          tiledBufferCounts.length > 0 ? tiledBufferCounts[t] : pickCountPerTile
+        )
+        layer._totalPickCount = typedArrayPickOffsets
+          ? (typedArrayPickOffsets[nTiles - 1] ?? 0) + (tiledBufferCounts[nTiles - 1] ?? pickCountPerTile)
+          : nTiles * pickCountPerTile
+
+        // If the selection column's tile structure no longer matches the current tile layout
+        // (e.g. because new tiled data arrived over the network), rebuild it so the shader
+        // samples from the right number of per-tile textures.
+        const selCol = layer.selectionColumn
+        if (selCol && layer._tileSizes.every(n => n > 0)) {
+          const currentSizes = selCol._tiles.map(t => t.n)
+          if (!arraysEqual(currentSizes, layer._tileSizes)) {
+            selCol._rebuild(layer._tileSizes)
+          }
+        }
+
+        // _tileOnly: when set, only run that one tile (used by SelectionPipeline per-tile capture).
+        // _captureTileOffset: override u_tile_pick_offset to 0 so the capture FBO uses local pick IDs.
+        const tileOnly          = runtimeProps._tileOnly
+        const captureTileOffset = runtimeProps._captureTileOffset
+
         for (let t = 0; t < nTiles; t++) {
+          if (tileOnly !== undefined && tileOnly !== t) continue
           const tileProps = {}
           let skip = false
           for (const [key, fns] of Object.entries(tiledClosures)) {
@@ -1048,9 +1078,9 @@ void main() {
           for (const [propKey, bufs] of Object.entries(tiledGpuBuffers)) {
             tileProps[propKey] = bufs[t < bufs.length ? t : 0]
           }
-          tileProps['u_tile_pick_offset'] = typedArrayPickOffsets
-            ? (typedArrayPickOffsets[t] ?? 0)
-            : t * pickCountPerTile
+          tileProps['u_tile_pick_offset'] = captureTileOffset !== undefined
+            ? captureTileOffset
+            : (typedArrayPickOffsets ? (typedArrayPickOffsets[t] ?? 0) : t * pickCountPerTile)
           const tileCount = tiledBufferCounts.length > 0 ? tiledBufferCounts[t] : null
           cmd({ ...bufferProps, ...baseProps, ...tileProps, ...runtimeProps, ...(tileCount !== null ? { count: tileCount } : {}) })
         }

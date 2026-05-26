@@ -115,6 +115,61 @@ selection works correctly across all tiles.
 
 ---
 
+## Selections
+
+Lasso selection is **fully tile-aware** — `SelectionColumn` holds one GPU
+texture per tile, each sized for that tile's vertex count.  The lasso pipeline
+runs two passes per tile rather than across the whole layer at once.
+
+### Per-tile selection textures
+
+`SelectionColumn._tiles` is an array of `{ texture, fbo, texW, texH, n }` objects,
+one per tile.  In the vertex shader the `u_sel_col` uniform is rebound to
+tile `t`'s texture during tile draw call `t`, exactly like any other tiled
+column attribute.  `sampleColumn(u_sel_col, a_pickId)` therefore uses the
+**local** pick ID (0..tile.n-1) and the tile-local selection texture — no
+global offset is needed.
+
+### Dynamic tile structure
+
+The number and sizes of selection tiles are not fixed at layer creation time.
+Tile sizes can change between renders when tiled data arrives over the network.
+The framework handles this in two places:
+
+1. **Render loop** — after computing `layer._tileSizes` each frame, the tile
+   loop checks whether `selCol._tiles` matches.  If not, it calls
+   `selCol._rebuild(layer._tileSizes)`, which destroys the old FBOs, allocates
+   fresh ones, and fires `selCol._onClear` so `Selection` can null its cached
+   CPU data and notify subscribers.
+
+2. **Lasso time** — `SelectionPipeline.runLasso()` performs the same check
+   immediately before the GPU passes, in case tile count changed since the
+   last render.
+
+### Lasso pipeline (per tile)
+
+For each layer with a selection binding, `SelectionPipeline.runLasso()` iterates
+`selCol._tiles` and for each tile `t`:
+
+1. Calls `captureDrawCmd` with `{ _tileOnly: t, _captureTileOffset: 0 }`.
+   - `_tileOnly: t` — the tile loop skips all tiles except `t`.
+   - `_captureTileOffset: 0` — forces `u_tile_pick_offset = 0` so the
+     capture vertex shader uses `global_pick_id = a_pickId + 0 = a_pickId`
+     (local index).  The position FBO is sized for `tile.n` entries, and
+     each vertex lands at its local position.
+2. Runs `SelectionTestPass` writing results into `selCol._tiles[t].fbo`.
+
+### CPU readback and `selection.arrays`
+
+After the pipeline, `Selection._readbackAndNotify()` reads each tile's FBO
+separately into its own `Float32Array`, trimmed to `tile.n` values.
+`selection.arrays` is a `Float32Array[] | null` — one array per tile, mirroring
+how `toTexture()` returns `texture[]`.  `selection.arrays[t][i]` is `1` when
+local point `i` within tile `t` is selected, `0` otherwise.
+`selection.length` returns the total count across all tiles.
+
+---
+
 ## Compute Files
 
 `hist`, `kde`, `filter*`, `elementwise`, and `fftConvolution` always produce a

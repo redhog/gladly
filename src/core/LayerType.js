@@ -326,10 +326,21 @@ export class LayerType {
       'out float v_selection;',
     ].filter(Boolean).join('\n')
     if (selCol) {
-      uniforms['u_sel_col']    = [() => layer.selectionColumn?._ref.texture]
-      // u_sel_length is 0 when no lasso has been drawn yet (_active = false),
-      // causing v_selection = -1.0 (no active selection → render all normally).
-      uniforms['u_sel_length'] = () => (layer.selectionColumn?._active ? layer.selectionColumn?._n : 0) ?? 0
+      // 1×1 zero texture used when a tile slot has no texture yet (e.g. before first rebuild).
+      const nullSelTex = regl.texture({ width: 1, height: 1, format: 'rgba', type: 'float', data: new Float32Array(4) })
+      // Proxy fn[]: length and per-tile closures read live from the current _tiles array.
+      // Always length ≥ 1 so isTiledTexClosure() treats it as a tiled uniform and the tile
+      // loop rebinds u_sel_col per tile.  Returns nullSelTex for out-of-range tile indices
+      // so no tile is skipped while the column is being rebuilt.
+      uniforms['u_sel_col'] = new Proxy([], {
+        get(target, prop) {
+          if (prop === 'length') return Math.max(layer.selectionColumn?._tiles?.length ?? 0, 1)
+          const t = Number(prop)
+          if (!isNaN(t)) return () => layer.selectionColumn?._tiles?.[t]?.texture ?? nullSelTex
+          return Reflect.get(target, prop)
+        }
+      })
+      uniforms['u_sel_length'] = () => layer.selectionColumn?._active ? 1 : 0
     }
     const selExpr = selCol
       ? `u_sel_length > 0.5 ? sampleColumn(u_sel_col, a_pickId) : -1.0`

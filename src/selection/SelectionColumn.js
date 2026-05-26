@@ -1,53 +1,81 @@
-import { TextureColumn } from "../data/ColumnData.js"
+import { ColumnData } from "../data/ColumnData.js"
 
-export class SelectionColumn extends TextureColumn {
-  constructor(regl, n) {
-    const texW = Math.ceil(Math.sqrt(Math.ceil(n / 4)))
-    const texH = Math.ceil(Math.ceil(n / 4) / texW)
-    const tex = regl.texture({
-      width: texW,
-      height: texH,
-      format: 'rgba',
-      type: 'float',
-      data: new Float32Array(texW * texH * 4),
-    })
-    super({ texture: tex }, { length: n })
-    this._regl = regl
-    this._n = n
-    this._texW = texW
-    this._texH = texH
-    this._active = false
-    this._fbo = regl.framebuffer({ color: tex, depth: false })
+function makeTile(regl, n) {
+  const texW = Math.ceil(Math.sqrt(Math.ceil(n / 4)))
+  const texH = Math.ceil(Math.ceil(n / 4) / texW)
+  const tex = regl.texture({
+    width:  texW,
+    height: texH,
+    format: 'rgba',
+    type:   'float',
+    data:   new Float32Array(texW * texH * 4),
+  })
+  const fbo = regl.framebuffer({ color: tex, depth: false })
+  return { texture: tex, fbo, texW, texH, n }
+}
+
+export class SelectionColumn extends ColumnData {
+  constructor(regl, tileSizes) {
+    super()
+    this._regl    = regl
+    this._active  = false
+    this._onClear = null
+    this._tiles   = tileSizes.map(n => makeTile(regl, n))
   }
 
-  get fbo()    { return this._fbo }
-  get texW()   { return this._texW }
-  get texH()   { return this._texH }
+  get tiles()        { return this._tiles }
+  get active()       { return this._active }
+  get length()       { return this._tiles.reduce((s, t) => s + t.n, 0) }
+  get domain()       { return [0, 1] }
+  get quantityKind() { return null }
 
-  get active() { return this._active }
+  // Destroy current tiles and allocate fresh ones with new sizes.
+  // Fires _onClear so Selection can null its cached CPU data and notify subscribers.
+  _rebuild(tileSizes) {
+    for (const tile of this._tiles) tile.fbo.destroy()
+    this._tiles  = tileSizes.map(n => makeTile(this._regl, n))
+    this._active = false
+    this._onClear?.()
+  }
 
+  // Zero all tile textures and mark inactive. Caller handles any notification.
   clear() {
-    this._regl({ framebuffer: this._fbo })(() => {
-      this._regl.clear({ color: [0, 0, 0, 0] })
-    })
+    for (const tile of this._tiles) {
+      this._regl({ framebuffer: tile.fbo })(() => {
+        this._regl.clear({ color: [0, 0, 0, 0] })
+      })
+    }
     this._active = false
   }
 
   activate() { this._active = true }
 
-  // Upload a packed CPU buffer (texW*texH*4) into this column's GPU texture and mark active.
-  upload(packed) {
-    const texDataLen = this._texW * this._texH * 4
-    let data = packed
-    if (packed.length !== texDataLen) {
-      data = new Float32Array(texDataLen)
-      data.set(packed.subarray(0, Math.min(packed.length, texDataLen)))
+  // Upload per-tile selection data (Float32Array[], one per tile, values 0 or 1)
+  // into the corresponding GPU textures.
+  upload(arrays) {
+    for (let t = 0; t < this._tiles.length; t++) {
+      const tile    = this._tiles[t]
+      const src     = arrays[t] ?? new Float32Array(tile.n)
+      const texLen  = tile.texW * tile.texH * 4
+      const texData = new Float32Array(texLen)
+      texData.set(src.subarray(0, tile.n))
+      tile.texture.subimage({ data: texData, width: tile.texW, height: tile.texH })
     }
-    this._ref.texture.subimage({ data, width: this._texW, height: this._texH })
     this._active = true
   }
 
+  // ColumnData interface — used when Selection is itself used as a layer attribute.
+  resolve(path, _regl) {
+    return {
+      glslExpr: `sampleColumn(${path}, a_pickId)`,
+      textures: { [path]: this._tiles.map(tile => () => tile.texture) },
+    }
+  }
+
+  toTexture(_regl) { return this._tiles.map(t => t.texture) }
+  refresh(_plot)   { return false }
+
   destroy() {
-    this._fbo.destroy()
+    for (const tile of this._tiles) tile.fbo.destroy()
   }
 }

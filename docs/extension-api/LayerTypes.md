@@ -759,6 +759,8 @@ v_pickId = global_pick_id;
 
 After each draw the render loop stores the per-tile offset table on `layer._tilePickOffsets`. `plot.pick()` uses this to decode `tile` and `index` before returning.
 
+**Selection on tiled layers** also works automatically and is fully tile-aware. The `u_sel_col` uniform is a tiled binding rebound per tile to that tile's own selection texture. The shader samples it with the local `a_pickId` — no `global_pick_id` needed. When a lasso is drawn, the selection pipeline runs two GPU passes per tile and writes results into per-tile selection FBOs. `selection.array` concatenates the per-tile results into a single flat array indexed globally across all tiles in order. See [Tiled Data — Selections](../tiled-data.md#selections) for the full model.
+
 See [Tiled Data](../tiled-data.md) for the internal offset model.
 
 ### Instanced layers

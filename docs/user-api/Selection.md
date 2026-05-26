@@ -32,23 +32,27 @@ layers: [{
 
 `true` when a lasso has been drawn and at least one point is selected; `false` otherwise (including before any lasso has been drawn).
 
-### `selection.array`
+### `selection.arrays`
 
-A `Float32Array` of length N with one value per data point: `1` if selected, `0` if not. Returns `null` when `selection.active` is `false`.
+A `Float32Array[]` with one array per data tile: each element is `1` if selected, `0` if not. Returns `null` when `selection.active` is `false`.
+
+For single-tile layers, `selection.arrays` has length 1. For tiled layers, `selection.arrays[t][i]` is `1` when local point `i` within tile `t` is selected. This matches the tile/index pair returned by `plot.pick()`.
 
 ```js
 plot.selections['brush1'].subscribe(sel => {
-  const mask = sel.array   // Float32Array | null
-  if (mask) {
-    const indices = [...mask.keys()].filter(i => mask[i] > 0.5)
-    console.log(`${indices.length} points selected`)
+  const arrays = sel.arrays   // Float32Array[] | null
+  if (arrays) {
+    arrays.forEach((tileArr, t) => {
+      const indices = [...tileArr.keys()].filter(i => tileArr[i] > 0.5)
+      console.log(`tile ${t}: ${indices.length} points selected`)
+    })
   }
 })
 ```
 
 ### `selection.length`
 
-Number of data points tracked by this selection channel, or `null` if no layer has registered it yet.
+Total number of data points tracked by this selection channel across all tiles, or `null` if no layer has registered it yet.
 
 ---
 
