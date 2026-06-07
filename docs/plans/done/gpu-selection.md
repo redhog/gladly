@@ -481,6 +481,24 @@ _buildLayerProps(layer, layerIdx, opts = {}) {
 | `src/selection/PickCountFbo.js` | **Delete** | |
 | `src/selection/GatherPass.js` | **Delete** | |
 
+## Implementation Status (as of 2026-06-07)
+
+**Largely implemented.** All files in the File Summary table have been created or deleted as planned. The core two-pass algorithm (Phases 1–8 and 10–11) is in place:
+
+- `src/selection/` contains: `SelectionColumn.js`, `SelectionRegistry.js`, `LassoMask.js`, `PositionCapture.js`, `SelectionTestPass.js`, `SelectionPipeline.js`, `LassoInteraction.js`, plus `Selection.js` and `SelectionLink.js` (additional files not in the original plan).
+- `PickCountFbo.js` and `GatherPass.js` are deleted.
+- `buildSpatialGlsl()` is exported from `src/axes/AxisRegistry.js`.
+- `u_mode` uniform + capture branch injected in `src/core/LayerType.js`.
+- `selectLasso()` and `_buildLayerProps()` are present in `src/core/Plot.js`.
+
+**Implemented differently — Phase 10 (lasso overlay):**
+- The plan called for an SVG polyline overlay. The actual implementation uses WebGL throughout. `LassoInteraction` draws the in-progress lasso outline via a regl `line loop` command rendered directly on the WebGL canvas (registered via `plot._renderCallbacks`). `LassoMask` renders a filled polygon into a float RGBA FBO via fan triangulation from the centroid. No SVG is used at any point.
+
+**Not yet implemented — Phase 9:**
+- `map_color_s_sel()` in `src/colorscales/ColorscaleRegistry.js` is missing. The colorscale selection-dimming variant (30% black mix for unselected points) has not been added.
+
+---
+
 ## Implementation Order
 
 1. Phase 1 — extract `buildSpatialGlsl`; verify rendering unchanged
