@@ -29,6 +29,10 @@ gladly/
 ├── src/
 │   ├── index.js                               # Public API exports
 │   ├── core/
+│   │   ├── MasterCanvas.js                    # Singleton shared WebGL context + RAF loop
+│   │   ├── initRegl.js                        # WebGL 2.0 shims + regl initialisation utility
+│   │   ├── ResourceRegistry.js                # Ref-counted GPU resource registry
+│   │   ├── FramebufferRegistry.js             # Named framebuffer registry for cross-plot sharing
 │   │   ├── Plot.js                            # Main rendering orchestrator
 │   │   ├── Layer.js                           # Data container (DTO)
 │   │   ├── LayerType.js                       # Shader + metadata + schema + factory
@@ -88,15 +92,25 @@ gladly/
 ## Component Dependency Graph
 
 ```
-Plot (main orchestrator)
-  ├── regl (WebGL context)
-  ├── D3 (selection, scales, axes, zoom)
-  ├── AxisRegistry (created internally — spatial, color, and filter axes)
+MasterCanvas (global singleton)
+  ├── regl (single shared WebGL context for all plots)
+  ├── axisLineCmd / axisBillboardCmd (shared axis draw commands)
+  ├── FramebufferRegistry (named cross-plot FBOs)
+  └── Plot[] (registered plots)
+
+Plot (main rendering orchestrator — one per container)
+  ├── regl (alias → MasterCanvas.regl)
+  ├── _placeholder <div> (position/size measured via getBoundingClientRect each frame)
+  ├── D3 (d3-scale only — no SVG/DOM rendering)
+  ├── AxisRegistry (spatial, color, and filter axes)
   │   └── D3 scales (linear / log)
   ├── LayerTypeRegistry (global singleton)
   │   └── LayerType instances (by name)
   └── Layer[] (created automatically from config)
       └── LayerType (rendering strategy)
+
+ResourceRegistry (global singleton)
+  └── Shared GPU resources keyed by version string (e.g. colorscale textures)
 ```
 
 ---
@@ -182,13 +196,22 @@ Each `LayerType` encapsulates shaders, axis quantity kinds, schema, and a factor
 
 **Future:** If regl is updated to natively handle WebGL 2.0 contexts (detecting core capabilities without falling back to extension queries), all four shims can be removed with no other changes required.
 
-All shims live in `Plot._initialize()` in `src/core/Plot.js`.
+All shims live in `src/core/initRegl.js`. `GlBase._initRegl(canvas)` is a one-liner that calls `initRegl(canvas)`. `MasterCanvas` also calls `initRegl` directly for the shared canvas, without inheriting `GlBase`.
 
 ---
 
-### 8. WebGL-Only Rendering
+### 8. Single Shared WebGL Context (`MasterCanvas`)
 
-Everything visible — data points, axes, tick labels, and lasso outlines — is drawn on the single WebGL canvas. D3 is used only for scale math (`d3-scale`), not for DOM or SVG rendering. Tick labels are rendered via `TickLabelAtlas` (a WebGL texture atlas). The lasso outline is drawn as a `line loop` regl command registered in `plot._renderCallbacks`.
+A fixed-position, full-viewport `<canvas>` owned by `MasterCanvas` holds the single regl context for the entire page. Individual `Plot` instances are lightweight placeholder `<div>` elements. Each RAF frame, `MasterCanvas` measures each plot's on-screen rectangle via `getBoundingClientRect()`, sets a WebGL scissor+viewport for that region, clears it, and calls `plot._drawSync(scissorBox)`.
+
+Benefits:
+- **Zero-copy selection sharing**: `SelectionColumn` GPU textures are created once and bound in any plot's draw call without copying.
+- **Correct hidden-tab behaviour**: off-screen or `display:none` plots return a zero-size rect and are skipped at zero GPU cost.
+- **Centralised resource lifecycle**: `ResourceRegistry` ref-counts shared GPU objects (e.g. colorscale textures) so they are destroyed only when all consumers are gone.
+
+### 9. WebGL-Only Rendering
+
+Everything visible — data points, axes, tick labels, and lasso outlines — is drawn on the single shared WebGL canvas. D3 is used only for scale math (`d3-scale`), not for DOM or SVG rendering. Tick labels are rendered via `TickLabelAtlas` (a WebGL texture atlas). The lasso outline is drawn as a `line loop` regl command registered in `plot._renderCallbacks`.
 
 ---
 

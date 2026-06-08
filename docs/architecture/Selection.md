@@ -9,7 +9,7 @@ The GPU-driven lasso selection pipeline finds **all** data points inside the dra
 | Component | File | Purpose |
 |-----------|------|---------|
 | `SelectionColumn` | `src/selection/SelectionColumn.js` | Holds one float FBO per data tile; 4-packed per texel; `upload(flat)` splits a flat CPU buffer across tile textures; `_rebuild(tileSizes)` reallocates tiles when tile structure changes |
-| `SelectionRegistry` | `src/selection/SelectionRegistry.js` | `WeakMap<dataRef, Map<name, entry>>` — allocates and owns one `SelectionColumn` per (dataRef, plot, name) triple; no propagation logic |
+| `SelectionRegistry` | `src/selection/SelectionRegistry.js` | `WeakMap<dataRef, Map<name, entry>>` — allocates and owns one `SelectionColumn` per (dataRef, name) pair (shared across all plots using the same data + name); sets `col._onWrite` to call `scheduleRender()` on every consumer plot; no copy-propagation logic |
 | `Selection` | `src/selection/Selection.js` | User-facing wrapper for one (dataRef, plot, name) triple; implements `ColumnData`; owns the per-tile CPU mirror (`_arrays: Float32Array[] | null`); fires subscribers on change |
 | `SelectionLink` | `src/selection/SelectionLink.js` | `linkSelections(selA, selB)` — wires two `Selection` objects bidirectionally via their `subscribe` APIs |
 | `LassoMask` | `src/selection/LassoMask.js` | SVG polyline overlay drawn while the user drags; no role in the GPU pipeline |
@@ -92,9 +92,10 @@ After `SelectionPipeline.runLasso()` completes, `Plot.selectLasso()` calls `sele
 
 1. **GPU readback** — reads each tile's FBO into a `Float32Array` trimmed to `tile.n`, storing the result as `_arrays: Float32Array[]` (one per tile). If no points are selected, the column is cleared and `_arrays` is set to `null`.
 2. **`_onClear` registration** — `_readbackAndNotify` registers a callback on `selCol._onClear` so that any future tile rebuild (e.g. new data mid-session) automatically nulls `_arrays` and notifies subscribers.
-3. **`selection._notify()`** — fires all registered subscribers with the `Selection` as argument.
-4. **Linked plot update** (if `linkSelections` was called) — the subscriber calls `otherSelection.applyFrom(selection)`, which syncs tile structure, uploads `_arrays` to per-tile GPU textures, schedules re-render, and notifies its own subscribers.
-5. **`otherSelection._notify()`** — fires the other selection's subscribers. A `_propagating` flag breaks cycles.
+3. **`selCol._onWrite` fires** — because the `SelectionColumn` is shared (same (dataRef, name) pair → same column instance), writing it via `upload()` or `clear()` calls `selCol._onWrite()`, which `SelectionRegistry` has wired to call `scheduleRender()` on **every consumer plot**. This means all plots that reference this column re-render without explicit cross-plot wiring.
+4. **`selection._notify()`** — fires all registered subscribers with the `Selection` as argument.
+5. **Linked plot update** (if `linkSelections` was called) — the subscriber calls `otherSelection.applyFrom(selection)`, which syncs tile structure, uploads `_arrays` to per-tile GPU textures, schedules re-render, and notifies its own subscribers.
+6. **`otherSelection._notify()`** — fires the other selection's subscribers. A `_propagating` flag breaks cycles.
 
 ```
 selectLasso()
@@ -102,17 +103,18 @@ selectLasso()
   └─ Selection._readbackAndNotify()
        └─ per-tile GPU readback → _arrays: Float32Array[]
        └─ col.activate() / col.clear()
+       │    └─ col._onWrite() → SelectionRegistry callback
+       │         └─ for each consumer plot: plot.scheduleRender()   ← all sharing plots re-render
        └─ col._onClear = () => { _arrays=null; notify }
-       └─ plot.scheduleRender()
        └─ _notify() → subscribers
-            └─ otherSelection.applyFrom(selection)
+            └─ otherSelection.applyFrom(selection)   [if linkSelections used]
                  └─ selCol._rebuild() if tile structure differs
                  └─ col.upload(_arrays)        [GPU: per-tile Float32Array[] → per-tile subimages]
-                 └─ plot.scheduleRender()
+                 │    └─ col._onWrite() → SelectionRegistry callback (scheduleRender on all)
                  └─ _notify() → …
 ```
 
-Cross-plot links are established either manually via `linkSelections(selA, selB)` or automatically by `PlotGroup._updateAutoLinks()` when `autoLink: true`. Auto-linking matches on **both the dataset object reference and the selection name**.
+Cross-plot re-renders happen automatically via `selCol._onWrite` because the `SelectionColumn` instance is shared — all plots using the same (dataRef, name) pair reference the same column. Explicit copy-propagation of `_arrays` state is still established via `linkSelections(selA, selB)` or `PlotGroup._updateAutoLinks()` when `autoLink: true`, matching on **both the dataset object reference and the selection name**.
 
 ---
 

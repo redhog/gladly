@@ -17,17 +17,15 @@ This page describes how data moves through Gladly at runtime: the declarative se
 
 3. Create Plot
    new Plot(container)
-   ├─> Creates <canvas> and appends to container
-   ├─> Creates <svg> and appends to container
-   ├─> Attaches ResizeObserver (calls update({}) on resize)
+   ├─> Creates placeholder <div> (position:absolute; 100%×100%) and appends to container
+   ├─> Obtains this.regl from getMasterCanvas().regl  (shared context)
+   ├─> getMasterCanvas().register(this)
+   ├─> Attaches ResizeObserver on <div> (calls update({}) on resize)
    └─> No rendering yet — waits for update()
 
 4. plot.update({ config, data })
    ├─> Stores config and data
-   ├─> Reads width/height from container.clientWidth / clientHeight
-   ├─> Sets canvas and SVG dimensions
-   ├─> Destroys previous regl context if present
-   ├─> Clears SVG content
+   ├─> Reads width/height from placeholder.clientWidth / clientHeight
    └─> Calls Plot._initialize()
 ```
 
@@ -36,7 +34,6 @@ This page describes how data moves through Gladly at runtime: the declarative se
 ```
 Plot._initialize()
   │
-  ├─> Initialise regl WebGL context on canvas
   ├─> Create AxisRegistry(width, height)
   │   (handles spatial, color, and filter axes)
   │
@@ -101,68 +98,90 @@ Plot._initialize()
   │
   ├─> Plot.initZoom()   — see Interaction Cycle below
   │
-  └─> Plot.render()     — see Render Cycle below
+  └─> Plot.scheduleRender()
+      └─> getMasterCanvas().schedulePlotRender(this)
+          └─> schedules RAF if not already ticking — see Render Cycle below
 ```
 
 ---
 
 ## Render Cycle (per frame)
 
+The render cycle is driven by `MasterCanvas` and split into two phases so that async data refreshes from multiple plots can run in parallel before any GPU commands are issued.
+
 ```
-plot.render()
+MasterCanvas._tick(rafTime)   [called by requestAnimationFrame]
   │
-  ├─> regl.clear({ color: [1, 1, 1, 1] })   — white background
-  │
-  ├─> Refresh axis-reactive column data:
-  │   └─> For each ColumnData in layer._dataColumns (populated during createDrawCommand):
-  │       └─> col.refresh(plot)
-  │           └─> If any tracked axis domain changed: recompute texture in-place
-  │               (dynamic uniform fn () => ref.texture picks up new texture automatically)
-  │
-  ├─> For each (layer, drawCommand):
-  │   │
-  │   ├─> Collect runtimeProps:
-  │   │   ├─> xDomain  ← axisRegistry.scales[layer.xAxis].domain()
-  │   │   ├─> yDomain  ← axisRegistry.scales[layer.yAxis].domain()
-  │   │   ├─> viewport ← { x:0, y:0, width, height }
-  │   │   ├─> count    ← layer.vertexCount ?? layer.attributes.x.length
-  │   │   ├─> Per color slot:
-  │   │   │     colorscale_<slot>  ← axisRegistry.getColorscaleIndex(quantityKind)
-  │   │   │     color_range_<slot> ← axisRegistry color range for quantityKind
-  │   │   └─> Per filter slot:
-  │   │         filter_range_<slot> ← axisRegistry.getRangeUniform(quantityKind)
-  │   │           → vec4 [min, max, hasMin, hasMax]
-  │   │
-  │   └─> drawCommand(runtimeProps)
+  ├─> PHASE 1 — async (all dirty plots in parallel)
+  │   └─> await Promise.all(dirtyPlots.map(p => p._prepareRender()))
   │       │
-  │       ├─> For t in 0 .. N-1 (N = tile count; N=1 for non-tiled layers):
-  │       │   ├─> Resolve per-tile texture uniforms: u_col_<name> ← fn[t]()
-  │       │   ├─> Override per-tile buffer attrs (tileBufferOverrides[t]) + a_pickId for tile t
-  │       │   ├─> Set count = tileCounts[t] (if buffer-tiled) or runtimeProps.count
-  │       │   └─> Compiled regl command(tileProps) — one GPU draw call
-  │       │       │
-  │       │       └─> GPU execution (no clear between tiles — geometry accumulates):
-  │       │           ├─> Vertex shader (once per data point in this tile):
-  │       │           │   ├─> Read attribute values (x, y, v, z, …)
-  │       │           │   ├─> Optionally: filter_in_range() → move to clip discard position
-  │       │           │   ├─> Normalise to clip space using xDomain / yDomain
-  │       │           │   └─> Write gl_Position, gl_PointSize, varyings
-  │       │           │
-  │       │           └─> Fragment shader (once per rasterised pixel):
-  │       │               ├─> Optionally: discard via filter_in_range()
-  │       │               ├─> map_color() → look up colorscale, normalise value → RGBA
-  │       │               └─> Write fragColor (out vec4)
-  │       └─> (end tile loop)
+  │       └─> plot._prepareRender()
+  │           ├─> Refresh data transforms (_dataTransformNodes)
+  │           ├─> Refresh axis-reactive column data:
+  │           │   └─> For each ColumnData in layer._dataColumns:
+  │           │       └─> col.refresh(plot)
+  │           │           └─> If any tracked axis domain changed: recompute texture in-place
+  │           └─> Populate this._failedLayers
   │
-  ├─> plot.renderAxes()
-  │   └─> For each axis in AxisRegistry:
-  │       ├─> Create D3 axis generator (axisBottom / axisTop / axisLeft / axisRight)
-  │       ├─> Select or create SVG <g> element, position with transform
-  │       ├─> Call generator → draws ticks and tick labels
-  │       └─> Add unit label <text>
+  ├─> PHASE 2 — sync (one plot at a time)
+  │   └─> regl.poll()  — sync regl state after async phase
+  │   │
+  │   └─> For each plot in dirtyPlots (visible only):
+  │       ├─> Measure rect = plot._placeholder.getBoundingClientRect()
+  │       ├─> Convert to WebGL scissorBox (bottom-left origin)
+  │       ├─> plot._updateDimensions(rect)
+  │       ├─> regl({scissor: scissorBox, viewport: scissorBox})(() => {
+  │       │     regl.clear({ color: [1, 1, 1, 1] })
+  │       │   })
+  │       └─> plot._drawSync(scissorBox)
+  │           │
+  │           ├─> For each (layer, drawCommand):
+  │           │   │
+  │           │   ├─> Collect runtimeProps:
+  │           │   │   ├─> xDomain  ← axisRegistry.scales[layer.xAxis].domain()
+  │           │   │   ├─> yDomain  ← axisRegistry.scales[layer.yAxis].domain()
+  │           │   │   ├─> viewport ← { x: scissorBox.x + margin.left,
+  │           │   │   │               y: scissorBox.y + margin.bottom,
+  │           │   │   │               width: plotWidth, height: plotHeight }
+  │           │   │   ├─> count    ← layer.vertexCount ?? layer.attributes.x.length
+  │           │   │   ├─> Per color slot:
+  │           │   │   │     colorscale_<slot>  ← axisRegistry.getColorscaleIndex(quantityKind)
+  │           │   │   │     color_range_<slot> ← axisRegistry color range for quantityKind
+  │           │   │   └─> Per filter slot:
+  │           │   │         filter_range_<slot> ← axisRegistry.getRangeUniform(quantityKind)
+  │           │   │           → vec4 [min, max, hasMin, hasMax]
+  │           │   │
+  │           │   └─> drawCommand(runtimeProps)
+  │           │       │
+  │           │       ├─> For t in 0 .. N-1 (N = tile count; N=1 for non-tiled layers):
+  │           │       │   ├─> Resolve per-tile texture uniforms: u_col_<name> ← fn[t]()
+  │           │       │   ├─> Override per-tile buffer attrs (tileBufferOverrides[t]) + a_pickId
+  │           │       │   ├─> Set count = tileCounts[t] (if buffer-tiled) or runtimeProps.count
+  │           │       │   └─> Compiled regl command(tileProps) — one GPU draw call
+  │           │       │       │
+  │           │       │       └─> GPU execution (geometry accumulates across tiles):
+  │           │       │           ├─> Vertex shader (once per data point in this tile):
+  │           │       │           │   ├─> Read attribute values (x, y, v, z, …)
+  │           │       │           │   ├─> Optionally: filter_in_range() → discard
+  │           │       │           │   ├─> Normalise to clip space using xDomain / yDomain
+  │           │       │           │   └─> Write gl_Position, gl_PointSize, varyings
+  │           │       │           └─> Fragment shader (once per rasterised pixel):
+  │           │       │               ├─> Optionally: discard via filter_in_range()
+  │           │       │               ├─> map_color() → colorscale lookup → RGBA
+  │           │       │               └─> Write fragColor (out vec4)
+  │           │       └─> (end tile loop)
+  │           │
+  │           ├─> Render axes:
+  │           │   └─> For each axis in AxisRegistry:
+  │           │       └─> axis.render(regl, axisLineCmd, axisBillboardCmd,
+  │           │                       viewport, fullViewport,
+  │           │                       viewportOrigin: { x: scissorBox.x, y: scissorBox.y })
+  │           │           (axes are drawn on the shared canvas at the scissor-offset position)
+  │           │
+  │           └─> Fire all callbacks in Plot._renderCallbacks
+  │               └─> e.g. Colorbar._drawSync() re-syncs from target plot and re-renders
   │
-  └─> Fire all callbacks in Plot._renderCallbacks
-      └─> e.g. Colorbar.render() re-syncs from target plot and re-renders
+  └─> Schedule next RAF only if new dirty marks arrived during the tick
 ```
 
 ---
@@ -196,7 +215,7 @@ User scrolls / drags in the plot area
   │   ├─> Apply scale factor / translate
   │   └─> Update scale domain
   │
-  └─> plot.render()
+  └─> plot.scheduleRender()
 ```
 
 ### Axis-specific zoom
@@ -211,7 +230,7 @@ User scrolls / drags over an individual axis label area
   ├─> Determine anchor at mouse position
   ├─> Apply transform to that scale only
   │
-  └─> plot.render()
+  └─> plot.scheduleRender()
 ```
 
 **Cursor-anchored zoom detail:**
@@ -222,12 +241,14 @@ The interaction tracks the mouse position at gesture start, computes the data va
 ## ResizeObserver Flow
 
 ```
-Container element resized
+Placeholder <div> resized
   │
   └─> ResizeObserver callback fires
       └─> plot.update({})   (no new config or data)
-          └─> Reads new clientWidth / clientHeight
+          └─> Reads new clientWidth / clientHeight from placeholder
               └─> _initialize() → full re-render at new size
 ```
+
+The ResizeObserver is attached to `plot._placeholder` (the `<div>`), not the container, so it fires only when the plot area changes and not when unrelated siblings resize.
 
 No manual resize handling is needed.

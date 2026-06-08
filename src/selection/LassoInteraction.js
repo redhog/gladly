@@ -24,7 +24,7 @@ export class LassoInteraction {
     }
     plot._renderCallbacks.add(this._renderCb)
 
-    plot.canvas.addEventListener('mousedown', this._onMouseDown)
+    plot._placeholder.addEventListener('mousedown', this._onMouseDown)
     window.addEventListener('mousemove', this._onMouseMove)
     window.addEventListener('mouseup', this._onMouseUp)
   }
@@ -64,7 +64,7 @@ void main() { fragColor = vec4(0.0, 0.47, 1.0, 1.0); }`,
   }
 
   _canvasPos(e) {
-    const r = this._plot.canvas.getBoundingClientRect()
+    const r = this._plot._placeholder.getBoundingClientRect()
     return [e.clientX - r.left, e.clientY - r.top]
   }
 
@@ -100,7 +100,7 @@ void main() { fragColor = vec4(0.0, 0.47, 1.0, 1.0); }`,
   destroy() {
     this._plot._renderCallbacks.delete(this._renderCb)
     if (this._vertexBuf) this._vertexBuf.destroy()
-    this._plot.canvas.removeEventListener('mousedown', this._onMouseDown)
+    this._plot._placeholder.removeEventListener('mousedown', this._onMouseDown)
     window.removeEventListener('mousemove', this._onMouseMove)
     window.removeEventListener('mouseup', this._onMouseUp)
   }

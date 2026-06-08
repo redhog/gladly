@@ -17,10 +17,12 @@ function makeTile(regl, n) {
 export class SelectionColumn extends ColumnData {
   constructor(regl, tileSizes) {
     super()
-    this._regl    = regl
-    this._active  = false
-    this._onClear = null
-    this._tiles   = tileSizes.map(n => makeTile(regl, n))
+    this._regl         = regl
+    this._active       = false
+    this._onClear      = null
+    this._onWrite      = null   // called after upload() or clear() increments writeVersion
+    this.writeVersion  = 0      // incremented on every write; consumers track their last-read version
+    this._tiles        = tileSizes.map(n => makeTile(regl, n))
   }
 
   get tiles()        { return this._tiles }
@@ -46,6 +48,8 @@ export class SelectionColumn extends ColumnData {
       })
     }
     this._active = false
+    this.writeVersion++
+    this._onWrite?.()
   }
 
   activate() { this._active = true }
@@ -62,6 +66,8 @@ export class SelectionColumn extends ColumnData {
       tile.texture.subimage({ data: texData, width: tile.texW, height: tile.texH })
     }
     this._active = true
+    this.writeVersion++
+    this._onWrite?.()
   }
 
   // ColumnData interface — used when Selection is itself used as a layer attribute.

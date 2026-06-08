@@ -33,6 +33,10 @@ export { linkSelections } from "./selection/SelectionLink.js"
 export { SelectionColumn } from "./selection/SelectionColumn.js"
 export { SelectionRegistry, globalSelectionRegistry } from "./selection/SelectionRegistry.js"
 export { LassoInteraction } from "./selection/LassoInteraction.js"
+export { getMasterCanvas } from "./core/MasterCanvas.js"
+export { ResourceRegistry, globalResourceRegistry } from "./core/ResourceRegistry.js"
+export { FramebufferRegistry } from "./core/FramebufferRegistry.js"
+export { initRegl } from "./core/initRegl.js"
 
 // Register all matplotlib colorscales (side-effect import)
 import "./colorscales/MatplotlibColorscales.js"

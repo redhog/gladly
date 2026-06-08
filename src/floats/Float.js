@@ -2,6 +2,9 @@ const DRAG_BAR_HEIGHT = 12
 const MIN_WIDTH  = 80
 const MIN_HEIGHT = DRAG_BAR_HEIGHT + 30
 
+// Shared counter: each interaction bumps the touched float to the top of the stack.
+let _topFloatZ = 10
+
 // Generic draggable, resizable floating container that wraps any Plot-like widget.
 // factory(container) must return an object with a destroy() method.
 export class Float {
@@ -19,9 +22,9 @@ export class Float {
       top:          y + 'px',
       width:        width + 'px',
       height:       height + 'px',
-      zIndex:       '10',
+      zIndex:       String(_topFloatZ),
       boxSizing:    'border-box',
-      background:   'rgba(255,255,255,0.88)',
+      background:   'rgba(255,255,255,0.92)',
       border:       '1px solid #aaa',
       borderRadius: '4px',
       boxShadow:    '0 2px 8px rgba(0,0,0,0.25)',
@@ -82,6 +85,12 @@ export class Float {
   }
 
   _setupInteraction() {
+    // Bring this float to the front whenever the user touches it.
+    this._el.addEventListener('pointerdown', () => {
+      this._el.style.zIndex = String(++_topFloatZ)
+      this._widget.scheduleRender?.()
+    }, { capture: true })
+
     let mode = null  // 'drag' | 'resize'
     let startX, startY, startLeft, startTop, startW, startH
 
@@ -116,6 +125,7 @@ export class Float {
         this._el.style.width  = Math.max(MIN_WIDTH,  startW + dx) + 'px'
         this._el.style.height = Math.max(MIN_HEIGHT, startH + dy) + 'px'
       }
+      this._widget.scheduleRender?.()
     }
 
     const onMouseUp = () => {
@@ -166,6 +176,7 @@ export class Float {
         this._el.style.width  = Math.max(MIN_WIDTH,  startW + dx) + 'px'
         this._el.style.height = Math.max(MIN_HEIGHT, startH + dy) + 'px'
       }
+      this._widget.scheduleRender?.()
     }
 
     const onTouchEnd = () => {

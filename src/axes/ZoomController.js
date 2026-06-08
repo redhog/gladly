@@ -140,7 +140,7 @@ export class ZoomController {
 
   _init() {
     const plot   = this._plot
-    const canvas = plot.canvas
+    const canvas = plot._placeholder
 
     canvas.addEventListener('contextmenu', e => e.preventDefault())
 

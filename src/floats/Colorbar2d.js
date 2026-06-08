@@ -27,10 +27,6 @@ export class Colorbar2d extends Plot {
     this._xLink = linkAxes(this.axes["xaxis_bottom"], targetPlot.axes[xAxis])
     this._yLink = linkAxes(this.axes["yaxis_left"],   targetPlot.axes[yAxis])
 
-    // Re-render (with sync) whenever the target plot renders.
-    this._syncCallback = () => this.render()
-    targetPlot._renderCallbacks.add(this._syncCallback)
-
     this._addCheckboxOverlays()
   }
 
@@ -104,37 +100,32 @@ export class Colorbar2d extends Plot {
     return super._getScaleTypeFloat(quantityKind)
   }
 
-  render() {
-    // Sync range, colorscale, and scale type for both color axes from the target plot.
-    if (this.axisRegistry && this._targetPlot) {
-      for (const [colorAxisName, spatialAxisId] of [
-        [this._xAxis, "xaxis_bottom"],
-        [this._yAxis, "yaxis_left"]
-      ]) {
-        const domain = this._targetPlot.getAxisDomain(colorAxisName)
-        if (domain) {
-          this.setAxisDomain(spatialAxisId, domain)
-          this.setAxisDomain(colorAxisName, domain)
-        }
-        const colorscale = this._targetPlot.axisRegistry?.getColorscale(colorAxisName)
-        if (colorscale) this.axisRegistry.ensureColorAxis(colorAxisName, colorscale)
-        const scaleType = getScaleTypeFloat(colorAxisName, this._targetPlot.currentConfig?.axes) > 0.5 ? "log" : "linear"
-        this.axisRegistry.setScaleType(spatialAxisId, scaleType)
+  _syncBeforeDraw() {
+    if (!this.axisRegistry || !this._targetPlot) return
+    for (const [colorAxisName, spatialAxisId] of [
+      [this._xAxis, "xaxis_bottom"],
+      [this._yAxis, "yaxis_left"]
+    ]) {
+      const domain = this._targetPlot.getAxisDomain(colorAxisName)
+      if (domain) {
+        this.setAxisDomain(spatialAxisId, domain)
+        this.setAxisDomain(colorAxisName, domain)
       }
-
-      const reg = this._targetPlot.axisRegistry
-      if (this._xMinInput) this._xMinInput.checked = reg?.getClampMin(this._xAxis) ?? true
-      if (this._xMaxInput) this._xMaxInput.checked = reg?.getClampMax(this._xAxis) ?? true
-      if (this._yMinInput) this._yMinInput.checked = reg?.getClampMin(this._yAxis) ?? true
-      if (this._yMaxInput) this._yMaxInput.checked = reg?.getClampMax(this._yAxis) ?? true
+      const colorscale = this._targetPlot.axisRegistry?.getColorscale(colorAxisName)
+      if (colorscale) this.axisRegistry.ensureColorAxis(colorAxisName, colorscale)
+      const scaleType = getScaleTypeFloat(colorAxisName, this._targetPlot.currentConfig?.axes) > 0.5 ? "log" : "linear"
+      this.axisRegistry.setScaleType(spatialAxisId, scaleType)
     }
-    super.render()
+    const reg = this._targetPlot.axisRegistry
+    if (this._xMinInput) this._xMinInput.checked = reg?.getClampMin(this._xAxis) ?? true
+    if (this._xMaxInput) this._xMaxInput.checked = reg?.getClampMax(this._xAxis) ?? true
+    if (this._yMinInput) this._yMinInput.checked = reg?.getClampMin(this._yAxis) ?? true
+    if (this._yMaxInput) this._yMaxInput.checked = reg?.getClampMax(this._yAxis) ?? true
   }
 
   destroy() {
     this._xLink.unlink()
     this._yLink.unlink()
-    this._targetPlot._renderCallbacks.delete(this._syncCallback)
     super.destroy()
   }
 }
