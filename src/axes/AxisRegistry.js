@@ -348,12 +348,14 @@ export class AxisRegistry {
       if (overrideMin === undefined && qkOv?.min != null) overrideMin = qkOv.min
       if (overrideMax === undefined && qkOv?.max != null) overrideMax = qkOv.max
 
-      const finalMin = overrideMin ?? (min !== Infinity  ? min : undefined)
+      let finalMin = overrideMin ?? (min !== Infinity  ? min : undefined)
       const finalMax = overrideMax ?? (max !== -Infinity ? max : undefined)
 
       if (finalMin !== undefined && finalMax !== undefined) {
         if (!isFinite(finalMin) || !isFinite(finalMax))
           throw new Error(`[gladly] Axis '${qk}': computed domain [${finalMin}, ${finalMax}] is non-finite.`)
+        if (finalMin <= 0 && getScaleTypeFloat(qk, axesOverrides) > 0.5)
+          finalMin = Number.MIN_VALUE
         if (finalMin === finalMax)
           console.warn(`[gladly] Axis '${qk}': domain is degenerate (all data at ${finalMin}).`)
         this.setDomain(qk, [finalMin, finalMax])
@@ -373,21 +375,6 @@ export class AxisRegistry {
       if (entry.hasFilter && min !== Infinity) entry.dataExtent = [min, max]
     }
 
-    // Log scale validation.
-    for (const [qk, entry] of this._entries) {
-      for (const [slotId, scale] of entry.slots) {
-        if (typeof scale.base !== 'function') continue
-        const [lo, hi] = scale.domain()
-        if ((isFinite(lo) && lo <= 0) || (isFinite(hi) && hi <= 0))
-          throw new Error(`Axis '${slotId}' uses log scale but has non-positive domain [${lo}, ${hi}].`)
-      }
-      if ((entry.hasColor || entry.hasFilter) && entry.domain) {
-        if (getScaleTypeFloat(qk, axesOverrides) > 0.5) {
-          if (entry.domain[0] <= 0 || entry.domain[1] <= 0)
-            throw new Error(`Axis '${qk}' uses log scale but has non-positive domain [${entry.domain}].`)
-        }
-      }
-    }
   }
 }
 
