@@ -49,6 +49,20 @@ export class GlBase {
       return origTexImage2D(...args)
     }
 
+    // Workaround for a Mesa/Linux driver bug: calling framebufferTexture2D with a
+    // depth/stencil attachment point and null texture on an FBO that has a float color
+    // attachment causes GL_FRAMEBUFFER_UNSUPPORTED. regl always null-detaches all
+    // depth/stencil slots before setting them as a cleanup step, which triggers the bug.
+    // These null calls are always no-ops on freshly created FBOs, so skipping them is safe.
+    const GL_DEPTH_ATTACHMENT = 0x8D00, GL_STENCIL_ATTACHMENT = 0x8D20, GL_DEPTH_STENCIL_ATTACHMENT = 0x821A
+    const origFramebufferTexture2D = gl.framebufferTexture2D.bind(gl)
+    gl.framebufferTexture2D = function (target, attachment, texTarget, texture, level) {
+      if (texture === null && (attachment === GL_DEPTH_ATTACHMENT ||
+                               attachment === GL_STENCIL_ATTACHMENT ||
+                               attachment === GL_DEPTH_STENCIL_ATTACHMENT)) return
+      return origFramebufferTexture2D(target, attachment, texTarget, texture, level)
+    }
+
     this.regl = reglInit({
       gl,
       extensions: ['OES_texture_float', 'EXT_color_buffer_float', 'ANGLE_instanced_arrays'],
