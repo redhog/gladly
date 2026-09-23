@@ -7,7 +7,7 @@ import { tdrYield } from "../tdr.js"
 // Read a 4-packed RGBA float texture back to a flat Float32Array of length dataLength.
 async function readTextureToArray(regl, texture) {
   const dataLength = texture._dataLength ?? (texture.width * texture.height * 4)
-  const fbo = regl.framebuffer({ color: texture, depth: false })
+  const fbo = regl.framebuffer({ color: texture, depth: false, stencil: false })
   let pixels
   try {
     regl({ framebuffer: fbo })(() => {

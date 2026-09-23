@@ -7,6 +7,7 @@ export class LassoMask {
       colorFormat: 'rgba',
       colorType: 'float',
       depth: false,
+      stencil: false,
     })
     this._drawCmd = regl({
       vert: `#version 300 es

@@ -1418,7 +1418,7 @@ void main() {
 
     const fbo = this.regl.framebuffer({
       width: this.width, height: this.height,
-      colorFormat: 'rgba', colorType: 'uint8', depth: false,
+      colorFormat: 'rgba', colorType: 'uint8', depth: false, stencil: false,
     })
 
     // Refresh transform nodes before picking (same as render)
