@@ -162,6 +162,14 @@ branch) on the same machine/browser for a clean A/B; capture the JSON output man
 - **`?scene=linked`** — two `Plot`s in a `PlotGroup` with a linked selection
   (`master` path = `linkSelections` copy; B path = shared instance).
 
+**Every plot in both scenes carries a float `Colorbar`** overlapping the plot body.
+This is deliberate: the float chrome (semi-transparent background, rounded corners,
+shadow) over the plot is exactly the overlap case Option B fixes, so it must be present
+in the benchmark — both to confirm it renders correctly on B and to measure the cost of
+the extra float `Plot` (its own offscreen render + transfer each frame). It also means
+the `single` scene already exercises two overlapping display layers (plot + colorbar),
+and `linked` exercises four.
+
 Each at **10k / 100k / 1M / 5M** points.
 
 ### Metrics — vsync-proof
