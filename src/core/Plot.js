@@ -94,7 +94,7 @@ function buildPlotSchema(data, config) {
                 ...(layerSchema.properties ?? {}),
                 selection: { type: 'string', default: '', description: 'Selection channel name. Layers sharing the same name and data object are linked.' },
               },
-              required: [...(layerSchema.required ?? []), 'selection'],
+              required: layerSchema.required ?? [],
             }
             return {
               title: typeName,
