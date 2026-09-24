@@ -183,10 +183,13 @@ export class Plot extends GlBase {
     this.container = container
     this.margin = margin ?? { top: 60, right: 60, bottom: 60, left: 60 }
 
-    // Lightweight placeholder div — MasterCanvas measures its position each frame.
-    this._placeholder = document.createElement('div')
-    this._placeholder.style.cssText = 'display:block;position:absolute;top:0;left:0;width:100%;height:100%'
-    container.appendChild(this._placeholder)
+    // Real on-screen display canvas. The shared regl context renders into an
+    // OffscreenCanvas and hands each frame to this canvas via its bitmaprenderer
+    // context, so every plot is a normal DOM layer the browser composites.
+    this._canvas = document.createElement('canvas')
+    this._canvas.style.cssText = 'display:block;position:absolute;top:0;left:0;width:100%;height:100%'
+    container.appendChild(this._canvas)
+    this._displayCtx = this._canvas.getContext('bitmaprenderer')
 
     // Shared regl context from the single MasterCanvas.
     this.regl = getMasterCanvas().regl
@@ -465,7 +468,7 @@ export class Plot extends GlBase {
           }
         })
       })
-      this.resizeObserver.observe(this._placeholder)
+      this.resizeObserver.observe(this._canvas)
     } else {
       this._resizeHandler = async () => {
         try {
@@ -479,6 +482,7 @@ export class Plot extends GlBase {
   }
 
   // Called by MasterCanvas immediately before _drawSync() to keep dimensions current.
+  // Also sizes the display canvas backing store so the transferred bitmap shows 1:1.
   _updateDimensions(rect) {
     const w = Math.max(1, Math.round(rect.width))
     const h = Math.max(1, Math.round(rect.height))
@@ -487,6 +491,8 @@ export class Plot extends GlBase {
     this.height     = h
     this.plotWidth  = Math.max(1, w - this.margin.left - this.margin.right)
     this.plotHeight = Math.max(1, h - this.margin.top  - this.margin.bottom)
+    this._canvas.width  = w
+    this._canvas.height = h
   }
 
   // Phase 1 — async: refresh transforms and data columns.
@@ -527,13 +533,11 @@ export class Plot extends GlBase {
   // their target plot. Called at the start of every _drawSync(), even for non-dirty renders.
   _syncBeforeDraw() {}
 
-  // Phase 2 — sync: draw all layers and axes.
-  // MasterCanvas calls this with the plot's full bounding box and the list of owned
-  // sub-rects (plot rect minus any higher-z overlapping plots).  Each sub-rect gets
-  // its own scissored clear + draw so overlapping plots never bleed through.
-  // Viewport/MVP/atlas are computed once from scissorBox regardless of how many
-  // sub-rects there are; callbacks and events also fire once after all sub-rects.
-  _drawSync(scissorBox, clipRects = null) {
+  // Phase 2 — sync: draw all layers and axes into the shared offscreen at origin.
+  // MasterCanvas resizes the offscreen to this plot's size, calls _drawSync(), then
+  // transfers the resulting bitmap to this plot's display canvas. Because each plot
+  // owns a real DOM canvas, the browser composites overlaps — no scissoring needed.
+  _drawSync() {
     this._syncBeforeDraw()
     if (!this._warnedMissingDomains && this.axisRegistry) {
       for (const axisId of AXES) {
@@ -556,16 +560,16 @@ export class Plot extends GlBase {
       }
     }
 
-    // Viewports and MVP are computed once from the full scissor box.
+    // Viewports are at the offscreen's origin — the offscreen is sized to this plot.
     const viewport = {
-      x:      scissorBox.x + this.margin.left,
-      y:      scissorBox.y + this.margin.bottom,
+      x:      this.margin.left,
+      y:      this.margin.bottom,
       width:  this.plotWidth,
       height: this.plotHeight,
     }
     const fullViewport = {
-      x: scissorBox.x, y: scissorBox.y,
-      width: scissorBox.width, height: scissorBox.height,
+      x: 0, y: 0,
+      width: this.width, height: this.height,
     }
 
     const cameraMvp = this._camera ? this._camera.getMVP() : mat4Identity()
@@ -584,7 +588,7 @@ export class Plot extends GlBase {
 
     const failedLayers = this._failedLayers ?? new Set()
 
-    // Build layer props (viewport included) once — shared across all clip rects.
+    // Build layer props (viewport included) once.
     const layerPropsList = this.layers.map((layer, i) => {
       const layerViewport = this._is3D ? fullViewport : viewport
       const layerMvp      = this._is3D ? axisMvp : cameraMvp
@@ -613,39 +617,32 @@ export class Plot extends GlBase {
       this._tickLabelAtlas.flush()
     }
 
-    // Clear + draw within each owned sub-rect.  The scissor clips GPU writes so
-    // higher-z plots that already drew their content there are never overwritten.
-    for (const clipRect of (clipRects ?? [scissorBox])) {
-      if (clipRect.width <= 0 || clipRect.height <= 0) continue
-      this.regl({ scissor: { enable: true, box: clipRect } })(() => {
-        this.regl.clear({ color: [1, 1, 1, 1], depth: 1 })
+    // Single clear + draw over the whole offscreen (sized to this plot).
+    this.regl.clear({ color: [1, 1, 1, 1], depth: 1 })
 
-        for (let i = 0; i < this.layers.length; i++) {
-          const layer = this.layers[i]
-          if (!failedLayers.has(layer)) {
-            try {
-              layer.draw(layerPropsList[i])
-            } catch (e) {
-              this._emitError(new Error(
-                `Layer '${layer.type?.name ?? 'unknown'}' (config index ${layer.configLayerIndex}): draw failed: ${e.message}`,
-                { cause: e }
-              ))
-            }
-          }
+    for (let i = 0; i < this.layers.length; i++) {
+      const layer = this.layers[i]
+      if (!failedLayers.has(layer)) {
+        try {
+          layer.draw(layerPropsList[i])
+        } catch (e) {
+          this._emitError(new Error(
+            `Layer '${layer.type?.name ?? 'unknown'}' (config index ${layer.configLayerIndex}): draw failed: ${e.message}`,
+            { cause: e }
+          ))
         }
+      }
+    }
 
-        if (hasAxes) {
-          for (const axisId of AXES) {
-            if (!this.axisRegistry.getScale(axisId)) continue
-            this._getAxis(axisId).render(
-              this.regl, axisMvp, this.width, this.height,
-              this._is3D, this._tickLabelAtlas,
-              mc.axisLineCmd, mc.axisBillboardCmd,
-              { x: scissorBox.x, y: scissorBox.y },
-            )
-          }
-        }
-      })
+    if (hasAxes) {
+      for (const axisId of AXES) {
+        if (!this.axisRegistry.getScale(axisId)) continue
+        this._getAxis(axisId).render(
+          this.regl, axisMvp, this.width, this.height,
+          this._is3D, this._tickLabelAtlas,
+          mc.axisLineCmd, mc.axisBillboardCmd,
+        )
+      }
     }
 
     for (const cb of this._renderCallbacks) cb()
@@ -846,7 +843,7 @@ export class Plot extends GlBase {
     this._interactions = []
 
     this._renderCallbacks.clear()
-    this._placeholder.remove()
+    this._canvas.remove()
   }
 
   async _processLayers(layersConfig, data, epoch) {
@@ -1162,7 +1159,7 @@ export class Plot extends GlBase {
     if (!this.regl || !this.layers.length) return null
 
     // Ensure dimensions are current before picking.
-    const rect = this._placeholder.getBoundingClientRect()
+    const rect = this._canvas.getBoundingClientRect()
     this._updateDimensions(rect)
 
     const glX = Math.round(x)
