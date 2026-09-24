@@ -384,7 +384,7 @@ export class QmTerrainImpl extends LayerType {
       const xScale = renderPlot.axisRegistry.getScale(xAxis)
       const zScale = renderPlot.axisRegistry.getScale(zAxis)
       if (!xScale || !zScale) return
-      const viewport = { width: renderPlot.canvas.width, height: renderPlot.canvas.height }
+      const viewport = { width: renderPlot.width, height: renderPlot.height }
       qmManagerRef.manager.syncTiles(xScale.domain(), zScale.domain(), viewport)
       qmManagerRef.manager.requestSatTiles(viewport)
       qmManagerRef.manager.updateSatUvs()

@@ -912,7 +912,7 @@ class TileLayerType extends LayerType {
       tileManagerRef.manager.syncTiles(
         xScale.domain(),
         yScale.domain(),
-        { width: renderPlot.canvas.width, height: renderPlot.canvas.height }
+        { width: renderPlot.width, height: renderPlot.height }
       )
     }
 
