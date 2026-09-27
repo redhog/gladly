@@ -8,7 +8,7 @@ export class PositionCapture {
     const h = Math.ceil(n / w)
     const fbo = this._regl.framebuffer({
       width: w, height: h,
-      colorFormat: 'rgba', colorType: 'float', depth: false
+      colorFormat: 'rgba', colorType: 'float', depth: false, stencil: false
     })
     this._regl({ framebuffer: fbo })(() => {
       this._regl.clear({ color: [0, 0, 0, 0] })

@@ -88,7 +88,7 @@ function buildPlotSchema(data, config) {
                 ...(layerSchema.properties ?? {}),
                 selection: { type: 'string', default: '', description: 'Selection channel name. Layers sharing the same name and data object are linked.' },
               },
-              required: [...(layerSchema.required ?? []), 'selection'],
+              required: layerSchema.required ?? [],
             }
             return {
               title: typeName,
@@ -1169,7 +1169,7 @@ export class Plot extends GlBase {
 
     const fbo = this.regl.framebuffer({
       width: this.width, height: this.height,
-      colorFormat: 'rgba', colorType: 'uint8', depth: false,
+      colorFormat: 'rgba', colorType: 'uint8', depth: false, stencil: false,
     })
 
     for (const node of this._dataTransformNodes) {

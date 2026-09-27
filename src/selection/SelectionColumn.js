@@ -10,7 +10,7 @@ function makeTile(regl, n) {
     type:   'float',
     data:   new Float32Array(texW * texH * 4),
   })
-  const fbo = regl.framebuffer({ color: tex, depth: false })
+  const fbo = regl.framebuffer({ color: tex, depth: false, stencil: false })
   return { texture: tex, fbo, texW, texH, n }
 }
 
