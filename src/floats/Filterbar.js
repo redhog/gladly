@@ -30,10 +30,6 @@ export class Filterbar extends Plot {
     // Zoom/pan on the filterbar propagates back to update the filter range.
     this._spatialLink = linkAxes(this.axes[this._spatialAxis], targetPlot.axes[filterAxisName])
 
-    // Re-render (with sync) whenever the target plot renders.
-    this._syncCallback = () => this.render()
-    targetPlot._renderCallbacks.add(this._syncCallback)
-
     this._addCheckboxOverlays()
   }
 
@@ -107,35 +103,29 @@ export class Filterbar extends Plot {
     this._targetPlot.scheduleRender()
   }
 
-  render() {
-    if (this.axisRegistry && this._targetPlot) {
-      const registry = this._targetPlot.axisRegistry
-      if (registry) {
-        const bounds = registry.getFilterBounds(this._filterAxisName)
-        const extent = registry.getDataExtent(this._filterAxisName)
-        if (bounds !== null) {
-          // For open bounds, keep the current axis edge so toggling ∞ does not
-          // shift the filterbar's view. Fall back to data extent only on the
-          // initial render when the axis has no domain yet.
-          const current = this.getAxisDomain(this._spatialAxis)
-          const displayMin = bounds.min ?? current?.[0] ?? (extent ? extent[0] : 0)
-          const displayMax = bounds.max ?? current?.[1] ?? (extent ? extent[1] : 1)
-          if (displayMin < displayMax) {
-            this.setAxisDomain(this._spatialAxis, [displayMin, displayMax])
-          }
-          if (this._minInput) this._minInput.checked = bounds.min === null
-          if (this._maxInput) this._maxInput.checked = bounds.max === null
+  _syncBeforeDraw() {
+    if (!this.axisRegistry || !this._targetPlot) return
+    const registry = this._targetPlot.axisRegistry
+    if (registry) {
+      const bounds = registry.getFilterBounds(this._filterAxisName)
+      const extent = registry.getDataExtent(this._filterAxisName)
+      if (bounds !== null) {
+        const current = this.getAxisDomain(this._spatialAxis)
+        const displayMin = bounds.min ?? current?.[0] ?? (extent ? extent[0] : 0)
+        const displayMax = bounds.max ?? current?.[1] ?? (extent ? extent[1] : 1)
+        if (displayMin < displayMax) {
+          this.setAxisDomain(this._spatialAxis, [displayMin, displayMax])
         }
+        if (this._minInput) this._minInput.checked = bounds.min === null
+        if (this._maxInput) this._maxInput.checked = bounds.max === null
       }
-      const scaleType = getScaleTypeFloat(this._filterAxisName, this._targetPlot.currentConfig?.axes) > 0.5 ? "log" : "linear"
-      this.axisRegistry.setScaleType(this._spatialAxis, scaleType)
     }
-    super.render()
+    const scaleType = getScaleTypeFloat(this._filterAxisName, this._targetPlot.currentConfig?.axes) > 0.5 ? "log" : "linear"
+    this.axisRegistry.setScaleType(this._spatialAxis, scaleType)
   }
 
   destroy() {
     this._spatialLink.unlink()
-    this._targetPlot._renderCallbacks.delete(this._syncCallback)
     super.destroy()
   }
 }

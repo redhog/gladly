@@ -43,36 +43,85 @@ Detailed breakdown of each source module, organised by subdirectory. For the hig
 
 ## `core/` — Rendering Pipeline
 
-### `core/Plot.js`
+### `core/initRegl.js`
 
-**Purpose:** Main rendering orchestrator.
+**Purpose:** WebGL 2.0 context creation with regl compatibility shims.
+
+**`initRegl(canvas)`** — Obtains a `WebGL2RenderingContext`, applies three shims to bridge the WebGL 1.0 assumptions in regl v2.x, and returns the initialised regl instance. Called by `GlBase._initRegl()` and by `MasterCanvas` for the shared canvas. See architectural decision #7 in [Architecture Overview](overview.md) for the shim details.
+
+---
+
+### `core/MasterCanvas.js`
+
+**Purpose:** Global singleton that owns the single shared WebGL context and drives the render loop for all `Plot` instances.
+
+**Singleton access:** `getMasterCanvas()` returns the singleton, creating it on first call.
 
 **Key instance properties:**
 ```javascript
-this.regl                // WebGL context (regl)
-this.svg                 // D3 selection of the SVG overlay
+this.regl             // The single regl instance shared by all plots
+this.axisLineCmd      // Compiled regl command for axis lines/ticks (shared)
+this.axisBillboardCmd // Compiled regl command for tick-label billboards (shared)
+this.fboRegistry      // FramebufferRegistry — named cross-plot FBOs
+this._plots           // Set<Plot> — all registered plots
+this._dirtyPlots      // Set<Plot> — plots scheduled for the next frame
+```
+
+**`register(plot)` / `unregister(plot)`** — Called by `Plot` constructor / `destroy()`.
+
+**`schedulePlotRender(plot)`** — Adds `plot` to `_dirtyPlots` and schedules a RAF if not already pending.
+
+**RAF loop (`_tick(rafTime)`):**
+1. **Phase 1 — async**: calls `plot._prepareRender()` on all dirty plots in parallel via `Promise.all`.  `tdrYield()` calls inside `_prepareRender()` interleave across plots but never interfere with the draw phase.
+2. **Phase 2 — sync**: for each visible plot, sets `scissor+viewport` to the plot's on-screen rect (measured via `getBoundingClientRect`), clears, then calls `plot._drawSync(scissorBox)`.
+3. **Second RAF**: gates new dirty marks until the compositor has processed the current frame's GPU commands.
+
+**Resize handling**: listens for `window.resize`; updates `canvas.width/height` and calls `regl.poll()`, then reschedules all plots.
+
+---
+
+### `core/ResourceRegistry.js`
+
+**Purpose:** Ref-counted registry for shared GPU resources (e.g. colorscale textures).
+
+**`globalResourceRegistry`** — module-level singleton used by `Plot`.
+
+**`acquire(key, createFn, owner)`** — Returns the resource for `key`, creating it via `createFn()` if it does not yet exist and incrementing its reference count. Associates the resource with `owner` (a `Plot`) for automatic release. A `FinalizationRegistry` safety net releases the resource if the owner is GC'd without calling `releaseOwner`.
+
+**`releaseOwner(owner)`** — Explicitly releases all resources associated with `owner`. Called by `Plot._rebuildColorscaleTexture()` when the colorscale version changes, and by `Plot.destroy()`.
+
+---
+
+### `core/FramebufferRegistry.js`
+
+**Purpose:** Named framebuffer registry for cross-plot texture sharing.
+
+Hosted on `MasterCanvas` as `this.fboRegistry`. Maps string names to `FboEntry` objects, each holding a `texture`, `fbo`, `writeVersion`, `producer` (Plot that renders into it), and `consumers` (Set of Plots that sample it).
+
+---
+
+### `core/Plot.js`
+
+**Purpose:** Main rendering orchestrator. One instance per container element.
+
+**Key instance properties:**
+```javascript
+this.regl                // WebGL context (alias → MasterCanvas.regl)
+this._placeholder        // <div> inside container — position measured each frame
 this.layers              // Layer[]
 this.axisRegistry        // AxisRegistry (handles spatial, color, and filter axes)
-this._renderCallbacks    // Set<function> — called after each render()
+this._renderCallbacks    // Set<function> — called after each _drawSync()
 ```
 
 **`update({ config, data })`** — Stores config/data, then calls `_initialize()` if both are present.
 
-**`_initialize()`** — Rebuilds the WebGL 2.0 context, processes layers, sets domains, initialises zoom, renders.
+**`_initialize()`** — Processes layers, sets domains, initialises zoom, schedules render. Does **not** touch the WebGL context (owned by `MasterCanvas`).
 
-**WebGL 2.0 context setup (inside `_initialize`):**
+**`_updateDimensions(rect)`** — Called by `MasterCanvas` just before `_drawSync()`. Updates `this.width/height/plotWidth/plotHeight` from the live bounding rect. No-op if dimensions are unchanged.
 
-Gladly requires WebGL 2.0 (GLSL ES 3.00) because the compute shaders use integer bitwise operations that are unavailable in GLSL ES 1.00. Regl v2.1.0 targets WebGL 1.0 and needs three compatibility shims applied to the raw `WebGL2RenderingContext` before being passed to `reglInit`:
+**`_prepareRender()` (async)** — Phase 1 of the render cycle. Refreshes all `_dataTransformNodes` and `layer._dataColumns`. Stores failed layers in `this._failedLayers`. Called by `MasterCanvas` in parallel with other plots before any draw commands are issued.
 
-1. **`gl.getExtension` shim** — Intercepts extension lookups for capabilities that became core in WebGL 2.0:
-   - `OES_texture_float` / `OES_texture_float_linear`: returns `{}` (no methods needed; just presence check).
-   - `ANGLE_instanced_arrays`: returns a proxy mapping `*ANGLE` method names to the WebGL 2.0 core equivalents (`gl.vertexAttribDivisor`, `gl.drawArraysInstanced`, `gl.drawElementsInstanced`). Also explicitly listed in the `extensions` array passed to `reglInit` to ensure regl calls `getExtension` for it.
-
-2. **`gl.texImage2D` shim** — Intercepts float texture creation. In WebGL 2.0, the unsized internal format `GL_RGBA` (0x1908) with type `GL_FLOAT` (0x1406) is invalid; the sized format `GL_RGBA32F` (0x8814) is required. Upgrades `internalformat` automatically when `internalformat === GL_RGBA && type === GL_FLOAT`.
-
-Both shims compare extension names case-insensitively because regl normalises to lowercase before calling `getExtension`.
-
-See architectural decision #7 in [Architecture Overview](index.md) for the full rationale.
+**`_drawSync(scissorBox)` (sync)** — Phase 2 of the render cycle. Draws all layers and axes using viewports offset by `scissorBox.{x,y}`. Uses `getMasterCanvas().axisLineCmd` and `.axisBillboardCmd`. Fires `_renderCallbacks` and the no-error event. Does **not** call `regl.clear()` (done by `MasterCanvas`).
 
 **`_processLayers(layersConfig, data)`**
 1. For each `{ typeName: parameters }`, looks up the `LayerType`
@@ -82,7 +131,7 @@ See architectural decision #7 in [Architecture Overview](index.md) for the full 
 
 **`_setDomains(axesOverrides)`** — Computes auto-domains from layer data for spatial, color, and filter axes; applies any config overrides.
 
-**`render()`** — Clears canvas; assembles props (current ranges, colorscale indices, filter ranges); calls all draw commands; renders axes via `Axis.render()`; fires `_renderCallbacks`.
+**`scheduleRender()`** — Throttle-checks then calls `getMasterCanvas().schedulePlotRender(this)`.
 
 **`static schema(data)`** — Aggregates JSON Schemas from all registered layer types.
 

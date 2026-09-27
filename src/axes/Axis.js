@@ -191,7 +191,7 @@ export class Axis {
    * @param {Function} lineCmd     - compiled regl command for axis/tick lines
    * @param {Function} billboardCmd- compiled regl command for label billboards
    */
-  render(regl, axisMvp, cw, ch, is3D, atlas, lineCmd, billboardCmd) {
+  render(regl, axisMvp, cw, ch, is3D, atlas, lineCmd, billboardCmd, viewportOrigin = { x: 0, y: 0 }) {
     if (!this.isSpatial) return
     const { axisRegistry, currentConfig } = this._plot
     if (currentConfig?.axes?.[this._name]?.visible === false) return
@@ -262,7 +262,7 @@ export class Axis {
       )
     }
 
-    const fullViewport = { x: 0, y: 0, width: cw, height: ch }
+    const fullViewport = { x: viewportOrigin.x, y: viewportOrigin.y, width: cw, height: ch }
 
     lineCmd({
       positions: new Float32Array(lineVerts),
