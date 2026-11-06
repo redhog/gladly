@@ -14,7 +14,7 @@ import { GlBase } from "./GlBase.js"
 import { tdrYield } from "../tdr.js"
 import { globalSelectionRegistry } from "../selection/SelectionRegistry.js"
 import { SelectionPipeline } from "../selection/SelectionPipeline.js"
-import { LassoInteraction } from "../selection/LassoInteraction.js"
+import { LassoInteraction, LASSO_MODES } from "../selection/LassoInteraction.js"
 import { getMasterCanvas } from "./MasterCanvas.js"
 import { globalResourceRegistry } from "./ResourceRegistry.js"
 
@@ -156,7 +156,15 @@ function buildPlotSchema(data, config) {
                   type: "object",
                   properties: {
                     selection: { type: "string" },
-                    trigger: { type: "string", enum: ["shift", "ctrl"], default: "shift" }
+                    trigger: { type: "string", enum: ["shift", "ctrl"], default: "shift" },
+                    mode: {
+                      type: "string", enum: LASSO_MODES,
+                      description: "Selection shape. Without it the plot's current mode applies (see setLassoMode), 'lasso' by default."
+                    },
+                    bandWidth: {
+                      type: "number", exclusiveMinimum: 0,
+                      description: "Width of a band click, in the x axis's data units."
+                    }
                   },
                   required: ["selection"],
                   additionalProperties: false
@@ -422,8 +430,13 @@ export class Plot extends GlBase {
       } else {
         lassoSpecs = interactions.lasso
       }
-      this._interactions = lassoSpecs.map(({ selection, trigger = 'shift' }) =>
-        new LassoInteraction(this, { selectionName: selection, trigger })
+      this._interactions = lassoSpecs.map(({ selection, trigger = 'shift', mode, bandWidth }) =>
+        new LassoInteraction(this, {
+          selectionName: selection,
+          trigger,
+          mode: mode ?? this._lassoMode ?? 'lasso',
+          bandWidth: bandWidth ?? this._lassoBandWidth ?? null,
+        })
       )
     }
 
@@ -1213,6 +1226,19 @@ export class Plot extends GlBase {
       fbo.destroy()
     }
     return result
+  }
+
+  // Change the selection shape of every lasso interaction at run time, without update().
+  // Kept on the plot, so interactions a later update() builds start in it too.
+  setLassoMode(mode, { bandWidth } = {}) {
+    if (!LASSO_MODES.includes(mode))
+      throw new Error(`Unknown lasso mode '${mode}'; expected one of ${LASSO_MODES.join(', ')}`)
+    this._lassoMode = mode
+    if (bandWidth !== undefined) this._lassoBandWidth = bandWidth
+    for (const i of (this._interactions ?? [])) {
+      i.setMode(mode)
+      if (bandWidth !== undefined) i.setBandWidth(bandWidth)
+    }
   }
 
   async selectLasso(vertices) {

@@ -56,6 +56,28 @@ interactions: {
 |-------|---------|-------------|
 | `selection` | — | Selection channel name to target |
 | `trigger` | `'shift'` | Activation modifier: `'shift'` or `'ctrl'` |
+| `mode` | the plot's current mode, `'lasso'` until `plot.setLassoMode()` ([User API](../user-api/Selection.md)) changes it | Selection shape: `'lasso'`, `'rectangle'`, `'triangle'`, `'polygon'`, `'circle'`, `'ellipse'` or `'band'` (see [Selection shapes](#selection-shapes)) |
+| `bandWidth` | the plot's current band width, none until `plot.setLassoMode()` sets one | Width of a band click, in the x axis's data units |
+
+With `lasso: true` every interaction takes the plot's current mode and band width. An item's own `mode` or `bandWidth` wins over them.
+
+### Selection shapes
+
+Every shape is drawn with the trigger held, shows its outline while it is being drawn, and selects like the lasso: points inside it, and segments with an end inside or an edge crossing it.
+
+| Mode | Gesture | Selects nothing when |
+|------|---------|----------------------|
+| `'lasso'` | Drag a free-hand outline | it has fewer than 3 vertices |
+| `'rectangle'` | Press at one corner, release at the opposite corner; the sides run along the axes | it is under 5 px wide or tall |
+| `'triangle'` | Press at the apex, release at a corner of the base; the other base corner mirrors it across the apex's vertical | it is under 5 px wide or tall |
+| `'polygon'` | Click each corner, then right-click (no trigger needed) to close; the right-click adds no corner | it has fewer than 3 corners |
+| `'circle'` | Press at the center, release at the radius | its radius is under 5 px |
+| `'ellipse'` | Click the center, then the end of the first axis (its direction and length), then a point whose distance from the first axis sets the second axis | either semi-axis is under 5 px |
+| `'band'` | Drag across to set a full-height strip's two edges, or click for a strip `bandWidth` wide centered on the click; while the trigger is held, the outline shows the strip a click would select | a drag is under 5 px wide and no `bandWidth` is set |
+
+A polygon or an ellipse stays in progress between clicks. Escape, a mousedown without the trigger, a wheel event, a mode change or a plot `update()` abandons it, since its corners are screen positions that a pan or zoom would move off the data. Escape also abandons a drag in progress.
+
+A band's top and bottom run far past the plot's edges, so it also selects points that are zoomed out of view in y. Circles and ellipses are drawn in screen pixels: on unequal or log axes a circle is not round in data units.
 
 ---
 

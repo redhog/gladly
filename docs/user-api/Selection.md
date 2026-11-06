@@ -108,13 +108,37 @@ const lasso = new LassoInteraction(plot, options)
 |--------|---------|-------------|
 | `selectionName` | — | Selection channel name (informational only) |
 | `trigger` | `'shift'` | Activation modifier: `'shift'`, `'ctrl'`, or `'always'` |
-| `mode` | `'lasso'` | Currently only `'lasso'` is implemented |
+| `mode` | `'lasso'` | Selection shape, one of `LASSO_MODES`: `'lasso'`, `'rectangle'`, `'triangle'`, `'polygon'`, `'circle'`, `'ellipse'`, `'band'`. The gestures are listed under [Selection shapes](../configuration/Selection.md#selection-shapes). An unknown mode throws. |
+| `bandWidth` | `null` | Width of a band click, in the x axis's data units (`xaxis_bottom`, else `xaxis_top`). With none, a band click selects nothing. |
 
-A blue `line loop` is drawn directly on the WebGL canvas while the user drags, via a regl draw command registered in `plot._renderCallbacks`. It is cleared on `mouseup`.
+A blue `line loop` is drawn directly on the WebGL canvas while a shape is being drawn, via a regl draw command registered in `plot._renderCallbacks`. It is cleared when the shape selects or is abandoned.
+
+**Properties:**
+
+- `lasso.mode`: the current selection shape
+- `lasso.bandWidth`: the current band width, or `null`
 
 **Methods:**
 
-- `lasso.destroy()` — removes all event listeners and destroys the WebGL vertex buffer
+- `lasso.setMode(mode)`: changes the selection shape, abandoning a shape in progress; throws on an unknown mode
+- `lasso.setBandWidth(bandWidth)`: sets the band width, in the x axis's data units
+- `lasso.destroy()`: removes all event listeners and destroys the WebGL vertex buffer
+
+---
+
+## `plot.setLassoMode(mode, { bandWidth })`
+
+Changes the selection shape of every lasso interaction on the plot at run time, without `update()`, so no layer is rebuilt. A shape in progress is abandoned.
+
+```js
+plot.setLassoMode('rectangle')
+plot.setLassoMode('band', { bandWidth: 100 })   // a band click selects 100 x-axis units
+```
+
+- `mode`: one of `LASSO_MODES`; an unknown mode throws
+- `bandWidth`: optional; when given, the band width in the x axis's data units, otherwise the current width is kept
+
+The mode and width are kept on the plot, so interactions built by a later `update()` start in them. An `interactions.lasso` item with its own `mode` or `bandWidth` wins over them at that update.
 
 ---
 
