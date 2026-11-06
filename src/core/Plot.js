@@ -3,6 +3,7 @@ import { Camera } from "../axes/Camera.js"
 import { TickLabelAtlas } from "../axes/TickLabelAtlas.js"
 import { mat4Identity, mat4Multiply } from "../math/mat4.js"
 import { ZoomController } from "../axes/ZoomController.js"
+import { AxisLimitEditor } from "../axes/AxisLimitEditor.js"
 import { getLayerType, getRegisteredLayerTypes } from "./LayerTypeRegistry.js"
 import { getAxisQuantityKind, getScaleTypeFloat } from "../axes/AxisQuantityKindRegistry.js"
 import { getRegisteredColorscales, getRegistered2DColorscales, buildColorscaleTexture, getColorscalesVersion } from "../colorscales/ColorscaleRegistry.js"
@@ -203,6 +204,7 @@ export class Plot extends GlBase {
     this._zoomEndCallbacks = new Set()
     this._errorListeners = new Set()
     this._noErrorListeners = new Set()
+    this._axisLimitListeners = new Set()
     this._hasError = false
     this._currentRenderHasError = false
     this._hadError = false
@@ -409,6 +411,7 @@ export class Plot extends GlBase {
     }
 
     if (!this._zoomController) this._zoomController = new ZoomController(this)
+    if (!this._axisLimitEditor) this._axisLimitEditor = new AxisLimitEditor(this)
 
     for (const i of (this._interactions ?? [])) i.destroy()
     this._interactions = []
@@ -842,6 +845,10 @@ export class Plot extends GlBase {
     for (const i of (this._interactions ?? [])) i.destroy()
     this._interactions = []
 
+    this._axisLimitEditor?.destroy()
+    this._axisLimitEditor = null
+    this._axisLimitListeners.clear()
+
     this._renderCallbacks.clear()
     this._canvas.remove()
   }
@@ -1093,6 +1100,14 @@ export class Plot extends GlBase {
     }
   }
 
+  // Tell 'axislimit' listeners that an axis end was typed (AxisLimitEditor, and the
+  // color and filter bar floats relaying their own on this plot).
+  _emitAxisLimit(event) {
+    for (const cb of this._axisLimitListeners) {
+      try { cb(event) } catch (e) { console.error('[gladly] Error in axislimit listener:', e) }
+    }
+  }
+
   scheduleRender(sourcePlot = null) {
     if (!this.regl) return
     this._dirty = true
@@ -1144,8 +1159,14 @@ export class Plot extends GlBase {
       this._noErrorListeners.add(callback)
       return { remove: () => this._noErrorListeners.delete(callback) }
     }
+    if (eventType === 'axislimit') {
+      this._axisLimitListeners.add(callback)
+      return { remove: () => this._axisLimitListeners.delete(callback) }
+    }
     const handler = (e) => {
       if (!this.container.contains(e.target)) return
+      // Events on gladly's own controls (the axis limit boxes) are not plot events.
+      if (e.target.closest?.('[data-gladly-control]')) return
       const rect = this.container.getBoundingClientRect()
       const x = e.clientX - rect.left
       const y = e.clientY - rect.top

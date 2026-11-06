@@ -51,6 +51,7 @@ src/
   axes/
     - Axis.js                       # First-class axis object
     - AxisRegistry.js               # Spatial scale management (internal)
+    - AxisLimitEditor.js            # Click-to-type limits at the ends of 2D axes
     - AxisLink.js                   # Cross-plot axis linking
     - AxisQuantityKindRegistry.js   # Global quantity kind definitions
     - ColorAxisRegistry.js          # Color axis range + colorscale management

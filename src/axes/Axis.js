@@ -4,7 +4,7 @@ import { projectToScreen } from "../math/mat4.js"
 
 // ─── Tick formatting (same logic as before) ───────────────────────────────────
 
-function formatTick(v) {
+export function formatTick(v) {
   if (v === 0) return "0"
   const abs = Math.abs(v)
   if (abs >= 10000 || abs < 0.01) {
@@ -57,7 +57,7 @@ const TITLE_LINE_STEP_3D = 0.05  // multi-line title step in model space
 
 // 2D: fractions of the pixel distance from the axis to the nearest canvas edge
 const TICK_LEN_FRAC          = 0.12
-const TICK_LABEL_FRAC        = 0.40
+export const TICK_LABEL_FRAC = 0.40
 const AXIS_TITLE_FRAC        = 0.75
 const TITLE_LINE_SPACING_FRAC = 0.12
 

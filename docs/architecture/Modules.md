@@ -318,6 +318,18 @@ Attached to the plot SVG during `_initialize()`. Detects which region the gestur
 
 ---
 
+### `axes/AxisLimitEditor.js`
+
+**Purpose:** Lets the user type the two end values of each 2D spatial axis.
+
+Created once per plot in `_initialize()`, beside the `ZoomController`, and removed in `destroy()`. It listens for `mousemove` on the plot container and asks `ZoomController._getRegion2D()` whether the pointer is on an axis band; if so it shows two absolutely positioned DOM boxes at that axis's ends, on the tick-label row (`TICK_LABEL_FRAC` from `Axis.js`), holding the end values formatted with `formatTick`. A click turns a box into a text field. A valid value is set with `plot._getAxis(id).setDomain()`, the zoom path, so links and floats follow, and the plot then fires `"axislimit"` through `plot._emitAxisLimit()`. The boxes carry `data-gladly-control`, which `Plot.on()` uses to leave their DOM events out of plot events.
+
+**`parseAxisLimit(text, current, other, isLog)`** — the validation rule, exported for tests: returns `{ value }` or `{ error }`. A value must be a finite number, differ from the other end, stay on the same side of the other end as the current value (so reversed axes stay reversed), and be above zero on a log axis.
+
+Colorbar, 2D colorbar and filterbar floats get the editor as plots of their own; each relays its `"axislimit"` events to the target plot with `axis` set to the target's color or filter quantity kind.
+
+---
+
 ## `colorscales/` — Color Management
 
 ### `colorscales/ColorscaleRegistry.js`

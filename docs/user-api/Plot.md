@@ -111,11 +111,11 @@ const handle = plot.on('mousemove', (e, coords) => {
 handle.remove()
 ```
 
-> **Note:** Listeners are registered on `window` in the capture phase so that they fire before D3 zoom's internal handlers (which call `stopImmediatePropagation` on `mouseup` for left-click pan gestures). Events are filtered to those whose `target` is inside the plot container, so multiple plots on the same page do not interfere.
+> **Note:** Listeners are registered on `window` in the capture phase so that they fire before D3 zoom's internal handlers (which call `stopImmediatePropagation` on `mouseup` for left-click pan gestures). Events are filtered to those whose `target` is inside the plot container, so multiple plots on the same page do not interfere. Events on gladly's own controls inside the container (elements marked `data-gladly-control`, such as the [typed axis limit](../configuration/PlotConfiguration.md#typed-axis-limits) boxes) are left out, so a click on one is not a click on the plot.
 
 #### Synthetic plot events
 
-Two special event types report rendering errors. They do not correspond to DOM events and have no `coords` argument.
+Three special event types do not correspond to DOM events and have no `coords` argument. Two report rendering errors, and one reports an axis limit typed by the user.
 
 ---
 
@@ -151,6 +151,26 @@ plot.on('no-error', () => {
   statusBar.textContent = ''
   statusBar.style.background = ''
 })
+```
+
+---
+
+**`"axislimit"`** — fired when the user types a value at one end of an axis (see [Typed axis limits](../configuration/PlotConfiguration.md#typed-axis-limits)). The new range is already set when it fires. It was set through `Axis.setDomain()`, so linked axes have followed, and `getConfig()` returns it.
+
+```javascript
+plot.on('axislimit', (e) => {
+  console.log(e.type)   // "axislimit"
+  console.log(e.axis)   // "xaxis_bottom", or a color or filter quantity kind
+  console.log(e.end)    // "min" (the domain's first value) or "max" (its second)
+  console.log(e.value)  // the number typed
+  console.log(e.domain) // the axis's new [min, max]
+})
+```
+
+A value typed on a colorbar or filterbar float fires on the plot the float belongs to, with `e.axis` set to that plot's color or filter quantity kind. Zoom and pan fire no event of their own, so this is the place to save a configuration the moment a limit is typed:
+
+```javascript
+plot.on('axislimit', () => saveLayout(plot.getConfig()))
 ```
 
 ---
