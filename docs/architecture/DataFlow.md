@@ -96,6 +96,11 @@ Plot._initialize()
   │       └─> For each registered quantity kind, scan all layer colorAxes values;
   │           compute [min, max]; apply config override; apply colorscale preference
   │
+  ├─> Plot._layoutMargin()
+  │   └─> Per side: `margin` if the side draws a 2D axis, `marginWithoutAxis` if not
+  │       (3D: `margin` on every side); recompute plotWidth/plotHeight;
+  │       axisRegistry.resize(plotWidth, plotHeight) updates the scale ranges
+  │
   ├─> Plot.initZoom()   — see Interaction Cycle below
   │
   └─> Plot.scheduleRender()

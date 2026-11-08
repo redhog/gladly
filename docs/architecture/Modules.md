@@ -131,6 +131,8 @@ this._renderCallbacks    // Set<function> — called after each _drawSync()
 
 **`_setDomains(axesOverrides)`** — Computes auto-domains from layer data for spatial, color, and filter axes; applies any config overrides.
 
+**`_layoutMargin()`** — Called by `_initialize()` once the layers have registered their axes. Sets `this.margin` side by side: the constructor's `margin` where the side draws a 2D axis, `marginWithoutAxis` where it draws none (no layer uses the axis, or it has `visible: false`); a 3D plot keeps `margin` on every side. Then recomputes `plotWidth`/`plotHeight` and passes them to `axisRegistry.resize()`.
+
 **`scheduleRender()`** — Throttle-checks then calls `getMasterCanvas().schedulePlotRender(this)`.
 
 **`static schema(data)`** — Aggregates JSON Schemas from all registered layer types.
@@ -271,6 +273,8 @@ this.axisQuantityKinds = {} // { axisName: quantityKind }
 - Throws if the axis already exists with a different quantity kind
 
 **`applyAutoDomainsFromLayers(layers, axesOverrides)`** — Scans all layers to compute per-axis min/max; applies config overrides; validates log-scale domains.
+
+**`resize(width, height)`** — Sets a new plot-area size in px and moves the range of every spatial scale to match. Called by `Plot._layoutMargin()`, because the margins, and so the plot area, are only known after the layers have registered their axes.
 
 **Exports `AXES`** — all 12 spatial axis names (including 3D and back-face axes). **`AXES_2D`** — the four standard 2D axes: `["xaxis_bottom", "xaxis_top", "yaxis_left", "yaxis_right"]`. Also exports `AXIS_GEOMETRY`, `axisEndpoints`, `axisPosAtN`, `buildFilterGlsl`.
 

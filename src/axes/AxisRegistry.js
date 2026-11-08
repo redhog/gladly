@@ -133,10 +133,7 @@ export class AxisRegistry {
     if (!entry.slots.has(slotId)) {
       const qkDef     = getAxisQuantityKind(qk)
       const scaleType = scaleOverride ?? qkDef.scale
-      const dir       = AXIS_GEOMETRY[slotId].dir
-      const range     = dir === 'z' ? [0, 1]
-        : dir === 'y' ? [this.height, 0]
-        : [0, this.width]
+      const range     = this._range(slotId)
       const scale = scaleType === 'log'
         ? d3.scaleLog().range(range)
         : d3.scaleLinear().range(range)
@@ -172,6 +169,21 @@ export class AxisRegistry {
 
   // ── Spatial ───────────────────────────────────────────────────────────────
 
+  // Pixel range of a slot's scale across the plot area (z is normalized to [0, 1]).
+  _range(slotId) {
+    const dir = AXIS_GEOMETRY[slotId].dir
+    return dir === 'z' ? [0, 1]
+      : dir === 'y' ? [this.height, 0]
+      : [0, this.width]
+  }
+
+  // Sets a new plot-area size and moves every spatial scale's range to match.
+  resize(width, height) {
+    this.width  = width
+    this.height = height
+    for (const slotId of this._slotToQk.keys()) this.getScale(slotId).range(this._range(slotId))
+  }
+
   getScale(slotId) {
     const qk = this._slotToQk.get(slotId)
     return qk ? (this._entries.get(qk)?.slots.get(slotId) ?? null) : null
@@ -190,10 +202,7 @@ export class AxisRegistry {
     if (!scale) return
     const wantLog = scaleType === 'log'
     if ((typeof scale.base === 'function') === wantLog) return
-    const dir   = AXIS_GEOMETRY[slotId].dir
-    const range = dir === 'z' ? [0, 1]
-      : dir === 'y' ? [this.height, 0]
-      : [0, this.width]
+    const range = this._range(slotId)
     const newScale = wantLog
       ? d3.scaleLog().range(range)
       : d3.scaleLinear().range(range)

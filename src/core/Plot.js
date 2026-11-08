@@ -109,6 +109,7 @@ function buildPlotSchema(data, config) {
             max: { type: "number" },
             label: { type: "string" },
             scale: { type: "string", enum: ["linear", "log"] },
+            visible: { type: "boolean" },
             rotate: { type: "boolean" },
             colorscale: {
               type: "string",
@@ -178,10 +179,13 @@ export class Plot extends GlBase {
     Plot._floatFactories.set(type, factoryDef)
   }
 
-  constructor(container, { margin } = {}) {
+  constructor(container, { margin, marginWithoutAxis } = {}) {
     super()
     this.container = container
-    this.margin = margin ?? { top: 60, right: 60, bottom: 60, left: 60 }
+    this._marginWithAxis = margin ?? { top: 60, right: 60, bottom: 60, left: 60 }
+    this._marginWithoutAxis = marginWithoutAxis ?? {}
+    // The margin in use; _layoutMargin() sets it per side once the axes are known.
+    this.margin = this._marginWithAxis
 
     // Real on-screen display canvas. The shared regl context renders into an
     // OffscreenCanvas and hands each frame to this canvas via its bitmaprenderer
@@ -396,6 +400,8 @@ export class Plot extends GlBase {
 
     this._is3D = AXES.some(a => !AXES_2D.includes(a) && this.axisRegistry.getScale(a) !== null)
 
+    this._layoutMargin()
+
     this._camera = new Camera(this._is3D)
     this._camera.resize(this.plotWidth, this.plotHeight)
 
@@ -493,6 +499,23 @@ export class Plot extends GlBase {
     this.plotHeight = Math.max(1, h - this.margin.top  - this.margin.bottom)
     this._canvas.width  = w
     this._canvas.height = h
+  }
+
+  // Sets this.margin side by side: the constructor's `margin` where the side draws an
+  // axis, `marginWithoutAxis` where it draws none (no layer uses the axis, or it is
+  // hidden with `visible: false`). A 3D plot keeps `margin` on every side.
+  _layoutMargin() {
+    const sideAxis = { top: 'xaxis_top', right: 'yaxis_right', bottom: 'xaxis_bottom', left: 'yaxis_left' }
+    const axes = this.currentConfig.axes ?? {}
+    const drawsAxis = (axisId) => this.axisRegistry.getScale(axisId) !== null && axes[axisId]?.visible !== false
+    this.margin = Object.fromEntries(Object.entries(sideAxis).map(([side, axisId]) => [side,
+      this._is3D || drawsAxis(axisId)
+        ? this._marginWithAxis[side]
+        : this._marginWithoutAxis[side] ?? this._marginWithAxis[side],
+    ]))
+    this.plotWidth  = Math.max(1, this.width  - this.margin.left - this.margin.right)
+    this.plotHeight = Math.max(1, this.height - this.margin.top  - this.margin.bottom)
+    this.axisRegistry.resize(this.plotWidth, this.plotHeight)
   }
 
   // Phase 1 — async: refresh transforms and data columns.
