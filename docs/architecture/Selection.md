@@ -16,7 +16,7 @@ The GPU-driven lasso selection pipeline finds **all** data points inside the dra
 | `PositionCapture` | `src/selection/PositionCapture.js` | Pass 1 — runs the layer's vertex shader in capture mode, scatter-writing NDC positions into a float FBO |
 | `SelectionTestPass` | `src/selection/SelectionTestPass.js` | Pass 2 — instanced draw, one instance per primitive; reads positions from Pass 1 FBO, tests against lasso polygon, scatter-writes into one `SelectionColumn` tile |
 | `SelectionPipeline` | `src/selection/SelectionPipeline.js` | Orchestrates the two passes per layer per tile; converts lasso vertices to NDC |
-| `LassoInteraction` | `src/selection/LassoInteraction.js` | Mouse event handler; drives `LassoMask` overlay; calls `plot.selectLasso()` on mouseup |
+| `LassoInteraction` | `src/selection/LassoInteraction.js` | Mouse and key event handler for the selection shapes (`LASSO_MODES`); draws the shape's outline as a regl line loop; turns every shape into a polygon (a circle or ellipse as a ring of 64 points, a band as a strip running far past the plot's edges, vertical or horizontal by the drag's longer axis) and calls `plot.selectLasso()` with it |
 
 ---
 
@@ -120,6 +120,7 @@ Cross-plot re-renders happen automatically via `selCol._onWrite` because the `Se
 
 ## Limitations
 
-- **Lasso vertex limit**: the lasso polygon is uploaded as a float texture (width = N vertices); in practice `LassoInteraction` enforces a minimum 5 px spacing between recorded vertices to keep N reasonable.
+- **Lasso vertex limit**: the lasso polygon is uploaded as a float texture (width = N vertices); in practice `LassoInteraction` enforces a minimum 5 px spacing between recorded vertices to keep N reasonable. The other shapes stay well under it: a circle or ellipse has 64 vertices, a clicked polygon as many as its corners.
+- **Points out of view**: Pass 1 writes each primitive's position by its pick ID, not by where it lands on screen, so points outside the visible domain are captured too and are selected when the polygon covers them. The band shape relies on this to select every point in its range along its short axis whatever the zoom along its long axis — a vertical band's x range whatever the y zoom, a horizontal band's y range whatever the x zoom.
 - **Transformed layers**: layers driven by histogram/KDE/FFT have a different N from the raw data. They cannot be directly selected; they consume a `SelectionColumn` as a computation input instead.
 - **Cross-context GPU readback**: `_readbackAndNotify()` uses `regl.read()` which requires `EXT_color_buffer_float`. This extension is requested at context creation and is widely supported in WebGL 2. If unavailable, readback silently fails and only the source plot's own render updates.
