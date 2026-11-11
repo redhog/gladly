@@ -42,6 +42,7 @@ gladly/
 │   ├── axes/
 │   │   ├── Axis.js                            # First-class axis object (stable across update())
 │   │   ├── AxisRegistry.js                    # Spatial, color, and filter axis management
+│   │   ├── AxisLimitEditor.js                 # Double-click an axis end to type its value; 2D and 3D
 │   │   ├── AxisLink.js                        # Cross-plot axis linking
 │   │   ├── AxisQuantityKindRegistry.js        # Global quantity kind definitions
 │   │   ├── ColorAxisRegistry.js               # Stub — merged into AxisRegistry.js

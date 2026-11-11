@@ -27,6 +27,10 @@ export class Colorbar2d extends Plot {
     this._xLink = linkAxes(this.axes["xaxis_bottom"], targetPlot.axes[xAxis])
     this._yLink = linkAxes(this.axes["yaxis_left"],   targetPlot.axes[yAxis])
 
+    // A value typed at an end of either axis is a typed limit of that target color axis.
+    this.on('axislimit', (e) =>
+      targetPlot._emitAxisLimit({ ...e, axis: e.axis === "xaxis_bottom" ? xAxis : yAxis }))
+
     this._addCheckboxOverlays()
   }
 

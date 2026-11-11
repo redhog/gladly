@@ -27,6 +27,7 @@ new Colorbar(container, targetPlot, colorAxisName, { orientation, margin })
 **Behavior:**
 - Automatically re-renders whenever `targetPlot` renders.
 - Bidirectionally links its spatial axis to the target's color axis: zooming the colorbar updates the color range on the main plot and vice versa.
+- Its two end values can be [typed](../configuration/PlotConfiguration.md#typed-axis-limits), which sets the color range exactly. Each typed value fires `"axislimit"` on `targetPlot`, with `axis` set to the color quantity kind.
 - Inherits all `Plot` methods. Call `destroy()` to clean up both the link and the render callback.
 
 ```javascript
@@ -124,6 +125,7 @@ new Filterbar(container, targetPlot, filterAxisName, { orientation, margin })
 - Automatically re-renders whenever `targetPlot` renders.
 - Bidirectionally links its spatial axis to the target's filter axis: zoom/pan on the filterbar updates the filter range applied to data.
 - Shows ∞ checkboxes at each end to toggle open bounds (no minimum / no maximum filter).
+- Its two end values can be [typed](../configuration/PlotConfiguration.md#typed-axis-limits). As with zooming the filterbar, a typed value sets both bounds and so closes any open one. Each typed value fires `"axislimit"` on `targetPlot`, with `axis` set to the filter quantity kind.
 - Inherits all `Plot` methods. Call `destroy()` to clean up.
 
 ```javascript

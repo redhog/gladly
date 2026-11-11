@@ -30,6 +30,9 @@ export class Filterbar extends Plot {
     // Zoom/pan on the filterbar propagates back to update the filter range.
     this._spatialLink = linkAxes(this.axes[this._spatialAxis], targetPlot.axes[filterAxisName])
 
+    // A value typed at an end of the filterbar is a typed bound of the target's filter axis.
+    this.on('axislimit', (e) => targetPlot._emitAxisLimit({ ...e, axis: filterAxisName }))
+
     this._addCheckboxOverlays()
   }
 

@@ -30,6 +30,9 @@ export class Colorbar extends Plot {
     // Zooming the colorbar propagates domain changes to the target's color range.
     this._spatialLink = linkAxes(this.axes[this._spatialAxis], targetPlot.axes[colorAxisName])
 
+    // A value typed at an end of the colorbar is a typed limit of the target's color axis.
+    this.on('axislimit', (e) => targetPlot._emitAxisLimit({ ...e, axis: colorAxisName }))
+
     this._addCheckboxOverlays()
   }
 
