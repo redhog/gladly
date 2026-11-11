@@ -172,6 +172,11 @@ void main() { fragColor = vec4(0.0, 0.47, 1.0, 1.0); }`,
     return [[xa, -reach], [xb, -reach], [xb, this._plot.height + reach], [xa, this._plot.height + reach]]
   }
 
+  _hstrip(ya, yb) {
+    const reach = BAND_REACH * this._plot.width
+    return [[-reach, ya], [this._plot.width + reach, ya], [this._plot.width + reach, yb], [-reach, yb]]
+  }
+
   // A strip bandWidth wide (x data units) centered on canvas x, through the x axis.
   _bandAt(x) {
     const scale = this._plot.axisRegistry?.getScale('xaxis_bottom') ?? this._plot.axisRegistry?.getScale('xaxis_top')
@@ -190,8 +195,14 @@ void main() { fragColor = vec4(0.0, 0.47, 1.0, 1.0); }`,
       case 'rectangle': return this._rectangle(start, end)
       case 'triangle':  return this._triangle(start, end)
       case 'circle':    return this._circle(start, end)
-      case 'band':
-        return Math.abs(end[0] - start[0]) < MIN_PX ? this._bandAt(start[0]) : this._strip(start[0], end[0])
+      // The drag's longer axis sets the band's orientation: mostly-horizontal → a vertical
+      // strip, mostly-vertical → a horizontal one. A drag too short either way falls back to
+      // the set-width band at the press point.
+      case 'band': {
+        const dx = Math.abs(end[0] - start[0]), dy = Math.abs(end[1] - start[1])
+        if (dx < MIN_PX && dy < MIN_PX) return this._bandAt(start[0])
+        return dx >= dy ? this._strip(start[0], end[0]) : this._hstrip(start[1], end[1])
+      }
     }
   }
 

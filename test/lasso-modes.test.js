@@ -193,14 +193,24 @@ describe('Lasso modes: vertices handed to selectLasso', () => {
     assert.lengthOf(calls, 0)
   })
 
-  it('band: a drag selects the full-height strip between press and release', () => {
+  it('band: a mostly-horizontal drag selects the full-height strip between press and release', () => {
     plot.setLassoMode('band')
-    drag(plot, [60, 50], [90, 150])
+    drag(plot, [60, 90], [150, 60])   // dx 90 > dy 30 → vertical strip
     assert.lengthOf(calls, 1)
     const xs = calls[0].map(v => v[0]), ys = calls[0].map(v => v[1])
-    assert.sameMembers([...new Set(xs)], [60, 90])
+    assert.sameMembers([...new Set(xs)], [60, 150])
     assert.isBelow(Math.min(...ys), -HEIGHT)
     assert.isAbove(Math.max(...ys), 2 * HEIGHT)
+  })
+
+  it('band: a mostly-vertical drag selects the full-width strip between press and release', () => {
+    plot.setLassoMode('band')
+    drag(plot, [90, 60], [60, 150])   // dy 90 > dx 30 → horizontal strip
+    assert.lengthOf(calls, 1)
+    const xs = calls[0].map(v => v[0]), ys = calls[0].map(v => v[1])
+    assert.sameMembers([...new Set(ys)], [60, 150])
+    assert.isBelow(Math.min(...xs), -WIDTH)
+    assert.isAbove(Math.max(...xs), 2 * WIDTH)
   })
 
   it('band: a click selects a strip of the set width, in x data units, centered on it', () => {

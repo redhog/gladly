@@ -73,11 +73,11 @@ Every shape is drawn with the trigger held, shows its outline while it is being 
 | `'polygon'` | Click each corner, then right-click (no trigger needed) to close; the right-click adds no corner | it has fewer than 3 corners |
 | `'circle'` | Press at the center, release at the radius | its radius is under 5 px |
 | `'ellipse'` | Click the center, then the end of the first axis (its direction and length), then a point whose distance from the first axis sets the second axis | either semi-axis is under 5 px |
-| `'band'` | Drag across to set a full-height strip's two edges, or click for a strip `bandWidth` wide centered on the click; while the trigger is held, the outline shows the strip a click would select | a drag is under 5 px wide and no `bandWidth` is set |
+| `'band'` | Drag to set a strip's two edges — a mostly-horizontal drag makes a full-height vertical strip, a mostly-vertical one a full-width horizontal strip — or click for a vertical strip `bandWidth` wide centered on the click; while the trigger is held, the outline shows the strip a click would select | a drag is under 5 px in both directions and no `bandWidth` is set |
 
 A polygon or an ellipse stays in progress between clicks. Escape, a mousedown without the trigger, a wheel event, a mode change or a plot `update()` abandons it, since its corners are screen positions that a pan or zoom would move off the data. Escape also abandons a drag in progress.
 
-A band's top and bottom run far past the plot's edges, so it also selects points that are zoomed out of view in y. Circles and ellipses are drawn in screen pixels: on unequal or log axes a circle is not round in data units.
+A band's ends run far past the plot's edges, so it also selects points zoomed out of view along its long axis — a vertical band in y, a horizontal band in x. Circles and ellipses are drawn in screen pixels: on unequal or log axes a circle is not round in data units.
 
 ---
 
