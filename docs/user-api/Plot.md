@@ -111,7 +111,7 @@ const handle = plot.on('mousemove', (e, coords) => {
 handle.remove()
 ```
 
-> **Note:** Listeners are registered on `window` in the capture phase so that they fire before D3 zoom's internal handlers (which call `stopImmediatePropagation` on `mouseup` for left-click pan gestures). Events are filtered to those whose `target` is inside the plot container, so multiple plots on the same page do not interfere. Events on gladly's own controls inside the container (elements marked `data-gladly-control`, such as the [typed axis limit](../configuration/PlotConfiguration.md#typed-axis-limits) boxes) are left out, so a click on one is not a click on the plot.
+> **Note:** Listeners are registered on `window` in the capture phase so that they fire before D3 zoom's internal handlers (which call `stopImmediatePropagation` on `mouseup` for left-click pan gestures). Events are filtered to those whose `target` is inside the plot container, so multiple plots on the same page do not interfere. Events on gladly's own controls inside the container (elements marked `data-gladly-control`, such as the [typed axis limit](../configuration/PlotConfiguration.md#typed-axis-limits) field) are left out, so a click on it is not a click on the plot.
 
 #### Synthetic plot events
 

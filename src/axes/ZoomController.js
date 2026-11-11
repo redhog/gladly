@@ -1,4 +1,5 @@
 import { AXIS_GEOMETRY, axisEndpoints } from './AxisRegistry.js'
+import { TICK_LABEL_FRAC } from './Axis.js'
 import { mat4Multiply, mat4Identity, projectToScreen, sphericalToCartesian } from '../math/mat4.js'
 
 export class ZoomController {
@@ -21,6 +22,28 @@ export class ZoomController {
       cx, cy, 0, 1,
     ])
     return mat4Multiply(Mvp, _camera ? _camera.getMVP() : mat4Identity())
+  }
+
+  // Container-pixel position of one end of an axis, for placing the limit box.
+  // end ∈ {'min','max'} → [x, y], or null if the axis geometry is unknown.
+  // 'min' is the domain's first value (the -1 end); 'max' the second (+1 end).
+  axisEndScreenPos(axisId, end) {
+    const plot = this._plot
+    if (!plot._is3D) {
+      const { margin, plotWidth, plotHeight } = plot
+      const left = margin.left, right = margin.left + plotWidth
+      const top = margin.top, bottom = margin.top + plotHeight
+      const off = (m) => TICK_LABEL_FRAC * Math.max(4, m)
+      switch (axisId) {
+        case 'xaxis_bottom': { const y = bottom + off(margin.bottom); return [end === 'min' ? left : right, y] }
+        case 'xaxis_top':    { const y = top    - off(margin.top);    return [end === 'min' ? left : right, y] }
+        case 'yaxis_left':   { const x = left   - off(margin.left);   return [x, end === 'min' ? bottom : top] }
+        case 'yaxis_right':  { const x = right  + off(margin.right);  return [x, end === 'min' ? bottom : top] }
+      }
+      return null
+    }
+    const { start, end: hi } = axisEndpoints(axisId)
+    return projectToScreen(end === 'min' ? start : hi, this._computeAxisMvp(), plot.width, plot.height)
   }
 
   // Return { axes: [axisId, ...], type: 'plot_area'|'axis' } or null.

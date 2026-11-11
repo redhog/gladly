@@ -1,81 +1,54 @@
-import { formatTick, TICK_LABEL_FRAC } from "./Axis.js"
+import { formatTick } from "./Axis.js"
+import { AXIS_GEOMETRY } from "./AxisRegistry.js"
 
-const BOX_TITLE = "Click to type a value for this end"
+const BOX_TITLE = "Type a value for this end"
+const DIR_IDX = { x: 0, y: 1, z: 2 }
 
 /**
  * Check a typed axis end value.
  *
- * @param {string}  text    - what was typed; e-notation is accepted ("1e-4")
- * @param {number}  current - the end's current value
- * @param {number}  other   - the value at the axis's other end
- * @param {boolean} isLog   - whether the axis has a log scale
+ * @param {string}  text  - what was typed; e-notation is accepted ("1e-4")
+ * @param {number}  other - the value at the axis's other end
+ * @param {boolean} isLog - whether the axis has a log scale
  * @returns {{ value: number } | { error: string }} the parsed value, or why it was refused.
- *   A value has to stay on the same side of the other end as the current one, so a
- *   reversed axis stays reversed.
+ *   Crossing the other end is allowed — that just reverses the axis, which gladly supports
+ *   (a domain with its first value above its second). Only a value equal to the other end
+ *   is refused, since it would collapse the axis to zero width.
  */
-export function parseAxisLimit(text, current, other, isLog) {
+export function parseAxisLimit(text, other, isLog) {
   const s = String(text).trim()
   const value = Number(s)
   if (s === "" || !Number.isFinite(value)) return { error: "Not a number" }
   if (isLog && value <= 0) return { error: "Must be above 0 on a log axis" }
   if (value === other) return { error: `Must differ from the other end (${formatTick(other)})` }
-  if (current !== other && (value > other) !== (current > other)) {
-    return {
-      error: current > other
-        ? `Must be above the other end (${formatTick(other)})`
-        : `Must be below the other end (${formatTick(other)})`,
-    }
-  }
   return { value }
 }
 
-// Container-pixel centers of an axis's two end labels: the end of the axis, pushed out
-// onto the tick-label row the way Axis.render() places tick labels in 2D.
-function endPositions(plot, axisId) {
-  const { margin, plotWidth, plotHeight } = plot
-  const left = margin.left, right = margin.left + plotWidth
-  const top = margin.top, bottom = margin.top + plotHeight
-  const off = (m) => TICK_LABEL_FRAC * Math.max(4, m)
-  switch (axisId) {
-    case "xaxis_bottom": { const y = bottom + off(margin.bottom); return { min: [left, y], max: [right, y] } }
-    case "xaxis_top":    { const y = top - off(margin.top);       return { min: [left, y], max: [right, y] } }
-    case "yaxis_left":   { const x = left - off(margin.left);     return { min: [x, bottom], max: [x, top] } }
-    case "yaxis_right":  { const x = right + off(margin.right);   return { min: [x, bottom], max: [x, top] } }
-  }
-  return null
-}
-
 /**
- * Click-to-type limits on the two ends of each 2D spatial axis of a plot.
+ * Double-click an axis end to type its exact value, in 2D and 3D.
  *
- * Pointing at an axis's label band shows two small boxes at the ends of that axis
- * holding its end values. Clicking a box turns it into a text field. Enter sets the
- * value, Tab sets it and moves to the other end, Escape cancels, and leaving the field
- * sets a valid value and drops an invalid one. A value is set through
- * `Axis.setDomain()`, the path zoom and pan take, so linked axes follow; the plot then
- * fires an `'axislimit'` event.
+ * A double-click on an axis band opens one text field — at the end nearest the click —
+ * pre-filled with that end's current value. Enter sets the value, Tab sets it and moves
+ * to the other end, Escape cancels, and leaving the field sets a valid value and drops an
+ * invalid one. A value is set through `Axis.setDomain()`, the path zoom and pan take, so
+ * linked axes follow; the plot then fires an `'axislimit'` event.
  *
- * The bottom or left box is the domain's first value (the config's `min`), the top or
- * right box its second (`max`). 3D plots get no boxes.
+ * The axis under the click comes from `ZoomController._getRegion()` (2D and 3D alike); the
+ * end nearest the click comes from the sign of the click's `_unproject`ed position along
+ * the axis direction, which is a screen/positional judgement and so stays correct on log
+ * and reversed axes. The field is placed by `ZoomController.axisEndScreenPos()`.
  */
 export class AxisLimitEditor {
   constructor(plot) {
     this._plot = plot
-    this._boxes = new Map()   // axisId → { min: HTMLElement, max: HTMLElement }
-    this._shownAxis = null
-    this._editing = null      // { axisId, end, input, initial }
-    this._onMouseMove = (e) => this._handleMouseMove(e)
-    this._onMouseLeave = () => { if (!this._editing) this._hide() }
-    plot.container.addEventListener("mousemove", this._onMouseMove)
-    plot.container.addEventListener("mouseleave", this._onMouseLeave)
+    this._editing = null   // { axisId, end, box, input, initial }
+    this._onDblClick = (e) => this._handleDblClick(e)
+    plot._canvas.addEventListener("dblclick", this._onDblClick)
   }
 
   destroy() {
-    this._plot.container.removeEventListener("mousemove", this._onMouseMove)
-    this._plot.container.removeEventListener("mouseleave", this._onMouseLeave)
-    this._editing = null
-    for (const { min, max } of this._boxes.values()) { min.remove(); max.remove() }
-    this._boxes.clear()
+    this._plot._canvas.removeEventListener("dblclick", this._onDblClick)
+    this._closeEdit()
   }
 
   _isDrawn(axisId) {
@@ -83,25 +56,21 @@ export class AxisLimitEditor {
     return !!plot.axisRegistry?.getScale(axisId) && plot.currentConfig?.axes?.[axisId]?.visible !== false
   }
 
-  _isOwnBox(el) {
-    for (const { min, max } of this._boxes.values()) {
-      if (min.contains(el) || max.contains(el)) return true
-    }
-    return false
-  }
-
-  _handleMouseMove(e) {
-    if (this._editing) return
-    if (this._isOwnBox(e.target)) return
+  _handleDblClick(e) {
     const plot = this._plot
-    // Only the plot's own canvas counts: a float (color bar, filter bar) sitting in this
-    // container is a plot of its own with its own editor.
-    if (e.target !== plot._canvas || plot._is3D || !plot.axisRegistry) return this._hide()
+    if (!plot.axisRegistry || !plot._zoomController) return
     const rect = plot.container.getBoundingClientRect()
-    const region = plot._zoomController?._getRegion2D(e.clientX - rect.left, e.clientY - rect.top)
-    const axisId = region?.type === "axis" ? region.axes[0] : null
-    if (axisId && this._isDrawn(axisId)) this._show(axisId)
-    else this._hide()
+    const mx = e.clientX - rect.left
+    const my = e.clientY - rect.top
+    const region = plot._zoomController._getRegion(mx, my)
+    if (region?.type !== "axis") return
+    const axisId = region.axes[0]
+    if (!this._isDrawn(axisId)) return
+    // Which end: the sign of the click's unprojected position along the axis direction.
+    // Normalised axis space runs -1 (min end) → +1 (max end) on the dir component.
+    const world = plot._zoomController._unproject(mx, my)
+    const end = world[DIR_IDX[AXIS_GEOMETRY[axisId].dir]] < 0 ? "min" : "max"
+    this._startEdit(axisId, end)
   }
 
   _makeBox(axisId, end) {
@@ -113,7 +82,6 @@ export class AxisLimitEditor {
     Object.assign(box.style, {
       position:     "absolute",
       zIndex:       "4",
-      display:      "none",
       boxSizing:    "border-box",
       padding:      "0 3px",
       font:         "11px sans-serif",
@@ -123,79 +91,42 @@ export class AxisLimitEditor {
       border:       "1px solid #888",
       borderRadius: "2px",
       whiteSpace:   "nowrap",
-      cursor:       "text",
-      userSelect:   "none",
     })
-    box.addEventListener("click", (e) => {
-      e.stopPropagation()
-      if (this._editing?.axisId === axisId && this._editing.end === end) return
-      // Clicking the other box while typing sets the typed value first, as Tab does.
-      if (this._editing && !this._commit()) return
-      this._startEdit(axisId, end)
-    })
-    // A press on a box neither reaches anything underneath nor takes the focus away from
-    // an open field, which would close it before the click arrives.
+    // A press on the box padding must not take focus away from the open field.
     box.addEventListener("mousedown", (e) => {
-      e.stopPropagation()
       if (e.target.tagName !== "INPUT") e.preventDefault()
     })
-    this._plot.container.appendChild(box)
     return box
   }
 
-  _boxesFor(axisId) {
-    if (!this._boxes.has(axisId)) {
-      this._boxes.set(axisId, { min: this._makeBox(axisId, "min"), max: this._makeBox(axisId, "max") })
-    }
-    return this._boxes.get(axisId)
-  }
-
-  // Center a box on its end, kept inside the container.
-  _place(axisId, end) {
-    const pos = endPositions(this._plot, axisId)?.[end]
+  // Center the open box on its end, kept inside the container.
+  _place() {
+    if (!this._editing) return
+    const { axisId, end, box } = this._editing
+    const pos = this._plot._zoomController.axisEndScreenPos(axisId, end)
     if (!pos) return
-    const box = this._boxesFor(axisId)[end]
     const W = this._plot.container.clientWidth, H = this._plot.container.clientHeight
     const bw = box.offsetWidth, bh = box.offsetHeight
     box.style.left = Math.max(0, Math.min(W - bw, pos[0] - bw / 2)) + "px"
     box.style.top  = Math.max(0, Math.min(H - bh, pos[1] - bh / 2)) + "px"
   }
 
-  _show(axisId) {
-    if (this._shownAxis && this._shownAxis !== axisId) this._hide()
-    const domain = this._plot.getAxisDomain(axisId)
-    if (!domain) return
-    const boxes = this._boxesFor(axisId)
-    for (const [end, value] of [["min", domain[0]], ["max", domain[1]]]) {
-      boxes[end].textContent = formatTick(value)
-      boxes[end].style.display = "block"
-      this._place(axisId, end)
-    }
-    this._shownAxis = axisId
-  }
-
-  _hide() {
-    if (!this._shownAxis) return
-    const boxes = this._boxes.get(this._shownAxis)
-    if (boxes) { boxes.min.style.display = "none"; boxes.max.style.display = "none" }
-    this._shownAxis = null
-  }
-
   _startEdit(axisId, end) {
     if (this._editing) this._closeEdit()
-    this._show(axisId)
-    const domain = this._plot.getAxisDomain(axisId)
-    const box = this._boxesFor(axisId)[end]
+    const plot = this._plot
+    const domain = plot.getAxisDomain(axisId)
+    if (!domain) return
     const value = domain[end === "min" ? 0 : 1]
     const initial = String(Number(value.toPrecision(6)))
 
+    const box = this._makeBox(axisId, end)
     const input = document.createElement("input")
     input.type = "text"
     input.value = initial
     input.spellcheck = false
     input.setAttribute("aria-label", `${axisId} ${end}`)
     Object.assign(input.style, {
-      width:      Math.max(64, box.offsetWidth) + "px",
+      width:      Math.max(48, initial.length * 7 + 10) + "px",
       boxSizing:  "border-box",
       margin:     "0",
       padding:    "0",
@@ -205,11 +136,18 @@ export class AxisLimitEditor {
       font:       "inherit",
       color:      "inherit",
     })
-    box.textContent = ""
     box.appendChild(input)
-    box.style.cursor = "auto"
-    this._editing = { axisId, end, input, initial }
-    this._place(axisId, end)
+    plot.container.appendChild(box)
+    // A press outside the box closes the editor. We cannot rely on the input blurring,
+    // since the canvas' own mousedown calls preventDefault(), which suppresses the blur.
+    const onOutsideDown = (e) => {
+      if (!this._editing || this._editing.box.contains(e.target)) return
+      this._commit()
+      this._closeEdit()
+    }
+    document.addEventListener("mousedown", onOutsideDown, true)
+    this._editing = { axisId, end, box, input, initial, onOutsideDown }
+    this._place()
 
     input.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
@@ -235,14 +173,13 @@ export class AxisLimitEditor {
   // Set the typed value if it is valid. Returns false, and marks the box, if it is not.
   _commit() {
     if (!this._editing) return true
-    const { axisId, end, input, initial } = this._editing
-    const box = this._boxesFor(axisId)[end]
+    const { axisId, end, box, input, initial } = this._editing
     if (input.value.trim() === initial) return true
     const plot = this._plot
     const domain = plot.getAxisDomain(axisId)
     if (!domain) return true
     const i = end === "min" ? 0 : 1
-    const result = parseAxisLimit(input.value, domain[i], domain[1 - i], plot.axisRegistry.isLogScale(axisId))
+    const result = parseAxisLimit(input.value, domain[1 - i], plot.axisRegistry.isLogScale(axisId))
     if (result.error) {
       box.style.borderColor = "#d00"
       box.title = result.error
@@ -259,13 +196,9 @@ export class AxisLimitEditor {
 
   _closeEdit() {
     if (!this._editing) return
-    const { axisId, end, input } = this._editing
+    const { box, onOutsideDown } = this._editing
     this._editing = null
-    const box = this._boxesFor(axisId)[end]
-    input.remove()
-    box.style.borderColor = ""
-    box.style.cursor = "text"
-    box.title = BOX_TITLE
-    this._hide()
+    document.removeEventListener("mousedown", onOutsideDown, true)
+    box.remove()
   }
 }

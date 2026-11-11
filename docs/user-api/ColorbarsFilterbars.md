@@ -27,7 +27,7 @@ Accepted values: `"horizontal"`, `"vertical"`, `"none"` (default). Calling `upda
 
 The auto-created widgets are [`Float`](../user-api/Widgets.md#float) instances — draggable, resizable floating panels positioned inside the plot's container — wrapping a `Colorbar` or `Filterbar` as appropriate.
 
-Zooming or panning a colorbar changes the color range; zooming a filterbar changes the filter bounds. To set either exactly, point at the bar's tick labels and click one of its two end values to [type it](../configuration/PlotConfiguration.md#typed-axis-limits).
+Zooming or panning a colorbar changes the color range; zooming a filterbar changes the filter bounds. To set either exactly, double-click one of the bar's ends to [type its value](../configuration/PlotConfiguration.md#typed-axis-limits).
 
 ---
 

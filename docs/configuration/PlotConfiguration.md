@@ -299,16 +299,16 @@ A zoomed or panned range is written into `axes` (as `min` and `max`) and is retu
 
 ## Typed Axis Limits
 
-The two ends of every 2D spatial axis can be typed exactly, which is quicker than zooming to a round number:
+The ends of every spatial axis can be typed exactly, which is quicker than zooming to a round number. This works in both 2D and 3D:
 
-- **Show:** point at an axis's label band (the margin beside the axis). Two small boxes appear at the ends of that axis, on the tick-label row, holding its end values.
-- **Type:** click a box and type a number. E-notation works (`1e-4`).
-- **Keys:** Enter sets the value, Tab sets it and moves to the other end, and Escape cancels. Clicking elsewhere sets a valid value and drops an invalid one.
-- **Which end is which:** the bottom or left box is the axis's `min` (the domain's first value), the top or right box its `max`.
+- **Open:** double-click an axis band (the margin beside the axis). One text field opens, at the end nearest the click, holding that end's current value.
+- **Type:** type a number. E-notation works (`1e-4`).
+- **Keys:** Enter sets the value and closes, Tab sets it and moves to the other end, and Escape cancels. Clicking elsewhere sets a valid value and drops an invalid one.
+- **Which end:** the end nearest the click. The bottom or left end is the axis's `min` (the domain's first value), the top or right end its `max`; which the field edits is decided by the click's position along the axis, so it stays right on reversed and log axes.
 
-A typed value is refused, with the reason in the box's tooltip, if it is not a number, if it equals the other end, if it would flip the axis (so a reversed axis such as `{ min: 10, max: 1 }` stays reversed), or if it is zero or below on a log axis.
+A typed value is refused, with the reason in the field's tooltip, if it is not a number, if it equals the other end (which would collapse the axis to zero width), or if it is zero or below on a log axis. Crossing the other end is allowed — that reverses the axis, which gladly supports (a domain like `{ min: 10, max: 1 }` just renders from 10 down to 1).
 
-The value is set through `Axis.setDomain()`, the same path zoom and pan take, so it lands in `axes` like a zoomed range, and linked axes follow. Colorbar and filterbar floats are plots of their own, so their ends can be typed too, and that sets the color range or filter bounds of the plot they belong to. Each typed value fires an [`"axislimit"`](../user-api/Plot.md#synthetic-plot-events) event on the plot. 3D plots have no typed limits.
+The value is set through `Axis.setDomain()`, the same path zoom and pan take, so it lands in `axes` like a zoomed range, and linked axes follow. Colorbar and filterbar floats are plots of their own, so their ends can be typed too, and that sets the color range or filter bounds of the plot they belong to. Each typed value fires an [`"axislimit"`](../user-api/Plot.md#synthetic-plot-events) event on the plot. In 3D, only the front-facing axes are clickable (the same ones pan responds to); starting a rotation dismisses an open field.
 
 ---
 
