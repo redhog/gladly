@@ -1,6 +1,12 @@
-import { Plot, PlotGroup } from "../src/index.js"
+import { Plot, PlotGroup, LASSO_MODES } from "../src/index.js"
 import { JSONEditor } from '@json-editor/json-editor'
 import { data as dataPromise, showStatus } from "./shared.js"
+
+// Dropdown offering every selection shape; drives plot.setLassoMode() at run time.
+const lassoModeSelect = (id) => `
+  <select id="${id}" title="Lasso selection shape" style="width:auto;margin:0;">
+    ${LASSO_MODES.map(m => `<option value="${m}">${m[0].toUpperCase() + m.slice(1)}</option>`).join('')}
+  </select>`
 
 {
   const panel = document.createElement('div')
@@ -11,14 +17,20 @@ import { data as dataPromise, showStatus } from "./shared.js"
       <div>
         <div class="plot-header">
           <h3>Plot 1 (Bottom X-Axis)</h3>
-          <button id="tab1-edit-plot1-btn">Edit This Plot</button>
+          <div style="display:flex;align-items:center;gap:8px;">
+            ${lassoModeSelect('tab1-lasso-plot1')}
+            <button id="tab1-edit-plot1-btn">Edit This Plot</button>
+          </div>
         </div>
         <div id="tab1-plot1" class="plot-panel active"></div>
       </div>
       <div>
         <div class="plot-header">
           <h3>Plot 2 (Top X-Axis - Linked to Plot 1)</h3>
-          <button id="tab1-edit-plot2-btn">Edit This Plot</button>
+          <div style="display:flex;align-items:center;gap:8px;">
+            ${lassoModeSelect('tab1-lasso-plot2')}
+            <button id="tab1-edit-plot2-btn">Edit This Plot</button>
+          </div>
         </div>
         <div id="tab1-plot2" class="plot-panel"></div>
       </div>
@@ -285,6 +297,14 @@ document.getElementById('tab1-edit-plot1-btn').addEventListener('click', () => {
 
 document.getElementById('tab1-edit-plot2-btn').addEventListener('click', () => {
   switchToPlot('plot2')
+})
+
+document.getElementById('tab1-lasso-plot1').addEventListener('change', (e) => {
+  plot1.setLassoMode(e.target.value)
+})
+
+document.getElementById('tab1-lasso-plot2').addEventListener('change', (e) => {
+  plot2.setLassoMode(e.target.value)
 })
 
 plot1.onZoomEnd(() => {
