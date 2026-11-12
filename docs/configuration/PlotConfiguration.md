@@ -295,6 +295,8 @@ Gladly supports interactive zoom and pan out of the box:
 
 A zoomed or panned range is written into `axes` (as `min` and `max`) and is returned by `getConfig()`.
 
+While `update()` is still building a plot, wheel, drag, touch and axis-limit input on that plot is ignored, since its axes do not have their ranges yet. A range that a linked axis sets on it meanwhile is kept when the update finishes.
+
 ---
 
 ## Typed Axis Limits
