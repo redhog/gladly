@@ -282,6 +282,10 @@ plot.update({
 })
 ```
 
+In a 2D plot, layers draw in the order they are listed, so where two layers overlap the later one is on top. 3D plots use the depth test instead.
+
+All layers on one axis must have the same quantity kind. A layer whose quantity kind differs from the one an earlier layer put on that axis is skipped and reported through the plot's `error` event (see `plot.on('error', callback)`); the other layers still draw.
+
 ---
 
 ## Zoom and Pan
