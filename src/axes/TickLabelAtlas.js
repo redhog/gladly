@@ -19,6 +19,33 @@ export class TickLabelAtlas {
     this._needsRebuild = false
   }
 
+  // A canvas 2D context with the atlas font set, for measuring strings before (or
+  // without) packing them. Created lazily; reused for packing in flush().
+  _ensureCtx() {
+    if (!this._canvas) {
+      this._canvas = document.createElement('canvas')
+      this._canvas.width  = ATLAS_SIZE
+      this._canvas.height = ATLAS_SIZE
+      this._ctx = this._canvas.getContext('2d')
+    }
+    this._ctx.font = FONT
+    return this._ctx
+  }
+
+  // The rendered pixel size of a string — the same { pw, ph } a packed entry gets —
+  // measured from the atlas font. Lets callers size layout to the real font metrics
+  // (not a hard-coded line height) without the string being in the atlas yet.
+  measure(text) {
+    const ctx = this._ensureCtx()
+    return { pw: Math.ceil(ctx.measureText(text).width) + PADDING * 2, ph: ROW_HEIGHT + PADDING * 2 }
+  }
+
+  // The rendered height of one text line in px (every entry's ph), and the padding
+  // used as the small inter-band gap. Both come from the atlas font, not a constant
+  // in the axis code.
+  get lineHeight() { return ROW_HEIGHT + PADDING * 2 }
+  get gap()        { return PADDING }
+
   // Mark a set of label strings as needed. Call before flush().
   markLabels(labels) {
     for (const l of labels) {
@@ -34,16 +61,8 @@ export class TickLabelAtlas {
     if (!this._needsRebuild) return
     this._needsRebuild = false
 
-    if (!this._canvas) {
-      this._canvas = document.createElement('canvas')
-      this._canvas.width  = ATLAS_SIZE
-      this._canvas.height = ATLAS_SIZE
-      this._ctx = this._canvas.getContext('2d')
-    }
-
-    const ctx = this._ctx
+    const ctx = this._ensureCtx()
     ctx.clearRect(0, 0, ATLAS_SIZE, ATLAS_SIZE)
-    ctx.font         = FONT
     ctx.fillStyle    = '#000'
     ctx.textBaseline = 'top'
 

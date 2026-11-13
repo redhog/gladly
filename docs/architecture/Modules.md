@@ -131,7 +131,9 @@ this._renderCallbacks    // Set<function> — called after each _drawSync()
 
 **`_setDomains(axesOverrides)`** — Computes auto-domains from layer data for spatial, color, and filter axes; applies any config overrides.
 
-**`_layoutMargin()`** — Called by `_initialize()` once the layers have registered their axes. Sets `this.margin` side by side: the constructor's `margin` where the side draws a 2D axis, `marginWithoutAxis` where it draws none (no layer uses the axis, or it has `visible: false`); a 3D plot keeps `margin` on every side. Then recomputes `plotWidth`/`plotHeight` and passes them to `axisRegistry.resize()`.
+**`_layoutMargin()`** — Called by `_initialize()` once the layers have registered their axes. Sets `this.margin` side by side: the constructor's `margin` where the side draws a 2D axis, `marginWithoutAxis` where it draws none (no layer uses the axis, or it has `visible: false`); a 3D plot keeps `margin` on every side. Where the side draws an axis but a part is hidden, it starts from `margin` and gives back that part's band — the title band for `titleVisible: false`, the tick-label band for `tickLabelsVisible: false` — never dropping below `marginWithoutAxis`. The band sizes come from the rendered font via `Axis.titleBandPx(atlas)` / `tickLabelBandPx(atlas)` (which read `TickLabelAtlas.measure` / `.lineHeight` / `.gap`), not hard-coded constants; the y-axis label band is the widest rendered tick-label width, so it is wider than the x-axis label band (a label height). This is why the atlas is built just before `_layoutMargin()`. Then recomputes `plotWidth`/`plotHeight` and passes them to `axisRegistry.resize()`.
+
+**`isAxisLocked(slot)` / `setAxisLocked(slot, on)` / `resetAxes()`** — The range lock lives only in the per-slot `locked` key. `isAxisLocked` is a derived read (the slot, or a same-quantity-kind sibling of this plot; never follows links). `setAxisLocked` writes `locked` into `currentConfig.axes[slot]` (clearing same-QK siblings on turn-off) and re-renders without `update()`. `resetAxes()` loops the 2D spatial axes with a scale, skips locked ones, and calls `setDomain(null)`; a no-op in 3D. `_axisConfig(slot)` factors the per-slot merge out of `getConfig()` so `Axis.getConfig()` can share it.
 
 **`scheduleRender()`** — Throttle-checks then calls `getMasterCanvas().schedulePlotRender(this)`.
 
@@ -246,11 +248,12 @@ this._renderCallbacks    // Set<function> — called after each _drawSync()
 **Pattern:** Observer (subscribe/notify)
 
 **Key behaviour:**
-- `getDomain()` / `setDomain(domain)` — read and write the axis range on the owning plot
+- `getDomain()` / `setDomain(domain)` — read and write the axis range on the owning plot. `setDomain(null)` resets to the data range: it resolves the marker to concrete numbers from `axisRegistry.getDataExtent(qk)` (reversed/log aware) at the entry point, then behaves as a normal `setDomain`, so listeners and linked axes receive resolved numbers
 - `subscribe(callback)` / `unsubscribe(callback)` — register for domain-change notifications
 - Re-entrancy guard prevents infinite loops when axes are linked bidirectionally
 - Works for spatial axes (e.g. `"xaxis_bottom"`), color axes, and filter axes via a unified `Plot.getAxisDomain` / `Plot.setAxisDomain` interface
-- `render()` — renders the D3 axis ticks and label into the SVG (no-op for non-spatial axes)
+- `render()` / `prepareAtlas()` — draw the axis line, tick marks, tick labels and title as WebGL lines + atlas billboards (no-op for non-spatial or `visible: false` axes). In 2D the three bands sit at pixel distances outward from the axis line, converted to model units via the axis's screen scale: the tick band is the one fixed length (`TICK_BAND_PX`), while the label and title bands are **read from the rendered font** via `tickLabelBandPx(atlas)` / `titleBandPx(atlas)` (which call `TickLabelAtlas.measure` / `.lineHeight` / `.gap`), so placement is font-size-correct rather than pinned to a line-height constant. `tickLabelsVisible: false` / `titleVisible: false` skip the labels / title (and free their margin band via `Plot._layoutMargin()`). A **locked** axis (read live via `plot.isAxisLocked`) draws its line red and a lock glyph beside the title; the red line is independent of the labels and title. `labelAnchorPx(atlas)` / `titleBandStartPx(atlas)` are used by `ZoomController` to place the limit-edit boxes on the tick-label row and to detect the title band
+- `getConfig()` / `setConfig(cfg)` / static `Axis.schema()` — per-axis counterparts of `plot.getConfig()`, `plot.update({config})` and static `Plot.schema()`; `getConfig()` returns the merged per-slot config (`plot._axisConfig(slot)`), deep-equal to `plot.getConfig().axes[slot]`
 
 Obtained via `plot.axes[axisName]`.
 
@@ -272,7 +275,7 @@ this.axisQuantityKinds = {} // { axisName: quantityKind }
 - Creates a D3 scale (linear or log) if the axis doesn't exist yet
 - Throws if the axis already exists with a different quantity kind
 
-**`applyAutoDomainsFromLayers(layers, axesOverrides)`** — Scans all layers to compute per-axis min/max; applies config overrides; validates log-scale domains.
+**`applyAutoDomainsFromLayers(layers, axesOverrides)`** — Scans all layers to compute per-axis min/max; applies config overrides; validates log-scale domains. Stores the raw data extent (`dataExtent`) for **every** quantity kind, not only filter axes, so `Axis.setDomain(null)` / `Plot.resetAxes()` and the Filterbar can read it via `getDataExtent(qk)`.
 
 **`resize(width, height)`** — Sets a new plot-area size in px and moves the range of every spatial scale to match. Called by `Plot._layoutMargin()`, because the margins, and so the plot area, are only known after the layers have registered their axes.
 
@@ -320,13 +323,15 @@ These files are stubs (`// Merged into AxisRegistry.js`). All color and filter a
 
 Attached to the plot SVG during `_initialize()`. Detects which region the gesture starts in (plot area, or an individual axis margin) and updates only the relevant D3 scales. Uses cursor-anchored zoom: the data value under the cursor stays fixed as the scale is expanded/contracted. Works in log space for log-scale axes.
 
+Each gesture loop (mouse-drag, touch-drag, touch-zoom, wheel) **skips a locked axis** (`plot.isAxisLocked`) before calling `setDomain`, so free axes of the same gesture still move; this covers 2D and 3D alike (3D rotation never calls `setDomain`, so locks do not touch it). A plain left **click** on an axis title — mousedown then mouseup with movement under `CLICK_SLOP_PX` — toggles that axis's lock on mouseup via `plot.setAxisLocked`; a drag past the slop pans/rotates instead. `_titleBandHit()` resolves the 2D title band (the outer strip of the margin, beyond the tick and label bands, of a side whose title is drawn); `_resolveTitleToggleTarget()` uses it in 2D and a single resolved axis with a drawn title in 3D.
+
 ---
 
 ### `axes/AxisLimitEditor.js`
 
 **Purpose:** Lets the user type the end values of each spatial axis, in 2D and 3D.
 
-Created once per plot in `_initialize()`, beside the `ZoomController`, and removed in `destroy()`. It listens for `dblclick` on the plot canvas and asks `ZoomController._getRegion()` (2D and 3D alike) whether the click is on an axis band; if so it picks the end nearest the click from the sign of the click's `_unproject`ed position along the axis direction, and opens one absolutely positioned DOM box with a text field there, placed by `ZoomController.axisEndScreenPos()` (which uses `TICK_LABEL_FRAC` from `Axis.js` in 2D and the projected endpoint in 3D), pre-filled with that end's value formatted via `formatTick`. A valid value is set with `plot._getAxis(id).setDomain()`, the zoom path, so links and floats follow, and the plot then fires `"axislimit"` through `plot._emitAxisLimit()`. The box carries `data-gladly-control`, which `Plot.on()` uses to leave its DOM events out of plot events.
+Created once per plot in `_initialize()`, beside the `ZoomController`, and removed in `destroy()`. It listens for `dblclick` on the plot canvas and asks `ZoomController._getRegion()` (2D and 3D alike) whether the click is on an axis band; if so it picks the end nearest the click from the sign of the click's `_unproject`ed position along the axis direction, and opens one absolutely positioned DOM box with a text field there, placed by `ZoomController.axisEndScreenPos()` (which uses `labelBandCenterPx()` from `Axis.js` in 2D and the projected endpoint in 3D), pre-filled with that end's value formatted via `formatTick`. A valid value is set with `plot._getAxis(id).setDomain()`, the zoom path, so links and floats follow, and the plot then fires `"axislimit"` through `plot._emitAxisLimit()`. The box carries `data-gladly-control`, which `Plot.on()` uses to leave its DOM events out of plot events.
 
 **`parseAxisLimit(text, other, isLog)`** — the validation rule, exported for tests: returns `{ value }` or `{ error }`. A value must be a finite number, differ from the other end (an equal value would collapse the axis to zero width), and be above zero on a log axis. Crossing the other end is allowed — it reverses the axis, a state gladly supports.
 

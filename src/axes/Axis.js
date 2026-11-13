@@ -1,6 +1,7 @@
 import { AXIS_GEOMETRY, axisEndpoints, axisPosAtN } from "./AxisRegistry.js"
 import { getAxisQuantityKind } from "./AxisQuantityKindRegistry.js"
 import { projectToScreen } from "../math/mat4.js"
+import { Plot } from "../core/Plot.js"
 
 // ─── Tick formatting (same logic as before) ───────────────────────────────────
 
@@ -55,11 +56,13 @@ const LABEL_DIST_3D = 0.12
 const TITLE_EXTRA_3D = 0.14   // extra outward offset for axis title beyond LABEL_DIST_3D
 const TITLE_LINE_STEP_3D = 0.05  // multi-line title step in model space
 
-// 2D: fractions of the pixel distance from the axis to the nearest canvas edge
-const TICK_LEN_FRAC          = 0.12
-export const TICK_LABEL_FRAC = 0.40
-const AXIS_TITLE_FRAC        = 0.75
-const TITLE_LINE_SPACING_FRAC = 0.12
+// 2D axis bands sit at pixel distances outward from the axis line. Only the tick band
+// is a genuinely fixed drawn line; the tick-label and title band sizes are read from
+// the rendered font via the atlas (TickLabelAtlas.measure / .lineHeight / .gap) — see
+// Axis.tickLabelBandPx() / titleBandPx() — never hard-coded, so the layout is correct
+// at any font size instead of pinned to a line-height assumption.
+export const TICK_BAND_PX = 6
+export const LOCK_GLYPH = '🔒'
 
 /**
  * An Axis represents a single data axis on a plot.
@@ -86,8 +89,15 @@ export class Axis {
 
   getDomain() { return this._plot.getAxisDomain(this._name) }
 
+  // setDomain(null) — or an absent domain — resets this axis to its data range,
+  // resolved to concrete numbers here (never the marker), so listeners and linked axes
+  // receive this axis's resolved range rather than re-resolving against their own data.
   setDomain(domain, { sourcePlot = null } = {}) {
     if (this._propagating) return
+    if (domain == null) {
+      domain = this._resolveDataDomain()
+      if (domain == null) return   // no data extent to reset to
+    }
     this._propagating = true
     try {
       this._plot.setAxisDomain(this._name, domain)
@@ -98,8 +108,57 @@ export class Axis {
     }
   }
 
+  // Resolve the setDomain(null) marker to this axis's data range (the data extent of
+  // its quantity kind). Keeps a reversed axis reversed and a log axis above zero, as
+  // auto-fit does. Returns null when there is no stored data extent.
+  _resolveDataDomain() {
+    const qk = this.quantityKind
+    if (!qk) return null
+    const ext = this._plot.axisRegistry?.getDataExtent(qk)
+    if (!ext) return null
+    let min = ext[0], max = ext[1]
+    const cur = this.getDomain()
+    if (cur && cur[0] > cur[1]) { const t = min; min = max; max = t }
+    if (this._plot.axisRegistry.isLogScale?.(this._name) && min <= 0) min = Number.MIN_VALUE
+    return [min, max]
+  }
+
   subscribe(callback)   { this._listeners.add(callback) }
   unsubscribe(callback) { this._listeners.delete(callback) }
+
+  // ─── Atlas-derived 2D band sizes (outward px from the axis line) ─────────────
+
+  // Tick-label band: the rendered label height for a horizontal (x) axis, the widest
+  // rendered label width for a vertical (y) axis — both measured from the atlas font.
+  tickLabelBandPx(atlas) {
+    const scale = this._plot.axisRegistry?.getScale(this._name)
+    if (!scale || !atlas) return 0
+    if (AXIS_GEOMETRY[this._name].dir !== 'y') return atlas.lineHeight + atlas.gap
+    let maxW = 0
+    for (const t of this._computeTicks(scale, 6)) {
+      const w = atlas.measure(formatTick(t)).pw
+      if (w > maxW) maxW = w
+    }
+    return maxW + atlas.gap
+  }
+
+  // Title band: the rendered title height × its line count, measured from the atlas.
+  titleBandPx(atlas) {
+    if (!atlas) return 0
+    const qk = this._plot.axisRegistry?.getQkForSlot(this._name)
+    if (!qk) return 0
+    const cfg = this._plot.currentConfig?.axes?.[this._name] ?? {}
+    const label = cfg.label ?? getAxisQuantityKind(qk).label
+    if (!label) return 0
+    const lines = String(label).split('\n').length
+    return atlas.lineHeight * lines + atlas.gap
+  }
+
+  // Outward px to the centre of the tick-label band (where label billboards anchor).
+  labelAnchorPx(atlas) { return TICK_BAND_PX + this.tickLabelBandPx(atlas) / 2 }
+
+  // Outward px where the title band starts (beyond the tick and label bands).
+  titleBandStartPx(atlas) { return TICK_BAND_PX + this.tickLabelBandPx(atlas) }
 
   // ─── WebGL rendering ───────────────────────────────────────────────────────
 
@@ -108,21 +167,26 @@ export class Axis {
   prepareAtlas(atlas, axisMvp, cw, ch) {
     if (!this.isSpatial) return
     const { axisRegistry, currentConfig } = this._plot
-    if (currentConfig?.axes?.[this._name]?.visible === false) return
+    const axisConfig = currentConfig?.axes?.[this._name] ?? {}
+    if (axisConfig.visible === false) return
     const scale = axisRegistry.getScale(this._name)
     if (!scale) return
 
-    const screenLen = this._projectedLength(axisMvp, cw, ch)
-    const pxPerTick = AXIS_GEOMETRY[this._name].dir === 'y' ? 27 : 40
-    const tickCount = Math.max(2, Math.floor(screenLen / pxPerTick))
-    const ticks     = this._computeTicks(scale, tickCount)
-    atlas.markLabels(ticks.map(t => formatTick(t)))
+    if (axisConfig.tickLabelsVisible !== false) {
+      const screenLen = this._projectedLength(axisMvp, cw, ch)
+      const pxPerTick = AXIS_GEOMETRY[this._name].dir === 'y' ? 27 : 40
+      const tickCount = Math.max(2, Math.floor(screenLen / pxPerTick))
+      const ticks     = this._computeTicks(scale, tickCount)
+      atlas.markLabels(ticks.map(t => formatTick(t)))
+    }
 
     const qk = axisRegistry.getQkForSlot(this._name)
-    if (qk) {
-      const axisConfig = currentConfig?.axes?.[this._name] ?? {}
+    if (qk && axisConfig.titleVisible !== false) {
       const unitLabel  = axisConfig.label ?? getAxisQuantityKind(qk).label
-      if (unitLabel) atlas.markLabels(String(unitLabel).split('\n'))
+      if (unitLabel) {
+        atlas.markLabels(String(unitLabel).split('\n'))
+        if (this._plot.isAxisLocked?.(this._name)) atlas.markLabels([LOCK_GLYPH])
+      }
     }
   }
 
@@ -193,10 +257,22 @@ export class Axis {
    */
   render(regl, axisMvp, cw, ch, is3D, atlas, lineCmd, billboardCmd, viewportOrigin = { x: 0, y: 0 }) {
     if (!this.isSpatial) return
+    // Reset per-render cue diagnostics before any early return, so a whole-hidden
+    // axis reports no line colour and no drawn parts.
+    this._lastLineColor = null
+    this._lastDrewLabels = false
+    this._lastDrewTitle = false
+    this._lastDrewLockGlyph = false
+
     const { axisRegistry, currentConfig } = this._plot
-    if (currentConfig?.axes?.[this._name]?.visible === false) return
+    const axisConfig = currentConfig?.axes?.[this._name] ?? {}
+    if (axisConfig.visible === false) return
     const scale = axisRegistry.getScale(this._name)
     if (!scale) return
+
+    // A locked axis draws its line red; this cue is independent of the labels and
+    // the title, so it survives tickLabelsVisible/titleVisible being false.
+    const locked = !!this._plot.isAxisLocked?.(this._name)
 
     const geom   = AXIS_GEOMETRY[this._name]
     const isLog  = typeof scale.base === 'function'
@@ -216,20 +292,15 @@ export class Axis {
 
     let tickModelLen, labelModelDist, titleModelDist, titleLineStep
     if (!is3D && midS && pxPerModelUnit > 0) {
-      // In 2D: make all offsets proportional to the pixel distance from the axis
-      // to the nearest canvas edge (i.e. the margin width in pixels).
-      const tx = outDir[0] > 1e-6 ? (cw - midS[0]) / outDir[0]
-               : outDir[0] < -1e-6 ? -midS[0]        / outDir[0]
-               : Infinity
-      const ty = outDir[1] > 1e-6 ? (ch - midS[1]) / outDir[1]
-               : outDir[1] < -1e-6 ? -midS[1]        / outDir[1]
-               : Infinity
-      const distToEdge = Math.max(4, Math.min(tx, ty))
-      const scale2d    = distToEdge / pxPerModelUnit
-      tickModelLen   = TICK_LEN_FRAC          * scale2d
-      labelModelDist = TICK_LABEL_FRAC        * scale2d
-      titleModelDist = AXIS_TITLE_FRAC        * scale2d
-      titleLineStep  = TITLE_LINE_SPACING_FRAC * scale2d
+      // In 2D: place each part at a pixel distance outward from the axis line,
+      // converted to model units via the axis's screen scale. The tick band is fixed;
+      // the label and title bands are read from the rendered font via the atlas.
+      const toModel   = (px) => px / pxPerModelUnit
+      const labelBand = this.tickLabelBandPx(atlas)
+      tickModelLen   = toModel(TICK_BAND_PX)
+      labelModelDist = toModel(TICK_BAND_PX + labelBand / 2)
+      titleModelDist = toModel(TICK_BAND_PX + labelBand + atlas.lineHeight / 2)
+      titleLineStep  = toModel(atlas.lineHeight)
     } else {
       // In 3D: fixed model-space offsets (original behaviour).
       tickModelLen   = TICK_LEN_3D
@@ -264,19 +335,22 @@ export class Axis {
 
     const fullViewport = { x: viewportOrigin.x, y: viewportOrigin.y, width: cw, height: ch }
 
+    const lineColor = locked ? [0.85, 0.10, 0.10, 1] : [0, 0, 0, 1]
+    this._lastLineColor = lineColor
     lineCmd({
       positions: new Float32Array(lineVerts),
       mvp:       axisMvp,
-      color:     [0, 0, 0, 1],
+      color:     lineColor,
       viewport:  fullViewport,
       count:     lineVerts.length / 3,
       depthEnable: is3D,
     })
 
     // ── 3. Tick labels ──────────────────────────────────────────────────────
+    if (!atlas.texture) return
     const labels = ticks.map(t => formatTick(t))
 
-    if (!atlas.texture) return
+    if (axisConfig.tickLabelsVisible !== false) {
 
     // Compute label anchor positions in model space and project to screen.
     const anchors3D = ticks.map((t) => {
@@ -327,12 +401,14 @@ export class Axis {
         count:      aAnchor.length / 3,
         depthEnable: is3D,
       })
+      this._lastDrewLabels = true
     }
+    } // end tickLabelsVisible
 
     // ── 4. Axis title ───────────────────────────────────────────────────────
     const qk        = axisRegistry.getQkForSlot(this._name)
     if (!qk) return
-    const axisConfig = currentConfig?.axes?.[this._name] ?? {}
+    if (axisConfig.titleVisible === false) return
     const unitLabel  = axisConfig.label ?? getAxisQuantityKind(qk).label
     if (!unitLabel) return
 
@@ -345,37 +421,38 @@ export class Axis {
       mid3D[2] + ow[2] * titleModelDist,
     ]
 
+    // Rotate the title 90° CW when the axis is more vertical than horizontal in
+    // screen space (works for 2D and 3D). Rotation: (ox, oy) → (oy, -ox).
+    const sStart = projectToScreen(start, axisMvp, cw, ch)
+    const sEnd   = projectToScreen(end,   axisMvp, cw, ch)
+    const axisDx = sEnd && sStart ? sEnd[0] - sStart[0] : 0
+    const axisDy = sEnd && sStart ? sEnd[1] - sStart[1] : 0
+    const isVertical = Math.abs(axisDy) > Math.abs(axisDx)
+    const rotate = ([ox, oy, tu, tv]) => isVertical ? [oy, -ox, tu, tv] : [ox, oy, tu, tv]
+
     const titleAnchor = [], titleOffsets = [], titleUVs = []
     let lineOffset = 0
-    for (const line of titleLines) {
-      const entry = atlas.getEntry(line)
+    let firstLineHw = 0   // half-width of line 0, to place the lock glyph at its end
+    for (let li = 0; li < titleLines.length; li++) {
+      const entry = atlas.getEntry(titleLines[li])
       if (!entry) continue
       const { pw, ph, u, v, uw, vh } = entry
       const hw = pw / 2, hh = ph / 2
+      if (li === 0) firstLineHw = hw
       // Shift successive lines along the outward screen direction
       const anchor3D = [
         titleAnchorBase[0] + ow[0]*lineOffset,
         titleAnchorBase[1] + ow[1]*lineOffset,
         titleAnchorBase[2] + ow[2]*lineOffset,
       ]
-      const rawCorners = [
+      const corners = [
         [-hw, -hh, u,    v   ],
         [+hw, -hh, u+uw, v   ],
         [-hw, +hh, u,    v+vh],
         [+hw, -hh, u+uw, v   ],
         [+hw, +hh, u+uw, v+vh],
         [-hw, +hh, u,    v+vh],
-      ]
-      // Rotate the title 90° CW when the axis is more vertical than horizontal
-      // in screen space (works for 2D and 3D).  Rotation: (ox, oy) → (oy, -ox)
-      const sStart = projectToScreen(start, axisMvp, cw, ch)
-      const sEnd   = projectToScreen(end,   axisMvp, cw, ch)
-      const axisDx = sEnd ? sEnd[0] - sStart[0] : 0
-      const axisDy = sEnd ? sEnd[1] - sStart[1] : 0
-      const isVertical = Math.abs(axisDy) > Math.abs(axisDx)
-      const corners = isVertical
-        ? rawCorners.map(([ox, oy, tu, tv]) => [oy, -ox, tu, tv])
-        : rawCorners
+      ].map(rotate)
       for (const [ox, oy, tu, tv] of corners) {
         titleAnchor.push(...anchor3D)
         titleOffsets.push(ox, oy)
@@ -396,6 +473,73 @@ export class Axis {
         count:      titleAnchor.length / 3,
         depthEnable: is3D,
       })
+      this._lastDrewTitle = true
     }
+
+    // ── 5. Lock glyph ─────────────────────────────────────────────────────────
+    // A small glyph at the end of the title text, on the same line (same outward
+    // distance as the title, shifted along the text direction past its last glyph).
+    // Drawn only where the title is drawn. Purely visual — it reflects the lock, it
+    // does not set it (the red line is the cue that always shows).
+    if (locked) {
+      const entry = atlas.getEntry(LOCK_GLYPH)
+      if (entry) {
+        const { pw, ph, u, v, uw, vh } = entry
+        const hw = pw / 2, hh = ph / 2
+        // Centre the glyph just past the end of the first title line, in the text's
+        // reading direction (local +ox), then share the title's rotation + anchor.
+        const endX = firstLineHw + atlas.gap + hw
+        const corners = [
+          [endX - hw, -hh, u,    v   ],
+          [endX + hw, -hh, u+uw, v   ],
+          [endX - hw, +hh, u,    v+vh],
+          [endX + hw, -hh, u+uw, v   ],
+          [endX + hw, +hh, u+uw, v+vh],
+          [endX - hw, +hh, u,    v+vh],
+        ].map(rotate)
+        const gA = [], gO = [], gU = []
+        for (const [ox, oy, tu, tv] of corners) { gA.push(...titleAnchorBase); gO.push(ox, oy); gU.push(tu, tv) }
+        billboardCmd({
+          anchors:    new Float32Array(gA),
+          offsetsPx:  new Float32Array(gO),
+          uvs:        new Float32Array(gU),
+          mvp:        axisMvp,
+          canvasSize: [cw, ch],
+          atlas:      atlas.texture,
+          viewport:   fullViewport,
+          count:      gA.length / 3,
+          depthEnable: is3D,
+        })
+        this._lastDrewLockGlyph = true
+      }
+    }
+  }
+
+  // ─── Per-axis config / schema accessors (counterparts of the Plot methods) ───
+
+  // The merged per-slot config for this axis — identical to
+  // plot.getConfig().axes[slot] (the governing round-trip invariant), not the raw
+  // currentConfig.axes[slot] override slice.
+  getConfig() {
+    const plot = this._plot
+    if (plot._axisConfig && plot.axisRegistry?.getScale?.(this._name)) {
+      return plot._axisConfig(this._name)
+    }
+    return plot.getConfig?.().axes?.[this._name] ?? { ...(plot.currentConfig?.axes?.[this._name] ?? {}) }
+  }
+
+  // Writes cfg as this axis's axes.<slot> object and re-applies through the plot's
+  // normal config path, so every key takes effect.
+  async setConfig(cfg) {
+    const plot = this._plot
+    const config = plot.currentConfig ?? {}
+    const axes = { ...(config.axes ?? {}), [this._name]: cfg }
+    await plot.update({ config: { ...config, axes } })
+  }
+
+  // The JSON Schema fragment governing one axis config — the same for every axis,
+  // so it is static and takes no arguments (mirrors the static Plot.schema()).
+  static schema() {
+    return Plot.schema().properties.axes.additionalProperties
   }
 }

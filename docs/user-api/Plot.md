@@ -18,7 +18,7 @@ new Plot(container, { margin, marginWithoutAxis } = {})
 
 ### Margins
 
-An axis draws its tick labels and title in the margin on its side, at fixed fractions of that margin's width (tick labels at 0.40, the title at 0.75), so a side with an axis needs the full `margin`. A side with no axis only needs room for the end labels of the axes beside it, which reach past the corners of the plot area. `marginWithoutAxis` sets that smaller room, so a plot that draws only a bottom and a left axis does not keep a full axis margin of empty space above and to the right of its data:
+An axis draws its tick marks, tick labels and title in three bands at **fixed pixel distances** outward from the axis line (not fractions of the margin): a tick band, the tick-label band, then the title band at the outer edge. The band sizes are read from the label atlas, so they stay correct at any font size. A side drawing all three parts needs the full `margin`. A side with no axis only needs room for the end labels of the axes beside it, which reach past the corners of the plot area. `marginWithoutAxis` sets that smaller room, so a plot that draws only a bottom and a left axis does not keep a full axis margin of empty space above and to the right of its data:
 
 ```javascript
 const plot = new Plot(container, {
@@ -27,7 +27,7 @@ const plot = new Plot(container, {
 })
 ```
 
-A side counts as drawing an axis when a layer uses that axis and the axis is not hidden with `visible: false` in `config.axes`. This is decided again at every `update()`, so moving a layer to `yaxis_right`, or hiding an axis, changes the margins with it. A 3D plot uses `margin` on every side.
+A side counts as drawing an axis when a layer uses that axis and the axis is not hidden with `visible: false` in `config.axes`. **Hiding a single part gives its band back too**: with `titleVisible: false` the side loses its title band, with `tickLabelsVisible: false` it loses its label band — never dropping below `marginWithoutAxis` for that side (see [Axis-part visibility](../configuration/PlotConfiguration.md#axis-part-visibility)). This is decided again at every `update()`, so moving a layer to `yaxis_right`, or hiding an axis or one of its parts, changes the margins with it. A 3D plot uses `margin` on every side.
 
 ---
 
@@ -91,7 +91,21 @@ The returned object is a shallow copy of the last config passed to `update()`, w
 - **Color axes**: `min`/`max` reflect the current color range.
 - **Filter axes**: `min`/`max` reflect the current filter bounds (either bound may be `null` for open ranges).
 
-The result can be passed back to `update({ config })` to restore the exact current view, or serialised for state-saving / cross-plot synchronisation.
+The result can be passed back to `update({ config })` to restore the exact current view, or serialised for state-saving / cross-plot synchronisation. The axis-part keys `visible`, `tickLabelsVisible`, `titleVisible` and `locked` round-trip through it as well (see [PlotConfiguration](../configuration/PlotConfiguration.md#axis-part-visibility)).
+
+### `resetAxes()`
+
+Resets the 2D spatial axes to their data range (via `axis.setDomain(null)` on each). Color and filter axes are left alone, and **locked axes are skipped**. On a 3D plot it does nothing (reset is 2D-only). A reversed axis stays reversed and a log axis stays above zero.
+
+### `isAxisLocked(slot)`
+
+Returns `true` when `slot` holds the range lock, or when another slot **of this same plot** with the same quantity kind holds it (slots that share a quantity kind are one axis to the user, so they share one lock). It does **not** follow `linkAxes` — the lock is local to one plot and never consults another.
+
+### `setAxisLocked(slot, on)`
+
+Turns the range lock on or off. Writes the `locked` key into `axes.<slot>` — setting it on the slot when turning on, clearing it on the slot and every same-quantity-kind sibling of this plot when turning off — then **re-renders without `update()`** (no layer rebuild). It touches only this plot's config, so the change round-trips through `getConfig()` with no extra work.
+
+A locked axis ignores zoom, pan and scroll gestures (on any plot, 2D or 3D), and `resetAxes()` skips it, until the lock is switched off. It does **not** block deliberate changes: a typed limit, a programmatic `setDomain()`, and a domain pushed from a linked plot all still move it. See [Range lock](../configuration/PlotConfiguration.md#range-lock).
 
 ### `lookup(x, y)`
 

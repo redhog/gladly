@@ -105,13 +105,19 @@ function buildPlotSchema(data, config) {
         type: "object",
         additionalProperties: {
           type: "object",
+          // The boolean axis-part toggles are required with defaults so a schema-driven
+          // editor always renders them (an optional, absent key is otherwise hidden).
+          required: ["visible", "tickLabelsVisible", "titleVisible", "locked"],
           properties: {
             quantity_kind: { type: "string" },
             min: { type: "number" },
             max: { type: "number" },
             label: { type: "string" },
             scale: { type: "string", enum: ["linear", "log"] },
-            visible: { type: "boolean" },
+            visible: { type: "boolean", default: true },
+            tickLabelsVisible: { type: "boolean", default: true },
+            titleVisible: { type: "boolean", default: true },
+            locked: { type: "boolean", default: false },
             rotate: { type: "boolean" },
             colorscale: {
               type: "string",
@@ -369,24 +375,32 @@ export class Plot extends GlBase {
     await this.update({})
   }
 
+  // The merged per-slot config for one live-scaled spatial slot: the quantity kind's
+  // defaults, the stored override overlay, the live domain, and the bound quantity
+  // kind. The single place the stored overlay and the runtime state are reconciled;
+  // getConfig() loops it over every live slot and Axis.getConfig() returns it for one,
+  // so plot.getConfig().axes[slot] deep-equals plot.axes[slot].getConfig() by construction.
+  _axisConfig(slot) {
+    const scale = this.axisRegistry?.getScale(slot)
+    if (!scale) return { ...(this.currentConfig?.axes?.[slot] ?? {}) }
+    const qk          = this.axisRegistry.getQkForSlot(slot)
+    const qkDef       = qk ? getAxisQuantityKind(qk) : {}
+    const initialized = qk ? this.axisRegistry.getDomain(qk) != null : false
+    const [min, max]  = scale.domain()
+    return {
+      ...qkDef,
+      ...(this.currentConfig?.axes?.[slot] ?? {}),
+      ...(initialized ? { min, max } : {}),
+      ...(qk ? { quantity_kind: qk } : {}),
+    }
+  }
+
   getConfig() {
     const axes = { ...(this.currentConfig?.axes ?? {}) }
 
     if (this.axisRegistry) {
       for (const axisId of AXES) {
-        const scale = this.axisRegistry.getScale(axisId)
-        if (scale) {
-          const qk          = this.axisRegistry.getQkForSlot(axisId)
-          const qkDef       = qk ? getAxisQuantityKind(qk) : {}
-          const initialized = qk ? this.axisRegistry.getDomain(qk) != null : false
-          const [min, max]  = scale.domain()
-          axes[axisId] = {
-            ...qkDef,
-            ...(axes[axisId] ?? {}),
-            ...(initialized ? { min, max } : {}),
-            ...(qk ? { quantity_kind: qk } : {}),
-          }
-        }
+        if (this.axisRegistry.getScale(axisId)) axes[axisId] = this._axisConfig(axisId)
       }
     }
 
@@ -469,13 +483,15 @@ export class Plot extends GlBase {
 
     this._is3D = AXES.some(a => !AXES_2D.includes(a) && this.axisRegistry.getScale(a) !== null)
 
+    // Built before _layoutMargin() so the margin can size the tick-label and title
+    // bands from the rendered font (TickLabelAtlas.measure / .lineHeight).
+    if (this._tickLabelAtlas) this._tickLabelAtlas.destroy()
+    this._tickLabelAtlas = new TickLabelAtlas(this.regl)
+
     this._layoutMargin()
 
     this._camera = new Camera(this._is3D)
     this._camera.resize(this.plotWidth, this.plotHeight)
-
-    if (this._tickLabelAtlas) this._tickLabelAtlas.destroy()
-    this._tickLabelAtlas = new TickLabelAtlas(this.regl)
 
     for (const entry of colorbars) {
       if (entry.enabled === false) continue
@@ -584,11 +600,23 @@ export class Plot extends GlBase {
     const sideAxis = { top: 'xaxis_top', right: 'yaxis_right', bottom: 'xaxis_bottom', left: 'yaxis_left' }
     const axes = this.currentConfig.axes ?? {}
     const drawsAxis = (axisId) => this.axisRegistry.getScale(axisId) !== null && axes[axisId]?.visible !== false
-    this.margin = Object.fromEntries(Object.entries(sideAxis).map(([side, axisId]) => [side,
-      this._is3D || drawsAxis(axisId)
-        ? this._marginWithAxis[side]
-        : this._marginWithoutAxis[side] ?? this._marginWithAxis[side],
-    ]))
+    // When a side draws an axis, start from the full margin and give back the band of
+    // any hidden part (the title band when titleVisible:false, the tick-label band when
+    // tickLabelsVisible:false), never dropping below marginWithoutAxis for that side.
+    // The band sizes come from the rendered font via the atlas, not hard-coded.
+    const atlas = this._tickLabelAtlas
+    const sideMargin = (side, axisId) => {
+      if (this._is3D) return this._marginWithAxis[side]
+      const floor = this._marginWithoutAxis[side] ?? this._marginWithAxis[side]
+      if (!drawsAxis(axisId)) return floor
+      let m = this._marginWithAxis[side]
+      const c = axes[axisId] ?? {}
+      const axis = this._getAxis(axisId)
+      if (c.titleVisible === false)      m -= axis.titleBandPx(atlas)
+      if (c.tickLabelsVisible === false) m -= axis.tickLabelBandPx(atlas)
+      return Math.max(m, floor)
+    }
+    this.margin = Object.fromEntries(Object.entries(sideAxis).map(([side, axisId]) => [side, sideMargin(side, axisId)]))
     this.plotWidth  = Math.max(1, this.width  - this.margin.left - this.margin.right)
     this.plotHeight = Math.max(1, this.height - this.margin.top  - this.margin.bottom)
     this.axisRegistry.resize(this.plotWidth, this.plotHeight)
@@ -849,6 +877,61 @@ export class Plot extends GlBase {
       this.axisRegistry.setFilterBounds(axisId, domain[0], domain[1])
     } else if (this.axisRegistry?.hasAxis(axisId)) {
       this.axisRegistry.setDomain(axisId, domain)
+    }
+  }
+
+  // ─── Range lock (local to this plot) ────────────────────────────────────────
+  //
+  // The lock is a per-slot `locked` key in axes.<slot>. It never propagates across
+  // linkAxes and never consults another plot. The only grouping it honours is within
+  // this plot: slots sharing a quantity kind are one axis to the user, so they share a
+  // lock. The stored truth is the `locked` key; these are derived read / config write.
+
+  // True when `slot` holds the lock, or when another slot of THIS plot with the same
+  // quantity kind holds it. Does not follow linked axes.
+  isAxisLocked(slot) {
+    const axes = this.currentConfig?.axes ?? {}
+    if (axes[slot]?.locked) return true
+    const qk = this.axisRegistry?.getQkForSlot(slot)
+    if (qk == null) return false
+    for (const other of AXES) {
+      if (other !== slot && axes[other]?.locked && this.axisRegistry.getQkForSlot(other) === qk) return true
+    }
+    return false
+  }
+
+  // Writes `locked` into axes.<slot> — set on the slot when turning on; cleared on the
+  // slot and every same-QK sibling of this plot when turning off — then renders again
+  // without update() (no layer rebuild). Touches only this plot's config.
+  setAxisLocked(slot, on) {
+    const config = this.currentConfig ?? {}
+    const axes = { ...(config.axes ?? {}) }
+    const clear = (s) => {
+      if (axes[s]?.locked) { const c = { ...axes[s] }; delete c.locked; axes[s] = c }
+    }
+    if (on) {
+      axes[slot] = { ...(axes[slot] ?? {}), locked: true }
+    } else {
+      const qk = this.axisRegistry?.getQkForSlot(slot)
+      clear(slot)
+      if (qk != null) {
+        for (const s of AXES) {
+          if (s !== slot && this.axisRegistry.getQkForSlot(s) === qk) clear(s)
+        }
+      }
+    }
+    this.currentConfig = { ...config, axes }
+    this.scheduleRender()
+  }
+
+  // Reset the 2D spatial axes to their data range. Color/filter axes and locked axes
+  // are left alone; a 3D plot does nothing (reset stays 2D-only).
+  resetAxes() {
+    if (this._is3D || !this.axisRegistry) return
+    for (const axisId of AXES_2D) {
+      if (!this.axisRegistry.getScale(axisId)) continue
+      if (this.isAxisLocked(axisId)) continue
+      this._getAxis(axisId).setDomain(null)
     }
   }
 

@@ -1,6 +1,10 @@
 import { AXIS_GEOMETRY, axisEndpoints } from './AxisRegistry.js'
-import { TICK_LABEL_FRAC } from './Axis.js'
+import { getAxisQuantityKind } from './AxisQuantityKindRegistry.js'
 import { mat4Multiply, mat4Identity, projectToScreen, sphericalToCartesian } from '../math/mat4.js'
+
+// How far the pointer may move between mousedown and mouseup and still count as a
+// click (for the title-click lock toggle) rather than a drag.
+const CLICK_SLOP_PX = 4
 
 export class ZoomController {
   constructor(plot) {
@@ -33,12 +37,12 @@ export class ZoomController {
       const { margin, plotWidth, plotHeight } = plot
       const left = margin.left, right = margin.left + plotWidth
       const top = margin.top, bottom = margin.top + plotHeight
-      const off = (m) => TICK_LABEL_FRAC * Math.max(4, m)
+      const off = this._plot._getAxis(axisId).labelAnchorPx(this._plot._tickLabelAtlas)
       switch (axisId) {
-        case 'xaxis_bottom': { const y = bottom + off(margin.bottom); return [end === 'min' ? left : right, y] }
-        case 'xaxis_top':    { const y = top    - off(margin.top);    return [end === 'min' ? left : right, y] }
-        case 'yaxis_left':   { const x = left   - off(margin.left);   return [x, end === 'min' ? bottom : top] }
-        case 'yaxis_right':  { const x = right  + off(margin.right);  return [x, end === 'min' ? bottom : top] }
+        case 'xaxis_bottom': { const y = bottom + off; return [end === 'min' ? left : right, y] }
+        case 'xaxis_top':    { const y = top    - off; return [end === 'min' ? left : right, y] }
+        case 'yaxis_left':   { const x = left   - off; return [x, end === 'min' ? bottom : top] }
+        case 'yaxis_right':  { const x = right  + off; return [x, end === 'min' ? bottom : top] }
       }
       return null
     }
@@ -63,6 +67,54 @@ export class ZoomController {
     if (inY && mx < margin.left              && ar.getScale('yaxis_left'))   return { axes: ['yaxis_left'],   type: 'axis' }
     if (inY && mx >= margin.left + plotWidth && ar.getScale('yaxis_right'))  return { axes: ['yaxis_right'],  type: 'axis' }
     return null
+  }
+
+  // The 2D axis whose title band contains (mx, my), or null. The title band is the
+  // outer strip of the margin, beyond the tick band and the tick-label band. Only a
+  // side whose title is actually drawn (axis present, not visible:false, not
+  // titleVisible:false, and a non-empty title) is a hit. Used by the title-click
+  // lock toggle. 3D title clicks are resolved by _getRegion3D instead.
+  _titleBandHit(mx, my) {
+    const plot = this._plot
+    if (plot._is3D) return null
+    const { margin, plotWidth, plotHeight, axisRegistry: ar } = plot
+    const axes = plot.currentConfig?.axes ?? {}
+    const atlas = plot._tickLabelAtlas
+    const drawsTitle = (id) => {
+      if (!ar.getScale(id)) return false
+      const c = axes[id] ?? {}
+      if (c.visible === false || c.titleVisible === false) return false
+      const qk = ar.getQkForSlot(id)
+      if (!qk) return false
+      const label = c.label ?? getAxisQuantityKind(qk).label
+      return !!label
+    }
+    // The title band starts beyond the tick and label bands — sizes from the atlas font.
+    const bandStart = (id) => plot._getAxis(id).titleBandStartPx(atlas)
+    const inX = mx >= margin.left && mx < margin.left + plotWidth
+    const inY = my >= margin.top  && my < margin.top  + plotHeight
+    if (inX && my >= margin.top + plotHeight + bandStart('xaxis_bottom') && drawsTitle('xaxis_bottom')) return 'xaxis_bottom'
+    if (inX && my <= margin.top - bandStart('xaxis_top') && my >= 0      && drawsTitle('xaxis_top'))    return 'xaxis_top'
+    if (inY && mx <= margin.left - bandStart('yaxis_left') && mx >= 0     && drawsTitle('yaxis_left'))   return 'yaxis_left'
+    if (inY && mx >= margin.left + plotWidth + bandStart('yaxis_right')   && drawsTitle('yaxis_right'))  return 'yaxis_right'
+    return null
+  }
+
+  // The axis a plain click at (mx, my) would toggle the lock of, or null. In 2D this
+  // is the title band (_titleBandHit); in 3D a click resolved to a single axis whose
+  // title is drawn (the title sits at that axis's outward far end).
+  _resolveTitleToggleTarget(mx, my) {
+    const plot = this._plot
+    if (!plot._is3D) return this._titleBandHit(mx, my)
+    const region = this._getRegion3D(mx, my)
+    if (region?.type !== 'axis') return null
+    const axisId = region.axes[0]
+    const c = plot.currentConfig?.axes?.[axisId] ?? {}
+    if (c.visible === false || c.titleVisible === false) return null
+    const qk = plot.axisRegistry.getQkForSlot(axisId)
+    if (!qk) return null
+    const label = c.label ?? getAxisQuantityKind(qk).label
+    return label ? axisId : null
   }
 
   _getRegion3D(mx, my) {
@@ -174,10 +226,22 @@ export class ZoomController {
     let startDomains = {}    // { axisId: [d0,d1] } snapshot at drag start
     let lastMouse    = null  // [x,y] for rotation delta
     let dragRect     = null  // cached at mousedown; canvas position doesn't change during a drag
+    // Title-click lock toggle: a plain left click (no movement past CLICK_SLOP_PX) on an
+    // axis title band toggles that axis's lock on mouseup. A drag past the slop pans instead.
+    let clickButton    = -1
+    let clickMoved     = false
+    let clickDownX     = 0
+    let clickDownY     = 0
+    let clickTitleAxis = null
     const onMouseMove = (e) => {
       const _t0 = performance.now()
       const mx = e.clientX - dragRect.left
       const my = e.clientY - dragRect.top
+
+      if (!clickMoved &&
+          (Math.abs(mx - clickDownX) > CLICK_SLOP_PX || Math.abs(my - clickDownY) > CLICK_SLOP_PX)) {
+        clickMoved = true
+      }
 
       if (isRotating) {
         const [lx, ly] = lastMouse
@@ -208,6 +272,7 @@ export class ZoomController {
         const startDomain = startDomains[axisId]
         if (!startDomain) continue
         if (!plot.axisRegistry.getScale(axisId)) continue
+        if (plot.isAxisLocked(axisId)) continue   // locked axis stays put; free axes still pan
 
         const { dir } = AXIS_GEOMETRY[axisId]
         const dirIdx  = dir === 'x' ? 0 : dir === 'y' ? 1 : 2
@@ -228,6 +293,10 @@ export class ZoomController {
     }
 
     const onMouseUp = (e) => {
+      // A plain click on an axis title band toggles that axis's lock (no update()).
+      if (clickButton === 0 && !clickMoved && clickTitleAxis && plot.setAxisLocked) {
+        plot.setAxisLocked(clickTitleAxis, !plot.isAxisLocked(clickTitleAxis))
+      }
       if (isDragging || isRotating) plot._zoomEndCallbacks.forEach(cb => cb())
       isDragging   = false
       isRotating   = false
@@ -236,6 +305,9 @@ export class ZoomController {
       startDomains = {}
       lastMouse    = null
       dragRect     = null
+      clickButton    = -1
+      clickMoved     = false
+      clickTitleAxis = null
       window.removeEventListener('mousemove', onMouseMove)
       window.removeEventListener('mouseup',   onMouseUp)
     }
@@ -248,6 +320,13 @@ export class ZoomController {
       dragRect = canvas.getBoundingClientRect()
       const mx = e.clientX - dragRect.left
       const my = e.clientY - dragRect.top
+
+      clickButton    = e.button
+      clickMoved     = false
+      clickDownX     = mx
+      clickDownY     = my
+      clickTitleAxis = (e.button === 0 && !e.shiftKey && !e.ctrlKey)
+        ? this._resolveTitleToggleTarget(mx, my) : null
 
       // Right-click or Ctrl+left in 3D → rotate
       if (plot._is3D && (e.button === 2 || (e.button === 0 && e.ctrlKey))) {
@@ -377,6 +456,7 @@ export class ZoomController {
           const startDomain = touchStartDomains[axisId]
           if (!startDomain) continue
           if (!plot.axisRegistry.getScale(axisId)) continue
+          if (plot.isAxisLocked(axisId)) continue
           const { dir } = AXIS_GEOMETRY[axisId]
           const dirIdx  = dir === 'x' ? 0 : dir === 'y' ? 1 : 2
           const isLog   = plot.axisRegistry.isLogScale(axisId)
@@ -400,6 +480,7 @@ export class ZoomController {
         for (const axisId of touchZoomRegion.axes) {
           const scale = plot.axisRegistry.getScale(axisId)
           if (!scale) continue
+          if (plot.isAxisLocked(axisId)) continue
           const { dir } = AXIS_GEOMETRY[axisId]
           const dirIdx   = dir === 'x' ? 0 : dir === 'y' ? 1 : 2
           const [d0, d1] = scale.domain()
@@ -467,6 +548,7 @@ export class ZoomController {
       for (const axisId of region.axes) {
         const scale = plot.axisRegistry.getScale(axisId)
         if (!scale) continue
+        if (plot.isAxisLocked(axisId)) continue
 
         const { dir } = AXIS_GEOMETRY[axisId]
         const dirIdx   = dir === 'x' ? 0 : dir === 'y' ? 1 : 2

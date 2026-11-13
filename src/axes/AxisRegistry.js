@@ -380,8 +380,9 @@ export class AxisRegistry {
       if (qkOv?.clamp_min !== undefined) entry.clampMin = !!qkOv.clamp_min
       if (qkOv?.clamp_max !== undefined) entry.clampMax = !!qkOv.clamp_max
 
-      // Store data extent for filter axis (Filterbar display).
-      if (entry.hasFilter && min !== Infinity) entry.dataExtent = [min, max]
+      // Store the raw data extent for every quantity kind (not only filter axes):
+      // the Filterbar reads it, and setDomain(null) / resetAxes() reset to it.
+      if (min !== Infinity && max !== -Infinity) entry.dataExtent = [min, max]
     }
 
   }

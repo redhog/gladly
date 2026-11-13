@@ -116,8 +116,25 @@ Each accepts:
 | `scale` | string | `"linear"` (default) or `"log"` — logarithmic scale; all data values must be > 0 |
 | `label` | string | Axis label text (overrides the quantity kind registry default) |
 | `visible` | boolean | `false` hides the axis line, ticks, tick labels and title; the axis still sets the range of its layers. Its side then counts as having no axis for [`marginWithoutAxis`](../user-api/Plot.md#margins). Default `true` |
+| `tickLabelsVisible` | boolean | `false` hides the numeric tick labels only (the line, ticks and title stay). Default `true` |
+| `titleVisible` | boolean | `false` hides the axis title only (the line, ticks and tick labels stay). Default `true` |
+| `locked` | boolean | `true` locks the axis range (see [Range lock](#range-lock)). Default `false` |
 
 Omit an axis entirely to have its range auto-calculated from the data.
+
+#### Axis-part visibility
+
+`tickLabelsVisible` and `titleVisible` hide the tick labels or the title on their own, separately from hiding the whole axis with `visible: false`. The three switches are independent. In the schema these four booleans (`visible`, `tickLabelsVisible`, `titleVisible`, `locked`) are **required with defaults** (`true`/`true`/`true`/`false`), so a schema-driven editor always renders them rather than hiding an absent optional key. Hiding a part also **gives its margin band back**: a side that keeps its line and ticks but drops its title gets the title band back, dropping its tick labels gets the label band back, never going below [`marginWithoutAxis`](../user-api/Plot.md#margins) for that side. This works on 3D plots too for the drawing (3D margins do not change). All three keys round-trip through `plot.getConfig()` and are restored by `plot.update()`.
+
+#### Range lock
+
+`locked: true` pins an axis's range so it survives zoom, scroll and pan on any plot, and survives `plot.resetAxes()`, until switched off. The lock:
+
+- is **local to one plot** — it never propagates across `linkAxes` and never consults another plot. The only grouping it honours is within the same plot: slots that share a quantity kind are one axis and share one lock.
+- **blocks gestures only.** A locked axis ignores wheel, drag and touch (its free neighbours in the same gesture still move). It does **not** block deliberate changes: a [typed limit](#typed-axis-limits), a programmatic `axis.setDomain()`, and a domain pushed from a linked plot all still move it (a link push is, by design, a programmatic update).
+- shows two cues: the **axis line is drawn red**, and a small **lock glyph** sits beside the title (the glyph is hidden when the title or the whole axis is hidden; the red line still shows).
+
+Toggle it from code with [`plot.setAxisLocked(slot, on)`](../user-api/Plot.md#setaxislockedslot-on) / read it with [`plot.isAxisLocked(slot)`](../user-api/Plot.md#isaxislockedslot), or directly: **clicking an axis title toggles that axis's lock** (2D and 3D). A drag that starts on the title pans/rotates instead; the toggle fires only on a click that does not move. The `locked` key round-trips through `plot.getConfig()`.
 
 ### Color Axes
 
