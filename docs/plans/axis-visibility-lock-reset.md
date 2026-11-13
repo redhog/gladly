@@ -211,63 +211,91 @@ reset, until switched off.
 A `locked` key in each `axes.<slot>`, default `false`, read into the axis at
 `update()` and returned by `getConfig()` (via the central spread — no extra code).
 
-- `plot.isAxisLocked(slot)` → true when the slot holds the lock, when an axis
-  reached through `_linkedAxes` (followed with a visited set) holds it, or when
-  another slot of the same plot with the same quantity kind holds it. This is a
-  **derived read**; the stored truth is the per-slot `locked` key.
-- `plot.setAxisLocked(slot, on)` → writes `locked` into
-  `currentConfig.axes[slot]` (on that slot when setting; clears it on every axis
-  `isAxisLocked` looks at when unsetting), then **renders again without
-  `update()`** (no layer rebuild). Because it writes config, the change
-  round-trips through `getConfig()` with no further work.
+The lock is **local to one plot**. It never propagates across `linkAxes` and never
+consults another plot. The only grouping it honours is *within the same plot*: slots
+that share a quantity kind are one axis to the user (they share a domain), so they
+share one lock.
+
+- `plot.isAxisLocked(slot)` → true when the slot holds the lock, or when another
+  slot **of the same plot** with the same quantity kind holds it. It does **not**
+  follow `_linkedAxes`. This is a **derived read**; the stored truth is the per-slot
+  `locked` key.
+- `plot.setAxisLocked(slot, on)` → writes `locked` into `currentConfig.axes[slot]`
+  — setting it on the slot when turning on, clearing it on the slot and every
+  same-QK sibling **of this plot** when turning off — then **renders again without
+  `update()`** (no layer rebuild). It touches only this plot's config. Because it
+  writes config, the change round-trips through `getConfig()` with no further work.
 
 ### Enforcement
 
-`ZoomController`'s drag, wheel and touch handlers **skip a locked axis before
-calling `setDomain()`** (reading the lock live, via `isAxisLocked`), so the free
-axes of the same gesture still move. A gesture in the plot area of a plot with x
-locked and y free moves y only. Covers 3D plots, which obey a lock set on a
-linked 2D axis.
+`ZoomController`'s mouse-drag, touch-drag, touch-zoom and wheel loops **skip a
+locked axis before calling `setDomain()`** (reading the lock live, via
+`isAxisLocked`), so the free axes of the same gesture still move. A gesture in the
+plot area of a plot with x locked and y free moves y only. Because `region.axes` is
+built the same way in 2D (`_getRegion2D`) and 3D (`_getRegion3D`), this covers 3D
+plots directly — a 3D axis is locked exactly as a 2D one. 3D **rotation** never
+calls `setDomain()` (it only moves the camera), so it is untouched by locks:
+rotation is not an axis and cannot be locked.
 
-The lock adds nothing to `Axis.setDomain()`, `AxisLink`, `AxisLimitEditor` or
-`update()` — enforcement lives entirely in `ZoomController`, upstream of
-`setDomain()`. (Part 3 does extend `setDomain()` with a `null`-means-data case,
-but that is orthogonal: a locked axis is simply skipped by `resetAxes()` and
-never receives the `null`.) Therefore:
+The lock is purely local and purely a gesture guard upstream of `setDomain()`. It
+adds nothing to `Axis.setDomain()`, `AxisLink`, `AxisLimitEditor` or `update()`.
+(Part 3 does extend `setDomain()` with a `null`-means-data case, but that is
+orthogonal: a locked axis is simply skipped by `resetAxes()` and never receives the
+`null`.) Therefore every non-gesture domain change still moves a locked axis:
 
-- A typed limit (#36) **still moves** a locked axis and its linked axes (typing is
-  deliberate); the lock stays on. #36 needs no change.
+- A typed limit (#36) **still moves** it (typing is deliberate); the lock stays on.
+  #36 needs no change.
+- A programmatic `setDomain()` **still moves** it. A test pins this.
+- A domain pushed from a **linked plot still moves** it: a link push arrives through
+  `setDomain()` and is, by design, identical to a programmatic update. The lock does
+  not propagate across links and does not block a link push — the other plot's axis
+  is free, moves, and its push lands here like any other `setDomain()`. A test pins
+  this (a locked axis still receives a linked plot's zoom).
 - The fit to data never reaches a locked axis anyway (its config `min`/`max` win).
-- The lock refuses a gesture *before* any domain is set, so any other path that
-  sets a domain still reaches a locked axis. A test pins this (`setDomain()` still
-  moves a locked axis).
 
 ### Lock mark
 
-A small lock glyph drawn beside the title of each 2D axis that `isAxisLocked`, on
-every plot, with a "locked" tooltip. A hidden axis draws no mark (its lock still
-shows in the menu — the menu plan). Where the mark sits when the title is hidden
-is for the review. The mark reflects state; the toggle is the title click below.
+Two visual cues on a locked axis, both reading `isAxisLocked` live, on 2D and 3D:
+
+- **Red axis line.** The axis line itself is drawn red instead of black when locked
+  (`Axis.render` draws the line `[0,0,0,1]` today → red when `isAxisLocked`). This
+  is the cue that always shows: it is independent of the title and the tick labels,
+  so it survives `titleVisible: false` and `tickLabelsVisible: false`. A
+  whole-hidden axis (`visible: false`) draws no line and therefore no cue (its lock
+  still shows in the menu — the menu plan).
+- **Lock glyph.** A small lock glyph beside the title, with a "locked" tooltip,
+  drawn only where the title is drawn. When the title is hidden (`titleVisible:
+  false`) or the axis is whole-hidden, the glyph is hidden too — this is purely
+  visual and does **not** change the lock state; the red line still shows.
+
+The cues reflect state; the toggle is the title click below. (With the title
+hidden there is no title to click, so toggling then goes through the menu or
+`setAxisLocked()` — the red line still marks the axis as locked.)
 
 ### Click-to-toggle
 
 **Clicking an axis title toggles that axis's lock** — a plain click calls
 `plot.setAxisLocked(slot, !plot.isAxisLocked(slot))`, which re-renders the mark
-without an `update()`. Only 2D axes; a 3D plot has no title click.
+without an `update()`. Works on 2D and 3D axes.
 
-Detecting the target:
+Detecting the target (the title is a WebGL atlas billboard, not a DOM element, so
+there is no DOM hit target — the handler goes through `ZoomController`, which
+already maps a point to an axis):
 
-- The title is a WebGL atlas billboard, not a DOM element, so there is no DOM hit
-  target. The handler goes through `ZoomController` — which already maps a point
-  to an axis strip via `_getRegion2D()` — plus the title's pixel band, which
-  Part 1's fixed-pixel layout makes a **known rectangle** per side. A point in the
-  title band of a side with a title that is drawn (not `titleVisible: false`, not
-  a whole-hidden axis) hits that axis's title.
-- A mousedown on an axis strip today **starts a zoom/pan gesture on that axis**.
-  So the toggle fires on a **click** — mousedown then mouseup with no movement
-  past a small threshold — and a drag past the threshold is left to the existing
-  zoom/pan. The lock is toggled on mouseup, not mousedown, so a drag that happens
-  to begin in the title band still pans.
+- **2D**: `_getRegion2D()` gives the axis strip, and the title's pixel band is a
+  **known rectangle** per side from Part 1's fixed-pixel layout. A point in the
+  title band of a side whose title is drawn (not `titleVisible: false`, not a
+  whole-hidden axis) hits that axis's title.
+- **3D**: there is no fixed band, but `_getRegion3D()` already resolves a point to
+  its nearest axis, and the title sits at that axis's outward far end. A click
+  resolved to an axis, within the projected title region at that end, hits that
+  axis's title.
+- **Both**: a mousedown on an axis strip today **starts a zoom/pan gesture on that
+  axis**. So the toggle fires on a **click** — mousedown then mouseup with no
+  movement past a small threshold — and a drag past the threshold is left to the
+  existing zoom/pan (pan in 2D and on a 3D axis; rotation when the 3D gesture is a
+  rotate). The lock is toggled on mouseup, not mousedown, so a drag that happens to
+  begin in the title region still pans/rotates.
 - A locked axis cannot be dragged anyway (Part 2's enforcement), so in practice a
   press on a locked title only ever resolves to a click → unlock.
 - This is a single click. #36's double-click-on-axis-**end** (type a limit) sits
@@ -307,15 +335,17 @@ axes are skipped. On a 3D plot it does nothing.
 
 ## Docs
 
-- `docs/user-api/Plot.md`: `resetAxes()`, `isAxisLocked()`, `setAxisLocked()`.
+- `docs/user-api/Plot.md`: `resetAxes()`, `isAxisLocked()`, `setAxisLocked()` —
+  noting the lock is local to one plot and groups only same-QK slots of that plot.
 - `docs/user-api/Axis.md` (or wherever `setDomain` is documented): `setDomain(null)`
   resets the axis to its data range and propagates to linked axes; `getConfig()`,
   `setConfig(cfg)` and the static `Axis.schema()` as the per-axis counterparts of
   `plot.getConfig()`, `plot.update({config})` and the static `Plot.schema()`.
 - `docs/configuration/PlotConfiguration.md`: `tickLabelsVisible`, `titleVisible`,
   `locked` as `axes.<slot>` keys; the margin rule; what a lock stops and what it
-  does not; that clicking an axis title toggles its lock; the note that all three
-  round-trip through `getConfig()`.
+  does not (it blocks gestures only, is local to one plot, and does not propagate
+  across links); that clicking an axis title (2D or 3D) toggles its lock; the note
+  that all three round-trip through `getConfig()`.
 - `docs/architecture/`: where the 2D axis pixel layout is described.
 
 ## Tests (web-test-runner, `test/`)
@@ -328,15 +358,25 @@ axes are skipped. On a 3D plot it does nothing.
 - `resetAxes()` sets the data range on a zoomed axis, keeps a reversed axis
   reversed, refuses zero on a log axis, moves a linked axis on a second plot and
   leaves its unlinked axis alone.
-- Lock: a locked axis ignores wheel, drag and touch; so does an axis linked to it
-  on a second plot, and one linked through a third; a wheel in the plot area of a
-  plot with x locked moves y only; a typed limit moves a locked axis and its
-  linked axes; `setDomain()` still moves a locked axis; `resetAxes()` leaves a
-  locked axis; switching it off from a linked plot clears it everywhere.
-- Title click: a click in an axis's title band toggles its lock (off→on and
-  on→off); a click in the title band of a title that is hidden or on a 3D plot
-  does nothing; a drag that starts in the title band pans/zooms instead of
-  toggling; a click on one axis's title does not lock another.
+- Lock: a locked axis ignores wheel, drag and touch on its strip and in the plot
+  area; a wheel in the plot area of a plot with x locked moves y only; locking one
+  slot locks every same-QK slot of the **same** plot (grabbing a sibling strip does
+  not move the locked axis); the lock does **not** propagate to a linked plot — the
+  linked plot's same axis is still draggable, and its push **does** move the locked
+  axis (a link push is a programmatic update); a typed limit moves a locked axis;
+  `setDomain()` still moves a locked axis; `resetAxes()` leaves a locked axis;
+  turning it off clears it across the same-QK slots of that plot.
+- Lock in 3D: a locked 3D axis ignores drag, wheel and touch; rotation still works
+  while an axis is locked.
+- Lock cues: a locked axis draws its line red, and the red line persists with
+  `titleVisible: false` and with `tickLabelsVisible: false`; the lock glyph shows
+  with the title drawn and is gone when the title is hidden, without changing the
+  lock state; a whole-hidden axis draws neither cue.
+- Title click: a click in a 2D axis's title band toggles its lock (off→on and
+  on→off); a click in the title band of a hidden title does nothing; a drag that
+  starts in the title band pans/zooms instead of toggling; a click on one axis's
+  title does not lock another; a click on a 3D axis's title toggles its lock, and a
+  rotation drag starting there rotates instead.
 - Config round-trip: setting `tickLabelsVisible`/`titleVisible`/`locked` and
   calling `getConfig()` returns them, and `update()` restores them.
 - Per-axis accessors: `plot.axes[slot].getConfig()` **deep-equals**
@@ -356,8 +396,9 @@ Opened once those are merged, or stacked on them. The menu plan
 
 - The right-click menu, the `'contextmenu'` event — those are `axis-context-menu.md`.
 - A lock/reset on color and filter axes.
-- Axis rows, reset and the lock mark on 3D plots; a 3D plot only obeys a lock set
-  on a linked 2D axis.
+- Reset and the axis-part margin changes on 3D plots (3D margins do not change); a
+  3D axis **can** be locked and shows a lock mark, but reset stays 2D-only.
+- Cross-plot propagation of the lock: a lock is local to one plot.
 - Per-plot margins.
 
 ## Implementation steps
