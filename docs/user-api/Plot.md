@@ -7,13 +7,27 @@ The main plotting container that manages WebGL rendering and SVG axes.
 ## Constructor
 
 ```javascript
-new Plot(container, { margin } = {})
+new Plot(container, { margin, marginWithoutAxis } = {})
 ```
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `container` | HTMLElement | Parent `<div>`. Must have explicit CSS dimensions. Canvas and SVG are created inside it automatically. |
 | `margin` | object | Plot margin in px: `{ top, right, bottom, left }`. Defaults to `{ top: 60, right: 60, bottom: 60, left: 60 }`. |
+| `marginWithoutAxis` | object | Margin in px for a side that draws no axis: any of `{ top, right, bottom, left }`. A side left out uses `margin`. Defaults to `{}`, so every side uses `margin`. See [Margins](#margins). |
+
+### Margins
+
+An axis draws its tick labels and title in the margin on its side, at fixed fractions of that margin's width (tick labels at 0.40, the title at 0.75), so a side with an axis needs the full `margin`. A side with no axis only needs room for the end labels of the axes beside it, which reach past the corners of the plot area. `marginWithoutAxis` sets that smaller room, so a plot that draws only a bottom and a left axis does not keep a full axis margin of empty space above and to the right of its data:
+
+```javascript
+const plot = new Plot(container, {
+  margin:            { top: 48, right: 80, bottom: 48, left: 80 },
+  marginWithoutAxis: { top: 12, right: 24, bottom: 12, left: 24 },
+})
+```
+
+A side counts as drawing an axis when a layer uses that axis and the axis is not hidden with `visible: false` in `config.axes`. This is decided again at every `update()`, so moving a layer to `yaxis_right`, or hiding an axis, changes the margins with it. A 3D plot uses `margin` on every side.
 
 ---
 
@@ -32,6 +46,10 @@ plot.axes["velocity_ms"] // color or filter axis, keyed by quantity kind
 ```
 
 The same `Axis` instance is returned on every access, including across `plot.update()` calls. This makes it safe to pass axis references to `linkAxes()` before or after `update()`.
+
+### `plot.margin`
+
+The margin in use, in px: `{ top, right, bottom, left }`. It is `margin` from the constructor, with `marginWithoutAxis` applied to each side that drew no axis at the last `update()`. Read it to place your own elements around the plot area; writing it has no lasting effect, since the next `update()` sets it again.
 
 ---
 

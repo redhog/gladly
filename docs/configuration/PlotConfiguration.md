@@ -115,6 +115,7 @@ Each accepts:
 | `max` | number | Upper bound of the axis range (auto-calculated if omitted) |
 | `scale` | string | `"linear"` (default) or `"log"` — logarithmic scale; all data values must be > 0 |
 | `label` | string | Axis label text (overrides the quantity kind registry default) |
+| `visible` | boolean | `false` hides the axis line, ticks, tick labels and title; the axis still sets the range of its layers. Its side then counts as having no axis for [`marginWithoutAxis`](../user-api/Plot.md#margins). Default `true` |
 
 Omit an axis entirely to have its range auto-calculated from the data.
 
