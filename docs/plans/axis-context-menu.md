@@ -2,10 +2,10 @@
 
 ## Overview
 
-Add a right-click menu to every 2D plot that shows and hides each axis — and
-separately its tick labels and its title — so a plot can drop a label to regain
-room and get it back with one click. The same menu locks an axis's range and
-resets the view.
+Add a right-click menu to every plot (2D or 3D) that shows and hides each axis —
+and separately its tick labels and its title — so a plot can drop a label to
+regain room and get it back with one click. The same menu locks an axis's range
+and resets the view.
 
 This plan is the **UI layer**. Every setting it toggles and every behaviour it
 triggers is defined by its sibling plan,
@@ -26,7 +26,7 @@ a change event and a **code-level** item-registry hook, not as stored config.
 **Enabling the built-in menus.** Two top-level config booleans gate whether
 gladly's own menu is bound to the `'contextmenu'` event: `axis_menu` (the
 single-axis menu on an axis-strip right-click) and `plot_menu` (the full menu on
-a plot-area / corner / empty-margin / 3D right-click). Both default to true. These
+a plot-area / corner / empty-margin right-click). Both default to true. These
 are not axis state and not a `menu:` block — they only switch gladly's internal
 binding on or off. When one is false, gladly does not open that menu and the
 `'contextmenu'` event still fires, so a consumer can `plot.on('contextmenu', …)`
@@ -50,8 +50,10 @@ Read against master at `1e1c983` with #36, #37, #38 and Plan A applied.
 - `plot.on(type, cb)` passes any DOM event type through as a capture listener and
   calls `cb(e, coords)`; `coords` from `lookup()` holds a value per axis that has
   a scale. `'error'`, `'no-error'`, and with #36 `'axislimit'`, are synthetic.
-- `ZoomController._getRegion2D()` works out which axis strip a point is in; a
-  corner or an empty margin is in no region. #36 uses it for the limit boxes.
+- `ZoomController._getRegion()` works out which axis strip a point is in — it
+  dispatches to `_getRegion2D()` on a 2D plot and `_getRegion3D()` on a 3D plot,
+  so the strips resolve the same way either way; a corner or an empty margin is in
+  no region. #36 uses `_getRegion2D` for the limit boxes.
 - gladly already renders floating DOM widgets over the canvas (`floats/Float.js`,
   the colorbar/filterbar floats) and marks interactive DOM with
   `data-gladly-control` (#36's limit boxes). The menu reuses this layer.
@@ -68,10 +70,9 @@ right press+release less than 5 px apart **that gladly did not use**:
 - gladly keeps blocking the browser's own menu on the canvas; presses on
   `data-gladly-control` elements (the limit boxes) are ignored, as for other
   events.
-- The event carries **which axis strip** the press was on, from
-  `_getRegion2D()`, or none for the plot area, a corner, an empty margin and any
-  3D plot. How it is carried (a third argument or a field on `coords`) is for the
-  review.
+- The event carries **which axis strip** the press was on, from `_getRegion()`
+  (2D or 3D plot alike), or none for the plot area, a corner or an empty margin.
+  How it is carried (a third argument or a field on `coords`) is for the review.
 
 This replaces the plain DOM pass-through for the name `'contextmenu'`; a new name
 (`'menu'`) works if the maintainer prefers to keep the pass-through.
@@ -100,14 +101,16 @@ menu), built as a gladly float/`data-gladly-control` widget positioned at the
 pointer and kept on screen near the window edges; closed on Escape, a click
 outside, or Reset view.
 
-**Full menu** (plot-area / corner / empty-margin / 3D click): a row per 2D axis
-present in `coords`, named by side + title (`axes[slot].label` or the quantity
-kind's label), e.g. "Bottom: Distance [m]", with four checkboxes under **Axis**,
-**Labels**, **Title**, **Lock**; then **Reset view**. A hidden axis keeps its row.
-On a 3D plot, no axis rows (only injected items and Reset view, which is a no-op).
+**Full menu** (plot-area / corner / empty-margin click): a row per axis present in
+`coords`, named by side + title (`axes[slot].label` or the quantity kind's label),
+e.g. "Bottom: Distance [m]", with four checkboxes under **Axis**, **Labels**,
+**Title**, **Lock**; then **Reset view**. A hidden axis keeps its row. This works
+the same on a 3D plot — a row per spatial axis the plot has (x/y/z), all four
+toggles and Reset view all apply.
 
 **Single-axis menu:** a right-click on an axis strip shows that axis's row only.
-The left/right y and bottom/top x strips each get their own.
+Each strip gets its own — the left/right y and bottom/top x strips on a 2D plot,
+and the per-axis strips `_getRegion3D` resolves on a 3D plot.
 
 **Grey-out:** while an axis is hidden (`visible: false`), its Labels and Title
 boxes are disabled but keep their state, so showing the axis again brings back
@@ -162,14 +165,17 @@ host's, injected through the code hook and the event.
 The event:
 
 - A right press+release emits `'contextmenu'` once with coordinates; a right
-  press that closes a polygon emits nothing; a right drag on 3D emits nothing.
-- The event names the axis strip a right-click was on, and none for the plot area
-  and a corner.
+  press that closes a polygon emits nothing; a right drag on 3D (a rotation) emits
+  nothing, but a right press+release on 3D that does not rotate emits once.
+- The event names the axis strip a right-click was on — on a 2D and a 3D plot
+  alike — and none for the plot area and a corner.
 
 The menu:
 
-- A right-click in the plot area opens a full menu with a row per 2D axis; a
-  right-click on an axis strip opens that axis's row only.
+- A right-click in the plot area opens a full menu with a row per axis; a
+  right-click on an axis strip opens that axis's row only. On a 3D plot the full
+  menu lists the x/y/z rows and the single-axis menu opens on an axis strip of a
+  3D plot.
 - With `plot_menu: false` a plot-area right-click opens no menu but still fires
   `'contextmenu'`; with `axis_menu: false` an axis-strip right-click opens no menu
   but still fires the event.
@@ -196,8 +202,6 @@ consumer to a single bump.
   Plan A.
 - Touch long-press; a Mac Ctrl+click as a right-click.
 - A right-click on a color bar or filter bar; color/filter axes in the menu.
-- Axis rows, reset and the lock mark on 3D plots; a 3D plot only obeys a lock set
-  on a linked 2D axis.
 - App-specific menu items (e.g. a status bar) — those come through the
   `plot.menuItems` hook from the host, along with the host's persistence.
 
