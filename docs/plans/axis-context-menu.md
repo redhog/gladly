@@ -117,7 +117,10 @@ and the per-axis strips `_getRegion3D` resolves on a 3D plot.
 **Grey-out:** while an axis is hidden (`visible: false`), its Labels and Title
 boxes are disabled but keep their state, so showing the axis again brings back
 what it had. Lock stays live on a hidden axis (the range is kept whether drawn or
-not). Lock reads `isAxisLocked`, so a lock held by a linked plot shows checked.
+not). Lock reads `isAxisLocked`, which per Plan A is **local to this plot** — it
+reflects a lock on this slot or on a same-quantity-kind sibling slot of the same
+plot, and never follows `linkAxes`. So locking one strip shows every same-QK strip
+of this plot as checked; a lock on a linked plot does not.
 
 ### What a toggle does
 
@@ -135,8 +138,10 @@ who changed it, exactly like `'axislimit'` (`_emitAxisLimit`, fired by the typed
 editor and re-emitted by the colorbar/filterbar floats). It carries
 `{ type: 'axisoptions', axis: slot, key, value }` and fires wherever those keys
 are written — `setAxisLocked()` and the visibility/labels/title config writes —
-so a direct `plot.update({config})` or `setAxisLocked()` call, and propagation
-from a linked plot, emit it too; the menu is just one more source. A consumer
+so a direct `plot.update({config})` or `setAxisLocked()` call emits it too; the
+menu is just one more source. (Unlike a domain, none of these four keys propagate
+across `linkAxes` — the lock in particular is local to one plot per Plan A — so
+there is no cross-plot source to emit from.) A consumer
 persists on `'axisoptions'` (and `'axislimit'` for domain changes) and never has
 to know a menu was involved. The checkboxes read live config so the menu shows
 the real state as the plot rebuilds behind it.
@@ -176,7 +181,9 @@ The menu:
   Lock calls `setAxisLocked` and rebuilds no layers; Reset view calls
   `resetAxes()`.
 - A hidden axis's Labels/Title boxes are disabled and keep their state; Lock stays
-  live and shows a lock held by a linked plot.
+  live and, because `isAxisLocked` is local to one plot (Plan A), shows checked when
+  a same-quantity-kind sibling slot of the same plot is locked, and stays unchecked
+  for a lock held only on a linked plot.
 - Toggling Axis/Labels/Title or Lock emits `'axisoptions'` once with
   `{ axis, key, value }`; a direct `setAxisLocked()` (no menu) emits the same
   event.
