@@ -28,6 +28,8 @@ If `name` was already registered, the new definition is **merged** into the exis
 
 Quantity kinds do not need to be registered — any string is accepted everywhere a quantity kind is expected. An unregistered name gets `{ label: name, scale: "linear" }` as its implicit definition.
 
+The one restriction: `name` must not contain `__` (double underscore). It is reserved as the pair-key separator for [`Axis2d`](Axis2d.md) (`"<qkX>__<qkY>"`), so a name containing it would make a 2D colour pair key split ambiguously; `registerAxisQuantityKind` throws in that case.
+
 ---
 
 ## `getAxisQuantityKind(name)`

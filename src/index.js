@@ -13,6 +13,7 @@ export { registerLayerType, getLayerType, getRegisteredLayerTypes } from "./core
 export { registerAxisQuantityKind, getAxisQuantityKind, getRegisteredAxisQuantityKinds } from "./axes/AxisQuantityKindRegistry.js"
 export { registerColorscale, register2DColorscale, getRegisteredColorscales, getRegistered2DColorscales, getColorscaleIndex, get2DColorscaleIndex, buildColorGlsl, buildColorscaleTexture, getColorscalesVersion } from "./colorscales/ColorscaleRegistry.js"
 export { Axis } from "./axes/Axis.js"
+export { Axis2d } from "./axes/Axis2d.js"
 export { linkAxes } from "./axes/AxisLink.js"
 export { Colorbar } from "./floats/Colorbar.js"
 export { colorbarLayerType } from "./layers/ColorbarLayer.js"

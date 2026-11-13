@@ -1,6 +1,12 @@
 const registry = new Map()
 
 export function registerAxisQuantityKind(name, definition) {
+  // '__' is reserved as the Axis2d pair-key separator ("<qkX>__<qkY>"), so a
+  // quantity-kind name must not contain it — otherwise a 2D pair key would split
+  // ambiguously. See src/axes/Axis2d.js.
+  if (name.includes('__')) {
+    throw new Error(`Quantity kind name '${name}' must not contain '__' (reserved as the Axis2d pair-key separator)`)
+  }
   if (registry.has(name)) {
     // Merge new properties into existing definition
     const existing = registry.get(name)

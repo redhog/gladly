@@ -37,6 +37,7 @@ A scatter plot that renders individual points coloured by a per-point value mapp
 - Color axis quantity kind: same resolution for `vData`; the key in `config.axes` must match the resolved quantity kind
 - Colorscale: from `config.axes[quantityKind].colorscale`, or the quantity kind registry
 - Supports log scales on all axes via `config.axes[...].scale: "log"`
+- Giving both `vData` and `vData2` makes the layer **fuse a 2D colour pairing** of the two colour axes. Such a pairing is layer-defined and surfaced as a first-class [`Axis2d`](../user-api/Axis2d.md) handle at `plot.axis2d["<vDataQk>__<vData2Qk>"]` (also dot-accessible, e.g. `plot.axis2d.reflectance_au__temperature_K`); the shared 2D colorscale (and the `enabled` / `colorbar` toggles) live in the matching [`config.colorbars`](PlotConfiguration.md#2d-colorbars) entry
 
 ### Example (simple flat format)
 

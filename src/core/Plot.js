@@ -4,6 +4,7 @@ import { TickLabelAtlas } from "../axes/TickLabelAtlas.js"
 import { mat4Identity, mat4Multiply } from "../math/mat4.js"
 import { ZoomController } from "../axes/ZoomController.js"
 import { AxisLimitEditor } from "../axes/AxisLimitEditor.js"
+import { Axis2d } from "../axes/Axis2d.js"
 import { getLayerType, getRegisteredLayerTypes } from "./LayerTypeRegistry.js"
 import { getAxisQuantityKind, getScaleTypeFloat } from "../axes/AxisQuantityKindRegistry.js"
 import { getRegisteredColorscales, getRegistered2DColorscales, buildColorscaleTexture, getColorscalesVersion } from "../colorscales/ColorscaleRegistry.js"
@@ -139,6 +140,16 @@ function buildPlotSchema(data, config) {
                 ...getRegisteredColorscales().keys(),
                 ...getRegistered2DColorscales().keys()
               ]
+            },
+            enabled: {
+              type: "boolean",
+              default: true,
+              description: "When false, this entry does not override its member axes' colorscales; the pair colours from each axis's own colorscale (same state as having no entry at all)."
+            },
+            colorbar: {
+              type: "boolean",
+              default: true,
+              description: "When false, the floating colorbar widget for this entry is not drawn."
             }
           }
         }
@@ -232,7 +243,55 @@ export class Plot extends GlBase {
     // Auto-managed Float widgets keyed by a config-derived tag string.
     this._floats = new Map()
 
+    // Stable Axis2d handles for 2D colour pairings, keyed by "<qkX>__<qkY>".
+    this._axis2dCache = new Map()
+    this._axis2dProxy = null
+
     this._setupResizeObserver()
+  }
+
+  // The live set of 2D colour pairs the layers fuse via colorAxes2d, as "<qkX>__<qkY>" keys.
+  _axis2dKeys() {
+    const keys = []
+    for (const layer of this.layers) {
+      for (const [, [sa, sb]] of Object.entries(layer.colorAxes2d ?? {})) {
+        const qkX = layer.colorAxes[sa]
+        const qkY = layer.colorAxes[sb]
+        if (qkX != null && qkY != null) keys.push(Axis2d.makeKey(qkX, qkY))
+      }
+    }
+    return [...new Set(keys)]
+  }
+
+  /**
+   * Returns a stable Axis2d handle for a 2D colour pairing, keyed by the ordered
+   * pair "<qkX>__<qkY>" (e.g. plot.axis2d.velocity_ms__density, or the equivalent
+   * bracket form plot.axis2d["velocity_ms__density"]). Created on first
+   * access; the same instance is returned across update() calls. Enumeration
+   * (Object.keys / for..in / `in`) reflects exactly the pairs the layers currently
+   * fuse via colorAxes2d — a pair with no backing layer is absent (but still
+   * accessible and inert).
+   */
+  get axis2d() {
+    if (!this._axis2dProxy) {
+      this._axis2dProxy = new Proxy(this._axis2dCache, {
+        get: (cache, key) => {
+          if (typeof key !== 'string') return undefined
+          if (!cache.has(key)) {
+            const [xAxis, yAxis] = Axis2d.splitKey(key)
+            cache.set(key, new Axis2d(this, xAxis, yAxis))
+          }
+          return cache.get(key)
+        },
+        has: (_cache, key) => typeof key === 'string' && this._axis2dKeys().includes(key),
+        ownKeys: () => this._axis2dKeys(),
+        getOwnPropertyDescriptor: (_cache, key) =>
+          typeof key === 'string' && this._axis2dKeys().includes(key)
+            ? { enumerable: true, configurable: true }
+            : undefined,
+      })
+    }
+    return this._axis2dProxy
   }
 
   async _applyUpdate({ config, data } = {}) {
@@ -413,6 +472,7 @@ export class Plot extends GlBase {
     this._tickLabelAtlas = new TickLabelAtlas(this.regl)
 
     for (const entry of colorbars) {
+      if (entry.enabled === false) continue
       if (!entry.colorscale || entry.colorscale == "none") continue
       if (entry.xAxis) this.axisRegistry.ensureColorAxis(entry.xAxis, entry.colorscale)
       if (entry.yAxis) this.axisRegistry.ensureColorAxis(entry.yAxis, entry.colorscale)
@@ -794,6 +854,7 @@ export class Plot extends GlBase {
     }
 
     for (const entry of colorbarsConfig) {
+      if (entry.colorbar === false) continue
       const { xAxis, yAxis } = entry
       if (xAxis && yAxis) {
         const tag = `colorbar2d:${xAxis}:${yAxis}`

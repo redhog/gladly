@@ -238,8 +238,12 @@ Each entry accepts:
 | `xAxis` | string | Quantity kind for the x-axis color scale (required for 2D, optional for 1D) |
 | `yAxis` | string | Quantity kind for the y-axis color scale (required for 2D, optional for 1D) |
 | `colorscale` | string | Named colorscale string (1D or 2D). Use `"none"` to hide the colorbar. See [Colorscales](Colorscales.md) |
+| `enabled` | boolean | Default `true`. When `false`, the entry does **not** override its member axes' colorscales — each axis reverts to its own colorscale (so a 2D pairing stops forcing the bivariate colouring). An entry with `enabled: false` is the same state as having no entry at all. |
+| `colorbar` | boolean | Default `true`. When `false`, the floating colorbar widget for this entry is not drawn. The two booleans are independent: `enabled: true, colorbar: false` gives 2D colouring with no visible bar. |
 
 Top-level colorbar entries override colorscales set in `config.axes` or the quantity kind registry.
+
+Both booleans apply identically to 1D and 2D entries, and both round-trip through `plot.getConfig()`. For 2D entries you can also drive them through the first-class [`Axis2d`](../user-api/Axis2d.md) handle (`plot.axis2d[...]`).
 
 ---
 
