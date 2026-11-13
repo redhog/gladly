@@ -259,6 +259,7 @@ export class ZoomController {
       }
 
       if (e.button !== 0) return
+      if (!plot._isReady()) return
 
       // Left-click → pan
       const region = this._getRegion(mx, my)
@@ -299,6 +300,7 @@ export class ZoomController {
     }
 
     const startTouchPan = (mx, my) => {
+      if (!plot._isReady()) return
       const region = this._getRegion(mx, my)
       if (!region) return
       touchDragging   = true
@@ -392,7 +394,7 @@ export class ZoomController {
         const newDist = getTouchDist(e.touches)
         const factor  = touchLastDist / newDist   // pinch out → zoom in (factor < 1)
         touchLastDist = newDist
-        if (!touchZoomRegion) return
+        if (!touchZoomRegion || !plot._isReady()) return
         const [midX, midY] = getTouchMid(e.touches)
         const mx = midX - touchRect.left
         const my = midY - touchRect.top
@@ -453,7 +455,9 @@ export class ZoomController {
     // Scroll wheel: zoom toward cursor position
     canvas.addEventListener('wheel', (e) => {
       e.preventDefault()
-      if (!plot.axisRegistry) return
+      // Mid-update the axes hold placeholder ranges; zooming from them would push those
+      // ranges to every linked axis (see Plot._isReady()).
+      if (!plot.axisRegistry || !plot._isReady()) return
 
       const rect   = canvas.getBoundingClientRect()
       const mx     = e.clientX - rect.left

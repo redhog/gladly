@@ -223,6 +223,7 @@ export class Plot extends GlBase {
     this._blockedLag = 0
     this._lastRenderEnd = performance.now()
     this._is3D = false
+    this._readyEpoch = -1   // the _initEpoch of the last update() that finished; see _isReady()
     this._camera = null
     this._tickLabelAtlas = null
 
@@ -358,7 +359,7 @@ export class Plot extends GlBase {
 
   async _initialize() {
     const epoch = ++this._initEpoch
-    const { layers = [], axes = {}, colorbars = [], transforms = [], interactions = {} } = this.currentConfig
+    const { layers = [], colorbars = [], transforms = [], interactions = {} } = this.currentConfig
 
     // Unregister selection columns from previous layer set
     for (const layer of this.layers) {
@@ -392,7 +393,9 @@ export class Plot extends GlBase {
     await this._processLayers(layers, this.currentData, epoch)
     if (this._initEpoch !== epoch) return
 
-    const cleanAxes = { ...axes }
+    // Read the axes from the live config, not the one this update started with: a linked
+    // axis that zoomed meanwhile has written its new range there (setAxisDomain).
+    const cleanAxes = { ...(this.currentConfig.axes ?? {}) }
     for (const axisId of AXES) {
       const cfg = cleanAxes[axisId]
       if (cfg?.quantity_kind != null &&
@@ -443,7 +446,16 @@ export class Plot extends GlBase {
       )
     }
 
+    this._readyEpoch = epoch
     this.scheduleRender()
+  }
+
+  // True once the latest update() has finished building this plot's axes and layers.
+  // While one is in flight, or after one failed, the axes hold d3's placeholder ranges
+  // ([0, 1], or [1, 10] on a log scale), so zoom and pan must not read them: the
+  // result would reach every linked axis.
+  _isReady() {
+    return this._readyEpoch === this._initEpoch
   }
 
   _rebuildColorscaleTexture() {
