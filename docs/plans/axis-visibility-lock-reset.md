@@ -10,11 +10,15 @@ Three gladly features, each driven by a key in `axes.<slot>`:
   switched off;
 - **reset** the view to the data range.
 
-This plan carries **no UI**. The right-click menu that lets a user toggle these
-keys is a separate plan — `docs/plans/axis-context-menu.md` — stacked on top of
+This plan carries **almost no UI**. The one exception is a single direct
+affordance: **clicking an axis title toggles that axis's lock** (Part 2). It is
+included here because the lock mark it toggles is already drawn here, and because
+a title click is a self-contained interaction that does not need any menu
+machinery. The fuller right-click menu that toggles *every* key on these axes is
+still a separate plan — `docs/plans/axis-context-menu.md` — stacked on top of
 this one. The point of the split is that everything here is pure gladly
-data-model and rendering, reusable by any consumer that writes config, and
-testable without a menu.
+data-model and rendering plus that one toggle, reusable by any consumer that
+writes config, and testable without a menu.
 
 **PR stack:** builds on open PRs #36 (typed axis limits, which also touches
 `Axis.js`) and #38 (`marginWithoutAxis`). The lock and reset do not need #37.
@@ -46,6 +50,70 @@ This is cheap because of how config already works (verified against the code):
 (Precedent / caution: `rotate` is already a declared axis key that is **never
 read** — title rotation is hard-coded in `Axis.render`. Our new keys must actually
 be read, not merely declared.)
+
+### Per-axis config/schema accessors on `Axis`
+
+`Axis` gains three methods that are the per-axis counterparts of the existing
+`Plot` methods, scoped to just this axis's slice:
+
+| `Axis` method | `Plot` counterpart | returns / does |
+|---|---|---|
+| `axis.getConfig()` | `plot.getConfig()` | the **merged** per-slot config for this axis — identical to `plot.getConfig().axes[slot]`, not the raw `currentConfig.axes[slot]` override slice. It is **defined in terms of** the same per-slot merge `plot.getConfig()` builds (`{...qkDef, ...currentConfig.axes[slot], ...liveMinMax, ...quantity_kind}`, `Plot.js:313-326`), so every key — the stored overrides, the live domain, and the new ones — round-trips for free. See the shared-merge note below |
+| `axis.setConfig(cfg)` | `plot.update({ config })` | writes `cfg` as this axis's `axes.<slot>` object and re-applies through the plot's normal config path so every key (`min`/`max`/`scale`/`quantity_kind`/the visibility + `locked` keys) takes effect |
+| `Axis.schema()` *(static)* | `Plot.schema(data, config)` *(static)* | the JSON Schema fragment that governs one axis config — `Plot.schema(...).properties.axes.additionalProperties`. Because the plot schema describes all slots with a single `additionalProperties` schema, this fragment is the same for every axis; it is exactly what a menu/editor validates a slot against. **Static and takes no arguments** — see below |
+
+Naming notes — the governing rule is that a **`get`/`set` prefix denotes live
+instance-state access**:
+
+- `getConfig`/`setConfig` **read and write the live per-slot config on the
+  instance**, so the prefix is warranted — and it matches `plot.getConfig()`, which
+  carries it for the same reason.
+- `schema()` is a **pure static value** — no instance to read from — so it takes no
+  prefix, matching `Plot.schema()`.
+
+That rule is also where the mirror stops being letter-perfect; the two deviations
+below are called out so the implementer picks deliberately:
+
+- `getConfig` matches `plot.getConfig()` exactly.
+- `Plot` has no `setConfig` — a plot's config is applied via `plot.update({ config })`.
+  `axis.setConfig()` is the per-axis name for that operation; it still goes through
+  the plot's update path internally. (It is heavier than `setAxisLocked()`'s
+  render-only fast path, which stays the lightweight special case for the single
+  key it owns.)
+- The schema accessor is **static `Axis.schema()`**, mirroring the static
+  `Plot.schema()` exactly — same name (no `get` prefix; `Plot` does not use one),
+  same static-ness. No `get` is invented where `Plot` has none.
+- `Axis.schema()` takes **no arguments**, unlike `Plot.schema(data, config)`.
+  `data` and `config` only shape the plot schema's **layers / transforms /
+  computation** parts (column names, computed columns, transform outputs); the
+  `axes.additionalProperties` fragment this method returns depends on neither — its
+  only dynamic piece is the `colorscale` enum, which comes from the **global**
+  colorscale registries. It is static (not an instance method) because the fragment
+  is identical for every axis and needs no instance, plot, data or config.
+
+These are thin, derived accessors over the single source of truth; they store no
+state of their own.
+
+**Shared-merge note (governing invariant).** There are two sources behind an
+axis: the stored sparse override `currentConfig.axes[slot]`, and the live
+`AxisRegistry` runtime state (the D3 scale's domain and the slot→quantity-kind
+binding). `currentConfig.axes[slot]` is **not** the resolved config — it is only
+the override overlay; `plot.getConfig()` is the single place the two are
+reconciled, layering `{...qkDef, ...currentConfig.axes[slot], ...liveMinMax,
+...quantity_kind}` per live-scaled slot (`Plot.js:313-326`). Therefore
+`axis.getConfig()` must return that **merged** object, not the raw override — the
+invariant is:
+
+```js
+plot.getConfig().axes[slot]  ===  plot.axes[slot].getConfig()   // deep-equal
+```
+
+Implement it by factoring the per-slot merge out of the `getConfig()` loop into a
+helper (e.g. `plot._axisConfig(slot)`) that both call: `plot.getConfig()` loops it
+over every live slot, `axis.getConfig()` returns `plot._axisConfig(this._name)`.
+The equivalence is then true by construction, not by luck. (`axis2d` mirrors this:
+`Axis2d.getConfig()` is defined as the pair's entry inside
+`plot.getConfig().colorbars` — see `axis2d-object.md`.)
 
 ## What exists
 
@@ -103,13 +171,22 @@ wanted. Works on 3D plots too (margins there do not change).
 ### Pixel layout and margin
 
 In 2D, place the tick marks, tick labels and title at **fixed pixel distances**
-from the axis line instead of fractions of the margin:
+from the axis line instead of fractions of the margin. The three bands are:
 
-- Tick marks ~6 px long.
-- Tick labels start ~2 px past the ticks: x labels centred on their tick with the
-  near edge there; y labels aligned on that edge, using each label's width from
-  the atlas.
-- Title centred in a ~20 px band (one 16 px row + a gap) at the outer margin edge.
+- **Tick band** — a drawn line, genuinely fixed at ~6 px.
+- **Label band** — the actual rendered label height plus a small gap. Tick labels
+  start ~2 px past the ticks: x labels centred on their tick with the near edge
+  there; y labels aligned on that edge, using each label's width from the atlas.
+- **Title band** — the actual rendered title height (× its line count) plus a gap,
+  at the outer margin edge.
+
+The label- and title-band sizes are **read from the atlas**, not hard-coded. The
+atlas already stores the pixel size of every string it rendered — `Axis.js` reads
+`entry.pw`/`entry.ph` per label and per title line today. Deriving the bands from
+those metrics makes the layout correct at any font size automatically, instead of
+pinning it to a 16 px assumption that silently breaks (labels collide or leave
+gaps) if the font changes. The px figures below are the *expected values at the
+current font*, not constants in the code.
 
 `_layoutMargin()` starts from `margin[side]` for a side drawing every part, takes
 off the title band when the title is hidden and the label band (what is between
@@ -152,8 +229,11 @@ axes of the same gesture still move. A gesture in the plot area of a plot with x
 locked and y free moves y only. Covers 3D plots, which obey a lock set on a
 linked 2D axis.
 
-Nothing in `Axis.setDomain()`, `AxisLink`, `AxisLimitEditor` or `update()`
-changes. Therefore:
+The lock adds nothing to `Axis.setDomain()`, `AxisLink`, `AxisLimitEditor` or
+`update()` — enforcement lives entirely in `ZoomController`, upstream of
+`setDomain()`. (Part 3 does extend `setDomain()` with a `null`-means-data case,
+but that is orthogonal: a locked axis is simply skipped by `resetAxes()` and
+never receives the `null`.) Therefore:
 
 - A typed limit (#36) **still moves** a locked axis and its linked axes (typing is
   deliberate); the lock stays on. #36 needs no change.
@@ -166,24 +246,76 @@ changes. Therefore:
 
 A small lock glyph drawn beside the title of each 2D axis that `isAxisLocked`, on
 every plot, with a "locked" tooltip. A hidden axis draws no mark (its lock still
-shows in the menu — Plan B). Where the mark sits when the title is hidden is for
-the review. Display-only; the toggle lives in the menu plan.
+shows in the menu — the menu plan). Where the mark sits when the title is hidden
+is for the review. The mark reflects state; the toggle is the title click below.
+
+### Click-to-toggle
+
+**Clicking an axis title toggles that axis's lock** — a plain click calls
+`plot.setAxisLocked(slot, !plot.isAxisLocked(slot))`, which re-renders the mark
+without an `update()`. Only 2D axes; a 3D plot has no title click.
+
+Detecting the target:
+
+- The title is a WebGL atlas billboard, not a DOM element, so there is no DOM hit
+  target. The handler goes through `ZoomController` — which already maps a point
+  to an axis strip via `_getRegion2D()` — plus the title's pixel band, which
+  Part 1's fixed-pixel layout makes a **known rectangle** per side. A point in the
+  title band of a side with a title that is drawn (not `titleVisible: false`, not
+  a whole-hidden axis) hits that axis's title.
+- A mousedown on an axis strip today **starts a zoom/pan gesture on that axis**.
+  So the toggle fires on a **click** — mousedown then mouseup with no movement
+  past a small threshold — and a drag past the threshold is left to the existing
+  zoom/pan. The lock is toggled on mouseup, not mousedown, so a drag that happens
+  to begin in the title band still pans.
+- A locked axis cannot be dragged anyway (Part 2's enforcement), so in practice a
+  press on a locked title only ever resolves to a click → unlock.
+- This is a single click. #36's double-click-on-axis-**end** (type a limit) sits
+  at the axis ends, not the title band, and keys off a different event; the two do
+  not overlap.
+
+The title click is the only pointer interaction this plan adds. Toggling the
+other keys (`tickLabelsVisible`, `titleVisible`) stays with the menu plan.
 
 ## Part 3: Reset
 
-`plot.resetAxes()` sets each 2D spatial axis that has a scale to its data range
-through `Axis.setDomain()`, so linked axes in other plots follow and nothing else
-moves. It keeps a reversed axis reversed and a log axis above zero, as auto-fit
-does. Needs `applyAutoDomainsFromLayers()` to keep `dataExtent` for **every**
-quantity kind, not only filter axes. Color and filter axes are left alone;
-locked axes are skipped. On a 3D plot it does nothing.
+### `setDomain(null)` means "the data range"
+
+Reset is not a separate code path. `Axis.setDomain(domain)` gains one case: a
+`null` (or absent) `domain` means **reset this axis to its data range**.
+`setDomain` resolves the marker to concrete numbers *at the entry point* — it
+looks up the data extent for this axis's quantity kind and then behaves exactly
+as a normal `setDomain([min, max])` from there. Resolved numbers (never the
+marker) are what propagate to listeners and linked axes, because a linked plot
+has its own data and must receive this axis's resolved range, not re-resolve the
+marker against its own.
+
+Resolution reads `axisRegistry.getDataExtent(qk)`, which already exists but today
+is only populated for filter axes. So reset needs `applyAutoDomainsFromLayers()`
+to keep `dataExtent` for **every** quantity kind, not only filter axes — the one
+real change. It keeps a reversed axis reversed and a log axis above zero, as
+auto-fit does.
+
+This gives per-axis reset for free (`axis.setDomain(null)`), and it reuses the
+existing link-propagation path with no new code.
+
+### `plot.resetAxes()`
+
+A thin convenience over the above: it loops the 2D spatial axes that have a scale
+and calls `setDomain(null)` on each. Color and filter axes are left alone; locked
+axes are skipped. On a 3D plot it does nothing.
 
 ## Docs
 
 - `docs/user-api/Plot.md`: `resetAxes()`, `isAxisLocked()`, `setAxisLocked()`.
+- `docs/user-api/Axis.md` (or wherever `setDomain` is documented): `setDomain(null)`
+  resets the axis to its data range and propagates to linked axes; `getConfig()`,
+  `setConfig(cfg)` and the static `Axis.schema()` as the per-axis counterparts of
+  `plot.getConfig()`, `plot.update({config})` and the static `Plot.schema()`.
 - `docs/configuration/PlotConfiguration.md`: `tickLabelsVisible`, `titleVisible`,
   `locked` as `axes.<slot>` keys; the margin rule; what a lock stops and what it
-  does not; the note that all three round-trip through `getConfig()`.
+  does not; that clicking an axis title toggles its lock; the note that all three
+  round-trip through `getConfig()`.
 - `docs/architecture/`: where the 2D axis pixel layout is described.
 
 ## Tests (web-test-runner, `test/`)
@@ -191,6 +323,8 @@ locked axes are skipped. On a 3D plot it does nothing.
 - A hidden title or tick labels draw nothing of that part.
 - Each hidden part narrows its side by its band; no side goes below
   `marginWithoutAxis`; a plot that hides nothing keeps #38's margins.
+- `setDomain(null)` sets the data range on a zoomed axis and propagates the
+  resolved numeric range (not the marker) to a linked axis on a second plot.
 - `resetAxes()` sets the data range on a zoomed axis, keeps a reversed axis
   reversed, refuses zero on a log axis, moves a linked axis on a second plot and
   leaves its unlinked axis alone.
@@ -199,8 +333,18 @@ locked axes are skipped. On a 3D plot it does nothing.
   plot with x locked moves y only; a typed limit moves a locked axis and its
   linked axes; `setDomain()` still moves a locked axis; `resetAxes()` leaves a
   locked axis; switching it off from a linked plot clears it everywhere.
+- Title click: a click in an axis's title band toggles its lock (off→on and
+  on→off); a click in the title band of a title that is hidden or on a 3D plot
+  does nothing; a drag that starts in the title band pans/zooms instead of
+  toggling; a click on one axis's title does not lock another.
 - Config round-trip: setting `tickLabelsVisible`/`titleVisible`/`locked` and
   calling `getConfig()` returns them, and `update()` restores them.
+- Per-axis accessors: `plot.axes[slot].getConfig()` **deep-equals**
+  `plot.getConfig().axes[slot]` (the governing invariant — the merged per-slot
+  config, not the raw `currentConfig.axes[slot]` override); `axis.setConfig({min,
+  max})` applies and `axis.getConfig()` reflects it; `Axis.schema()` equals
+  `Plot.schema(data, config).properties.axes.additionalProperties` and validates a
+  slot config.
 
 ## Order and releases
 
@@ -220,7 +364,9 @@ Opened once those are merged, or stacked on them. The menu plan
 
 1. The three axis keys (`tickLabelsVisible`, `titleVisible`, `locked`), the pixel
    layout + margin rule, `isAxisLocked`/`setAxisLocked` + ZoomController
-   enforcement + the lock mark, `resetAxes()` + `dataExtent`; tests and docs.
+   enforcement + the lock mark + the title-click toggle, `setDomain(null)` +
+   `resetAxes()` + `dataExtent`, the `Axis` `getConfig`/`setConfig` accessors +
+   static `Axis.schema()`; tests and docs.
 2. A release (maintainer's step), or stacked under the menu plan.
 
 One PR to `redhog/gladly`. About a day (most of it the pixel layout, the lock and
