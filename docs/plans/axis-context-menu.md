@@ -19,9 +19,9 @@ rule, a toggle writes into `axes.<slot>` and round-trips through
 `plot.getConfig()` automatically — so "save the switch into the layout" is just
 setting a gladly config key, and a consumer that stores `plot.getConfig()` keeps
 it with no extra work. The menu holds **no** axis state of its own, and there is
-**no `menu:` config block** — the only things gladly cannot do itself (persist
-across a reload, and fan a persist out across a linked workspace) are exposed as
-a change event and a **code-level** item-registry hook, not as stored config.
+**no `menu:` config block** — the only thing gladly cannot do itself (persist
+across a reload, and fan a persist out across a linked workspace) is exposed as
+a change event, not as stored config.
 
 **Enabling the built-in menus.** Two top-level config booleans gate whether
 gladly's own menu is bound to the `'contextmenu'` event: `axis_menu` (the
@@ -89,9 +89,11 @@ released before a right-click closes the polygon.
 ### Motivation
 
 The menu is generic: its rows set `axes.<slot>` keys (Plan A) and call
-`resetAxes()` / `setAxisLocked()`. Only two things are app-specific — persisting
-across reload, and extra app rows (e.g. a status bar) — so gladly owns the menu
-and exposes a code hook and an event for those. No app concept is hard-coded.
+`resetAxes()` / `setAxisLocked()`. Only one thing is app-specific — persisting
+across reload — so gladly owns the menu and exposes an event for that. No app
+concept is hard-coded. A host that wants its own extra rows binds its own menu
+via `plot.on('contextmenu', …)` with the built-in menu gated off (see **Enabling
+the built-in menus**).
 
 ### The menu
 
