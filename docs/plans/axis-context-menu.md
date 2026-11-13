@@ -23,6 +23,15 @@ it with no extra work. The menu holds **no** axis state of its own, and there is
 across a reload, and fan a persist out across a linked workspace) are exposed as
 a change event and a **code-level** item-registry hook, not as stored config.
 
+**Enabling the built-in menus.** Two top-level config booleans gate whether
+gladly's own menu is bound to the `'contextmenu'` event: `axis_menu` (the
+single-axis menu on an axis-strip right-click) and `plot_menu` (the full menu on
+a plot-area / corner / empty-margin / 3D right-click). Both default to true. These
+are not axis state and not a `menu:` block — they only switch gladly's internal
+binding on or off. When one is false, gladly does not open that menu and the
+`'contextmenu'` event still fires, so a consumer can `plot.on('contextmenu', …)`
+and bind anything of their own to it (their own menu, or any other behaviour).
+
 **PR stack:** builds on Plan A, and on open PRs #36 (typed axis limits), #37
 (selection shapes / the polygon's right press) and #38 (`marginWithoutAxis`).
 
@@ -85,9 +94,11 @@ and exposes a code hook and an event for those. No app concept is hard-coded.
 
 ### The menu
 
-Opened by the `'contextmenu'` event, built as a gladly float/`data-gladly-control`
-widget positioned at the pointer and kept on screen near the window edges; closed
-on Escape, a click outside, or Reset view.
+Opened by the `'contextmenu'` event (when gated on — see **Enabling the built-in
+menus** above: `plot_menu` for the full menu, `axis_menu` for the single-axis
+menu), built as a gladly float/`data-gladly-control` widget positioned at the
+pointer and kept on screen near the window edges; closed on Escape, a click
+outside, or Reset view.
 
 **Full menu** (plot-area / corner / empty-margin / 3D click): a row per 2D axis
 present in `coords`, named by side + title (`axes[slot].label` or the quantity
@@ -112,9 +123,18 @@ not). Lock reads `isAxisLocked`, so a lock held by a linked plot shows checked.
 - **Lock:** `setAxisLocked(slot, on)` (no `update()`).
 - **Reset view:** `resetAxes()`.
 
-After any menu-driven change, the plot emits a **`'menuchange'`** event (name for
-the review) so the consumer can persist. The checkboxes read live config so the
-menu shows the real state as the plot rebuilds behind it.
+The menu does not emit an event of its own. The settings it writes —
+`visible` / `tickLabelsVisible` / `titleVisible` / `locked` on a slot — emit an
+**`'axisoptions'`** event from the **write path**, keyed by *what* changed, not by
+who changed it, exactly like `'axislimit'` (`_emitAxisLimit`, fired by the typed
+editor and re-emitted by the colorbar/filterbar floats). It carries
+`{ type: 'axisoptions', axis: slot, key, value }` and fires wherever those keys
+are written — `setAxisLocked()` and the visibility/labels/title config writes —
+so a direct `plot.update({config})` or `setAxisLocked()` call, and propagation
+from a linked plot, emit it too; the menu is just one more source. A consumer
+persists on `'axisoptions'` (and `'axislimit'` for domain changes) and never has
+to know a menu was involved. The checkboxes read live config so the menu shows
+the real state as the plot rebuilds behind it.
 
 ### Extension hook — a code registry, not config
 
@@ -123,18 +143,18 @@ rows — e.g. a workspace status-bar toggle, or future plot-area items. This is 
 **code-level** registry (e.g. `plot.menuItems`: a `(context) => itemDescriptor[]`
 list of callbacks), **not** a `menu:` config block — axis state stays solely in
 `axes.<slot>` (Plan A's rule), and host rows are host responsibility. A host app
-registers its rows through this hook and reacts to `'menuchange'` to persist
-their state. The host's items get the same `'menuchange'` on toggle. This is the
-only seam a host app touches.
+registers its rows through this hook and persists its own rows' state itself; the
+axis rows need no host wiring beyond reacting to `'axisoptions'`. This is the only
+seam a host app touches.
 
 Nothing here hard-codes an app concept; any status bar and persistence are the
 host's, injected through the code hook and the event.
 
 ## Docs
 
-- `docs/user-api/Plot.md`: the `'contextmenu'` and `'menuchange'` events, the
-  `plot.menuItems` menu-item hook. (The `resetAxes()`/`isAxisLocked()`/
-  `setAxisLocked()` entries are Plan A's.)
+- `docs/user-api/Plot.md`: the `'contextmenu'` and `'axisoptions'` events, the
+  `axis_menu` / `plot_menu` config booleans, the `plot.menuItems` menu-item hook.
+  (The `resetAxes()`/`isAxisLocked()`/`setAxisLocked()` entries are Plan A's.)
 - `docs/architecture/`: the menu widget alongside the other floats.
 
 ## Tests (web-test-runner, `test/`)
@@ -150,13 +170,17 @@ The menu:
 
 - A right-click in the plot area opens a full menu with a row per 2D axis; a
   right-click on an axis strip opens that axis's row only.
+- With `plot_menu: false` a plot-area right-click opens no menu but still fires
+  `'contextmenu'`; with `axis_menu: false` an axis-strip right-click opens no menu
+  but still fires the event.
 - Toggling Axis/Labels/Title sets the config key and reflows the margin; toggling
   Lock calls `setAxisLocked` and rebuilds no layers; Reset view calls
   `resetAxes()`.
 - A hidden axis's Labels/Title boxes are disabled and keep their state; Lock stays
   live and shows a lock held by a linked plot.
-- Any menu toggle emits `'menuchange'` once; an injected host item (via
-  `plot.menuItems`) renders and emits `'menuchange'` on toggle.
+- Toggling Axis/Labels/Title or Lock emits `'axisoptions'` once with
+  `{ axis, key, value }`; a direct `setAxisLocked()` (no menu) emits the same
+  event; an injected host item (via `plot.menuItems`) renders and toggles.
 - Escape / outside-click / Reset view close the menu.
 
 ## Order and releases
@@ -181,9 +205,12 @@ consumer to a single bump.
 
 1. The `'contextmenu'` event with the axis it was on (and the Enter-closes-polygon
    line if #37 has landed); tests and docs.
-2. The menu widget (rows, checkboxes, context-sensitivity, grey-out,
-   positioning), the `'menuchange'` event and the `plot.menuItems` hook; tests and
+2. The `'axisoptions'` event, emitted from the `axes.<slot>`
+   visible/labels/title/lock write path (a `_emitAxisOptions` + `_axisOptions`-
+   Listeners set, mirroring `_emitAxisLimit`); tests and docs.
+3. The menu widget (rows, checkboxes, context-sensitivity, grey-out, positioning,
+   gated by `axis_menu` / `plot_menu`) and the `plot.menuItems` hook; tests and
    docs.
-3. A release (maintainer's step).
+4. A release (maintainer's step).
 
 One PR to `redhog/gladly`, stacked on Plan A. About half a day.
