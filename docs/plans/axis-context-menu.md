@@ -141,24 +141,15 @@ persists on `'axisoptions'` (and `'axislimit'` for domain changes) and never has
 to know a menu was involved. The checkboxes read live config so the menu shows
 the real state as the plot rebuilds behind it.
 
-### Extension hook — a code registry, not config
-
-A way for the host to contribute rows/items the menu renders alongside the axis
-rows — e.g. a workspace status-bar toggle, or future plot-area items. This is a
-**code-level** registry (e.g. `plot.menuItems`: a `(context) => itemDescriptor[]`
-list of callbacks), **not** a `menu:` config block — axis state stays solely in
-`axes.<slot>` (Plan A's rule), and host rows are host responsibility. A host app
-registers its rows through this hook and persists its own rows' state itself; the
-axis rows need no host wiring beyond reacting to `'axisoptions'`. This is the only
-seam a host app touches.
-
-Nothing here hard-codes an app concept; any status bar and persistence are the
-host's, injected through the code hook and the event.
+Nothing here hard-codes an app concept. A host that needs extra rows binds its own
+menu via `plot.on('contextmenu', …)` with the built-in menu gated off (see
+**Enabling the built-in menus**); the axis rows need no host wiring beyond reacting
+to `'axisoptions'`.
 
 ## Docs
 
 - `docs/user-api/Plot.md`: the `'contextmenu'` and `'axisoptions'` events, the
-  `axis_menu` / `plot_menu` config booleans, the `plot.menuItems` menu-item hook.
+  `axis_menu` / `plot_menu` config booleans.
   (The `resetAxes()`/`isAxisLocked()`/`setAxisLocked()` entries are Plan A's.)
 - `docs/architecture/`: the menu widget alongside the other floats.
 
@@ -188,7 +179,7 @@ The menu:
   live and shows a lock held by a linked plot.
 - Toggling Axis/Labels/Title or Lock emits `'axisoptions'` once with
   `{ axis, key, value }`; a direct `setAxisLocked()` (no menu) emits the same
-  event; an injected host item (via `plot.menuItems`) renders and toggles.
+  event.
 - Escape / outside-click / Reset view close the menu.
 
 ## Order and releases
@@ -204,8 +195,10 @@ consumer to a single bump.
   Plan A.
 - Touch long-press; a Mac Ctrl+click as a right-click.
 - A right-click on a color bar or filter bar; color/filter axes in the menu.
-- App-specific menu items (e.g. a status bar) — those come through the
-  `plot.menuItems` hook from the host, along with the host's persistence.
+- App-specific menu items (e.g. a status bar) — a host that needs these binds its
+  own menu via `plot.on('contextmenu', …)` with the built-in menu gated off, along
+  with the host's own persistence. A gladly-rendered host-item hook is dropped for
+  now.
 
 ## Implementation steps
 
@@ -215,8 +208,7 @@ consumer to a single bump.
    visible/labels/title/lock write path (a `_emitAxisOptions` + `_axisOptions`-
    Listeners set, mirroring `_emitAxisLimit`); tests and docs.
 3. The menu widget (rows, checkboxes, context-sensitivity, grey-out, positioning,
-   gated by `axis_menu` / `plot_menu`) and the `plot.menuItems` hook; tests and
-   docs.
+   gated by `axis_menu` / `plot_menu`); tests and docs.
 4. A release (maintainer's step).
 
 One PR to `redhog/gladly`, stacked on Plan A. About half a day.
