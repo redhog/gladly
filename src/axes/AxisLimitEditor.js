@@ -58,7 +58,7 @@ export class AxisLimitEditor {
 
   _handleDblClick(e) {
     const plot = this._plot
-    if (!plot.axisRegistry || !plot._zoomController) return
+    if (!plot.axisRegistry || !plot._zoomController || !plot._isReady()) return
     const rect = plot.container.getBoundingClientRect()
     const mx = e.clientX - rect.left
     const my = e.clientY - rect.top
