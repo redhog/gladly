@@ -149,7 +149,7 @@ handle.remove()
 
 #### Synthetic plot events
 
-Several special event types do not correspond to a plain DOM event. Two report rendering errors (`"error"` / `"no-error"`); `"axislimit"` and `"axisoptions"` report axis state the user (or your own code) changed; and `"contextmenu"` is a cleaned-up right-click. The error events have no `coords`; the others do.
+Several special event types do not correspond to a plain DOM event. Two report rendering errors (`"error"` / `"no-error"`); `"axislimit"` and `"axisoptions"` report axis state the user (or your own code) changed; `"contextmenu"` is a cleaned-up right-click; and `"contextmenu_open"` fires when the built-in menu opens so you can augment it. The error events have no `coords`; the others do.
 
 ---
 
@@ -267,6 +267,24 @@ plot.update({ config: { ...config, plot_menu: false, axis_menu: false } })
 ```
 
 When a gate is `false`, gladly opens no menu for that region but the `"contextmenu"` event still fires, so a consumer can bind their own menu (or any behaviour) via `plot.on('contextmenu', …)`.
+
+**`"contextmenu_open"`** — fired when the built-in menu actually opens, so a consumer can **augment** it rather than replace it. The callback is handed the fully-built menu element and mutates it in place — append rows or buttons, wire handlers, remove or restyle what gladly put there:
+
+```javascript
+plot.on('contextmenu_open', (e, coords, region, menuEl) => {
+  // region?.type === 'axis'  → the single-axis menu; region.axes[0] is its axis slot
+  // region plot-area / null  → the full menu
+  const btn = document.createElement('button')
+  btn.textContent = 'My action'
+  btn.addEventListener('click', () => { /* … */ })
+  menuEl.appendChild(btn)
+})
+```
+
+- The first three parameters — `e`, `coords`, `region` — are **exactly** those of `"contextmenu"` (same press). `region` identifies which menu opened and, for an axis strip, which axis.
+- `menuEl` is the menu's root `<div>` (`data-gladly-control="axis-menu"`), already attached to `document.body` and already refreshed. The event fires **after** the menu is built and its controls show their live values, and **before** it is positioned — so the menu is placed at its final size, staying inside the viewport after your changes.
+- Use the two events for different goals: `"contextmenu_open"` **augments** the built-in menu and fires only when it opens; `"contextmenu"` fires on every qualifying press (built-in menu or not), so with `plot_menu` / `axis_menu` set to `false` it is where you **build your own** menu from scratch.
+- The menu is rebuilt on every open, so the callback runs every time — it must not assume it runs once. gladly does not refresh controls you add; a listener that needs live-updating controls manages its own state. Multiple listeners are supported; an exception in one is caught, logged, and does not block the others or the menu.
 
 ---
 

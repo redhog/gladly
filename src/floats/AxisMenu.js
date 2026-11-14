@@ -101,7 +101,7 @@ export class AxisMenu {
     return sel
   }
 
-  open(clientX, clientY, region) {
+  open(e, coords, region) {
     this.close()
     const plot = this._plot
     const slots = this._slotsFor(region)
@@ -134,7 +134,10 @@ export class AxisMenu {
     document.body.appendChild(el)
     this._el = el
     this._refresh()
-    this._place(clientX, clientY)
+    // After build + refresh (DOM complete, controls showing live values) and before place
+    // (so _place measures the final size), let 'contextmenu_open' listeners mutate the menu.
+    this._plot._emitContextMenuOpen(e, coords, region, el)
+    this._place(e.clientX, e.clientY)
 
     document.addEventListener('mousedown', this._onOutsideDown, true)
     window.addEventListener('keydown', this._onKey)

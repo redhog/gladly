@@ -247,6 +247,7 @@ export class Plot extends GlBase {
     this._axisLimitListeners = new Set()
     this._axisOptionsListeners = new Set()
     this._contextMenuListeners = new Set()
+    this._contextMenuOpenListeners = new Set()
     // Set by LassoInteraction when a right press closed a polygon; cleared by
     // ZoomController on the matching mouseup, so that press emits no 'contextmenu'.
     this._rightPressConsumed = false
@@ -1077,6 +1078,7 @@ export class Plot extends GlBase {
     this._axisMenu = null
     this._axisOptionsListeners.clear()
     this._contextMenuListeners.clear()
+    this._contextMenuOpenListeners.clear()
 
     this._renderCallbacks.clear()
     this._canvas.remove()
@@ -1360,7 +1362,17 @@ export class Plot extends GlBase {
     const gated = onAxis ? (this.currentConfig?.axis_menu !== false) : (this.currentConfig?.plot_menu !== false)
     // The menu is viewport-positioned (attached to document.body) so it escapes any float's
     // clip and stacking context — pass the event's own viewport coordinates.
-    if (gated && this._axisMenu) this._axisMenu.open(e.clientX, e.clientY, region)
+    if (gated && this._axisMenu) this._axisMenu.open(e, coords, region)
+  }
+
+  // Fire every 'contextmenu_open' listener with the built-in menu's root element, just
+  // after it is built/refreshed and before it is placed (see AxisMenu.open). Mirrors
+  // 'contextmenu''s (e, coords, region) and appends the menu element; errors are isolated.
+  _emitContextMenuOpen(e, coords, region, menuEl) {
+    for (const cb of this._contextMenuOpenListeners) {
+      try { cb(e, coords, region, menuEl) }
+      catch (err) { console.error('[gladly] Error in contextmenu_open listener:', err) }
+    }
   }
 
   scheduleRender(sourcePlot = null) {
@@ -1427,6 +1439,13 @@ export class Plot extends GlBase {
     if (eventType === 'contextmenu') {
       this._contextMenuListeners.add(callback)
       return { remove: () => this._contextMenuListeners.delete(callback) }
+    }
+    // 'contextmenu_open' is synthetic: fired from AxisMenu.open with the built-in menu's
+    // root element so a listener can augment it. cb(e, coords, region, menuEl); its first
+    // three args mirror 'contextmenu'.
+    if (eventType === 'contextmenu_open') {
+      this._contextMenuOpenListeners.add(callback)
+      return { remove: () => this._contextMenuOpenListeners.delete(callback) }
     }
     const handler = (e) => {
       if (!this.container.contains(e.target)) return
