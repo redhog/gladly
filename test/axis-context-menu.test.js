@@ -8,6 +8,13 @@ const QK_Z = 'acm_time_s'
 registerAxisQuantityKind(QK_X, { label: 'Depth (m)',   scale: 'linear' })
 registerAxisQuantityKind(QK_Y, { label: 'Voltage (V)', scale: 'linear' })
 registerAxisQuantityKind(QK_Z, { label: 'Time (s)',    scale: 'linear' })
+// Colour (×2 for a 2D pair) and filter quantity kinds for the extra-table tests.
+const QK_C = 'acm_refl', QK_C2 = 'acm_temp', QK_F = 'acm_gate'
+const PAIR = `${QK_C}__${QK_C2}`
+registerAxisQuantityKind(QK_C,  { label: 'Refl',   scale: 'linear', colorscale: 'magma' })
+registerAxisQuantityKind(QK_C2, { label: 'Temp',   scale: 'linear', colorscale: 'coolwarm' })
+registerAxisQuantityKind(QK_F,  { label: 'Gate',   scale: 'linear' })
+const TWOD = 'bilinear4corner'   // pre-registered 2D colorscale
 
 const WIDTH = 200, HEIGHT = 200
 const MARGIN = { top: 60, right: 60, bottom: 60, left: 60 }
@@ -54,6 +61,26 @@ function baseConfig(axes = {}, extra = {}) {
 function config3D(axes = {}, extra = {}) {
   return { layers: [{ points: { xData: 'input.x', yData: 'input.y', zData: 'input.z', xAxis: 'xaxis_bottom', yAxis: 'yaxis_left', zAxis: 'zaxis_bottom_left' } }], axes, ...extra }
 }
+
+// A points layer with vData (+ vData2 → a 2D pair) and fData → two colour axes, one 2D
+// pairing and one filter axis, so the full menu's extra table has all three row kinds.
+function makeColorData(n = 32) {
+  const data = makeData(n)
+  const c = new Float32Array(n), c2 = new Float32Array(n), f = new Float32Array(n)
+  for (let i = 0; i < n; i++) { const t = i / (n - 1); c[i] = t; c2[i] = 1 - t; f[i] = t }
+  data.input.c  = { data: c,  quantity_kind: QK_C }
+  data.input.c2 = { data: c2, quantity_kind: QK_C2 }
+  data.input.f  = { data: f,  quantity_kind: QK_F }
+  return data
+}
+function colorConfig(colorbars = []) {
+  return {
+    layers: [{ points: { xData: 'input.x', yData: 'input.y', vData: 'input.c', vData2: 'input.c2', fData: 'input.f', xAxis: 'xaxis_bottom', yAxis: 'yaxis_left' } }],
+    axes: {}, colorbars,
+  }
+}
+const extraRow = (sel) => document.querySelector(`[data-gladly-control="axis-menu"] tr[${sel}]`)
+const ctrl = (sel) => document.querySelector(`[data-gladly-control="axis-menu"] [${sel}]`)
 
 // ── Event dispatch helpers (mousedown on the canvas, mouseup on window) ───────
 function down(plot, mx, my, button) {
@@ -366,5 +393,112 @@ describe('The axis menu', () => {
     box.checked = true
     box.dispatchEvent(new Event('change', { bubbles: true }))
     assert.deepEqual(events, [{ type: 'axisoptions', axis: 'xaxis_bottom', key: 'locked', value: true }])
+  })
+})
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Log column + the colour / 2D / filter table
+// ──────────────────────────────────────────────────────────────────────────────
+describe('The Log column', () => {
+  let container, plot
+  beforeEach(() => { container = makeContainer() })
+  afterEach(() => { plot.destroy(); document.body.removeChild(container) })
+
+  it('toggles the axis scale between linear and log', async () => {
+    plot = newPlot(container, { margin: MARGIN })
+    await plot.update({ data: makeData(), config: baseConfig() })
+    rightPressAt(plot, BOTTOM_STRIP)
+    const box = boxOf(menuEl(plot), 'xaxis_bottom', 'scale')
+    assert.isOk(box, 'a Log checkbox exists')
+    assert.isFalse(box.checked, 'linear by default')
+    box.checked = true
+    box.dispatchEvent(new Event('change', { bubbles: true }))
+    await new Promise(r => setTimeout(r, 0))
+    assert.equal(plot.getConfig().axes.xaxis_bottom.scale, 'log')
+  })
+})
+
+describe('The colour / 2D / filter table', () => {
+  let container, plot
+  beforeEach(() => { container = makeContainer() })
+  afterEach(() => { plot.destroy(); document.body.removeChild(container) })
+
+  it('only the full menu lists colour, 2D and filter rows', async () => {
+    plot = newPlot(container, { margin: MARGIN })
+    await plot.update({ data: makeColorData(), config: colorConfig() })
+    rightPressAt(plot, PLOT_AREA)
+    assert.isOk(extraRow(`data-color="${QK_C}"`), 'colour axis row')
+    assert.isOk(extraRow(`data-color="${QK_C2}"`), 'second colour axis row')
+    assert.isOk(extraRow(`data-axis2d="${PAIR}"`), '2D pair row')
+    assert.isOk(extraRow(`data-filter="${QK_F}"`), 'filter axis row')
+    // A single-axis menu has no extra table.
+    rightPressAt(plot, BOTTOM_STRIP)
+    assert.isNull(document.querySelector('[data-gladly-control="axis-menu"] [data-table="color-filter"]'))
+  })
+
+  it('cycles a colour axis bar none → vertical → horizontal', async () => {
+    plot = newPlot(container, { margin: MARGIN })
+    await plot.update({ data: makeColorData(), config: colorConfig() })
+    rightPressAt(plot, PLOT_AREA)
+    const bar = ctrl(`data-color="${QK_C}"][data-key="colorbar"`)
+    assert.equal(plot.getConfig().axes[QK_C].colorbar, 'none')
+    bar.click(); await new Promise(r => setTimeout(r, 0))
+    assert.equal(plot.getConfig().axes[QK_C].colorbar, 'vertical')
+    bar.click(); await new Promise(r => setTimeout(r, 0))
+    assert.equal(plot.getConfig().axes[QK_C].colorbar, 'horizontal')
+  })
+
+  it('sets a colour axis colorscale from the dropdown', async () => {
+    plot = newPlot(container, { margin: MARGIN })
+    await plot.update({ data: makeColorData(), config: colorConfig() })
+    rightPressAt(plot, PLOT_AREA)
+    const sel = ctrl(`data-color="${QK_C}"][data-key="colorscale"`)
+    sel.value = 'viridis'
+    sel.dispatchEvent(new Event('change', { bubbles: true }))
+    await new Promise(r => setTimeout(r, 0))
+    assert.equal(plot.getConfig().axes[QK_C].colorscale, 'viridis')
+  })
+
+  it('toggles 2D-pair enabled and colorbar, and sets its colorscale', async () => {
+    plot = newPlot(container, { margin: MARGIN })
+    await plot.update({ data: makeColorData(), config: colorConfig([{ xAxis: QK_C, yAxis: QK_C2, colorscale: TWOD }]) })
+    rightPressAt(plot, PLOT_AREA)
+    const enabled = ctrl(`data-axis2d="${PAIR}"][data-key="enabled"`)
+    assert.isTrue(enabled.checked, 'enabled by default')
+    enabled.checked = false
+    enabled.dispatchEvent(new Event('change', { bubbles: true }))
+    await new Promise(r => setTimeout(r, 0))
+    assert.isFalse(plot.axis2d[PAIR].getConfig().enabled, 'enabled written false')
+    const cbar = ctrl(`data-axis2d="${PAIR}"][data-key="colorbar"`)
+    cbar.checked = false
+    cbar.dispatchEvent(new Event('change', { bubbles: true }))
+    await new Promise(r => setTimeout(r, 0))
+    assert.isFalse(plot.axis2d[PAIR].getConfig().colorbar, 'colorbar written false')
+  })
+
+  it('cycles a filter axis bar none → vertical → horizontal', async () => {
+    plot = newPlot(container, { margin: MARGIN })
+    await plot.update({ data: makeColorData(), config: colorConfig() })
+    rightPressAt(plot, PLOT_AREA)
+    const bar = ctrl(`data-filter="${QK_F}"][data-key="filterbar"`)
+    bar.click(); await new Promise(r => setTimeout(r, 0))
+    assert.equal(plot.getConfig().axes[QK_F].filterbar, 'vertical')
+  })
+})
+
+describe('3D camera persistence across update()', () => {
+  let container, plot
+  beforeEach(() => { container = makeContainer() })
+  afterEach(() => { plot.destroy(); document.body.removeChild(container) })
+
+  it('keeps the orbit orientation when an axis option changes', async () => {
+    plot = newPlot(container, { margin: MARGIN })
+    await plot.update({ data: make3DData(), config: config3D() })
+    plot._camera._theta = -0.7
+    plot._camera._phi = 0.4
+    // Any config change re-runs _initialize; the camera must not snap back to default.
+    await plot.update({ config: config3D({ xaxis_bottom: { titleVisible: false } }) })
+    assert.closeTo(plot._camera._theta, -0.7, 1e-9, 'theta preserved')
+    assert.closeTo(plot._camera._phi, 0.4, 1e-9, 'phi preserved')
   })
 })

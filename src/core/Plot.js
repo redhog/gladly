@@ -524,7 +524,15 @@ export class Plot extends GlBase {
 
     this._layoutMargin()
 
+    // Carry the orbit orientation across update()/_initialize so an unrelated config change
+    // (e.g. an axis option from the menu) does not snap a 3D plot back to its default view.
+    const prevCamera = this._camera
     this._camera = new Camera(this._is3D)
+    if (prevCamera?._is3D && this._is3D) {
+      this._camera._theta  = prevCamera._theta
+      this._camera._phi    = prevCamera._phi
+      this._camera._radius = prevCamera._radius
+    }
     this._camera.resize(this.plotWidth, this.plotHeight)
 
     for (const entry of colorbars) {

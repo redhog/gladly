@@ -72,6 +72,8 @@ Updates the plot with new configuration and/or data.
 - Both: updates and renders
 - Neither: re-renders (equivalent to `forceUpdate()`)
 
+On a 3D plot the orbit orientation (the camera's azimuth, elevation and radius) is preserved across `update()`, so changing an unrelated setting — an axis option from the menu, say — does not snap the view back to its default angle.
+
 ### `forceUpdate()`
 
 Re-renders with existing config and data.
@@ -243,7 +245,15 @@ The built-in menu (below) opens from this same event. The event fires whether or
 
 #### Built-in axis menu
 
-A right-click opens gladly's own menu: a **full menu** (a row per axis, each with **Axis** / **Labels** / **Title** / **Lock** checkboxes and **Reset view**) on a plot-area / corner / empty-margin click, or a **single-axis menu** (that axis's row only, with **Reset axis**) on an axis-strip click. The checkboxes write the matching `axes.<slot>` keys and call `setAxisLocked()` / `resetAxes()`, so every change round-trips through `getConfig()` and emits `"axisoptions"` — the menu holds no state of its own. It works the same on 3D plots (a row per x/y/z axis).
+A right-click opens gladly's own menu: a **full menu** on a plot-area / corner / empty-margin click, or a **single-axis menu** (one spatial row, with **Reset axis**) on an axis-strip click. The checkboxes write the matching `axes.<slot>` keys and call `setAxisLocked()` / `resetAxes()`, so every change round-trips through `getConfig()` and emits `"axisoptions"` — the menu holds no state of its own. It works the same on 3D plots (a row per x/y/z axis).
+
+The full menu has two tables:
+
+- **Spatial axes** — a row per axis with **Axis** / **Labels** / **Title** / **Lock** checkboxes, a **Log** checkbox (the `scale` key, `'log'` ↔ `'linear'`), and **Reset view**.
+- **Colour, 2D-colour and filter axes** (only in the full menu, since they are plot-wide) — below the spatial table:
+  - a **colour axis** row has a colorscale dropdown (`axes[qk].colorscale`) and a tri-state **Bar** icon cycling none → vertical → horizontal (`axes[qk].colorbar`);
+  - a **2D-colour pair** row has a 2D colorscale dropdown, a **Bar** checkbox and an **Enabled** checkbox — written through `plot.axis2d[key].setConfig(...)` (the `colorbars` entry);
+  - a **filter axis** row has only the tri-state **Bar** icon (`axes[qk].filterbar`).
 
 Two top-level config booleans gate it, both **default `true`**:
 
