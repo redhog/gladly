@@ -852,6 +852,7 @@ export class Plot extends GlBase {
       yScaleType: yIsLog ? 1.0 : 0.0,
       zScaleType: zIsLog ? 1.0 : 0.0,
       u_is3D:    this._is3D ? 1.0 : 0.0,
+      depthEnable: this._is3D,
       u_mvp:     resolvedMvp,
       viewport:  resolvedViewport,
       count: layer.vertexCount
@@ -1103,9 +1104,25 @@ export class Plot extends GlBase {
       const ac = layerType.resolveAxisConfig(parameters, data)
       const axesConfig = this.currentConfig?.axes ?? {}
 
-      if (ac.xAxis && ac.xAxisQuantityKind != null) this.axisRegistry.ensureSpatialSlot(ac.xAxis, ac.xAxisQuantityKind, axesConfig[ac.xAxis]?.scale ?? axesConfig[ac.xAxisQuantityKind]?.scale)
-      if (ac.yAxis && ac.yAxisQuantityKind != null) this.axisRegistry.ensureSpatialSlot(ac.yAxis, ac.yAxisQuantityKind, axesConfig[ac.yAxis]?.scale ?? axesConfig[ac.yAxisQuantityKind]?.scale)
-      if (ac.zAxis && ac.zAxisQuantityKind != null) this.axisRegistry.ensureSpatialSlot(ac.zAxis, ac.zAxisQuantityKind, axesConfig[ac.zAxis]?.scale ?? axesConfig[ac.zAxisQuantityKind]?.scale)
+      const spatial = [
+        [ac.xAxis, ac.xAxisQuantityKind],
+        [ac.yAxis, ac.yAxisQuantityKind],
+        [ac.zAxis, ac.zAxisQuantityKind],
+      ].filter(([slot, qk]) => slot && qk != null)
+      // A layer whose quantity kind differs from the one an earlier layer put on the same
+      // axis is skipped, like a layer that fails to create, rather than failing the plot.
+      const clash = spatial.find(([slot, qk]) => (this.axisRegistry.getQkForSlot(slot) ?? qk) !== qk)
+      if (clash) {
+        const [slot, qk] = clash
+        this._emitError(new Error(
+          `Layer '${layerTypeName}' (index ${configLayerIndex}) skipped: axis '${slot}' has quantity kind ` +
+          `'${this.axisRegistry.getQkForSlot(slot)}', the layer has '${qk}'`
+        ))
+        continue
+      }
+      for (const [slot, qk] of spatial) {
+        this.axisRegistry.ensureSpatialSlot(slot, qk, axesConfig[slot]?.scale ?? axesConfig[qk]?.scale)
+      }
 
       for (const quantityKind of Object.values(ac.colorAxisQuantityKinds)) {
         this.axisRegistry.ensureColorAxis(quantityKind)

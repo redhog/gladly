@@ -418,6 +418,10 @@ export class LayerType {
       attributes,
       uniforms,
       viewport: regl.prop("viewport"),
+      // Depth test only in 3D. Every 2D layer draws at the same depth, so with the test
+      // on, the first layer to cover a pixel would hide all later ones there; off, 2D
+      // layers draw in config order, later ones on top.
+      depth: { enable: regl.prop("depthEnable") },
       primitive: layer.primitive,
       lineWidth: layer.lineWidth,
       count: regl.prop("count"),
