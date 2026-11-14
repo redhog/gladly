@@ -20,6 +20,11 @@ import { SelectionPipeline } from "../selection/SelectionPipeline.js"
 import { LassoInteraction, LASSO_MODES } from "../selection/LassoInteraction.js"
 import { getMasterCanvas } from "./MasterCanvas.js"
 import { globalResourceRegistry } from "./ResourceRegistry.js"
+import { TICK_BAND_PX } from "../axes/Axis.js"
+
+// 3D plots keep a fixed full margin on every side — the 2D band math (tick / label /
+// title bands) does not apply to axes drawn in model space.
+const MARGIN_3D = 60
 
 // Throttle linked-plot renders when the source plot's "blocked lag" is high.
 const LINK_THROTTLE_MS      = 150
@@ -74,6 +79,14 @@ function buildPlotSchema(data, config) {
         type: "boolean",
         default: true,
         description: "When true (the default), a right-click on the plot area / a corner / an empty margin opens gladly's built-in full menu. When false, gladly opens no menu there and the 'contextmenu' event still fires, so a consumer can bind their own."
+      },
+      margins: {
+        type: "object",
+        description: "Outer padding (px) added once per side: 'visible' on a side that draws an axis, 'hidden' on a side with no axis.",
+        properties: {
+          visible: { type: "number", default: 5 },
+          hidden:  { type: "number", default: 5 }
+        }
       },
       transforms: {
         type: "array",
@@ -216,13 +229,12 @@ export class Plot extends GlBase {
     Plot._floatFactories.set(type, factoryDef)
   }
 
-  constructor(container, { margin, marginWithoutAxis } = {}) {
+  constructor(container) {
     super()
     this.container = container
-    this._marginWithAxis = margin ?? { top: 60, right: 60, bottom: 60, left: 60 }
-    this._marginWithoutAxis = marginWithoutAxis ?? {}
-    // The margin in use; _layoutMargin() sets it per side once the axes are known.
-    this.margin = this._marginWithAxis
+    // Bootstrap margin so reads before the first _layoutMargin() are safe; replaced
+    // per side during _initialize() by the additive model.
+    this.margin = { top: 5, right: 5, bottom: 5, left: 5 }
 
     // Real on-screen display canvas. The shared regl context renders into an
     // OffscreenCanvas and hands each frame to this canvas via its bitmaprenderer
@@ -679,30 +691,30 @@ export class Plot extends GlBase {
     this._canvas.height = h
   }
 
-  // Sets this.margin side by side: the constructor's `margin` where the side draws an
-  // axis, `marginWithoutAxis` where it draws none (no layer uses the axis, or it is
-  // hidden with `visible: false`). A 3D plot keeps `margin` on every side.
+  // Sets this.margin side by side with an additive model: each side reserves only the
+  // bands it actually draws. A side that draws an axis gets the tick band plus the
+  // (font-measured) tick-label and title bands for whichever parts are shown, plus a
+  // small `margins.visible` outer pad; a side with no axis (empty slot, or visible:false)
+  // collapses to `margins.hidden`. The band helpers self-zero when their part is hidden,
+  // so no per-part branching is needed here. A 3D plot keeps a fixed full margin.
   _layoutMargin() {
     const sideAxis = { top: 'xaxis_top', right: 'yaxis_right', bottom: 'xaxis_bottom', left: 'yaxis_left' }
-    const axes = this.currentConfig.axes ?? {}
-    const drawsAxis = (axisId) => this.axisRegistry.getScale(axisId) !== null && axes[axisId]?.visible !== false
-    // When a side draws an axis, start from the full margin and give back the band of
-    // any hidden part (the title band when titleVisible:false, the tick-label band when
-    // tickLabelsVisible:false), never dropping below marginWithoutAxis for that side.
-    // The band sizes come from the rendered font via the atlas, not hard-coded.
-    const atlas = this._tickLabelAtlas
+    const axes   = this.currentConfig.axes ?? {}
+    const m      = this.currentConfig.margins ?? {}
+    const visPad = m.visible ?? 5
+    const hidPad = m.hidden  ?? 5
+    const atlas  = this._tickLabelAtlas
+
     const sideMargin = (side, axisId) => {
-      if (this._is3D) return this._marginWithAxis[side]
-      const floor = this._marginWithoutAxis[side] ?? this._marginWithAxis[side]
-      if (!drawsAxis(axisId)) return floor
-      let m = this._marginWithAxis[side]
-      const c = axes[axisId] ?? {}
+      if (this._is3D) return MARGIN_3D
+      const drawsAxis = this.axisRegistry.getScale(axisId) !== null && axes[axisId]?.visible !== false
+      if (!drawsAxis) return hidPad
       const axis = this._getAxis(axisId)
-      if (c.titleVisible === false)      m -= axis.titleBandPx(atlas)
-      if (c.tickLabelsVisible === false) m -= axis.tickLabelBandPx(atlas)
-      return Math.max(m, floor)
+      return TICK_BAND_PX + axis.tickLabelBandPx(atlas) + axis.titleBandPx(atlas) + visPad
     }
-    this.margin = Object.fromEntries(Object.entries(sideAxis).map(([side, axisId]) => [side, sideMargin(side, axisId)]))
+
+    this.margin = Object.fromEntries(
+      Object.entries(sideAxis).map(([side, axisId]) => [side, sideMargin(side, axisId)]))
     this.plotWidth  = Math.max(1, this.width  - this.margin.left - this.margin.right)
     this.plotHeight = Math.max(1, this.height - this.margin.top  - this.margin.bottom)
     this.axisRegistry.resize(this.plotWidth, this.plotHeight)

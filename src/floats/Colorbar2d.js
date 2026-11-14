@@ -5,12 +5,9 @@ import "../layers/ColorbarLayer2d.js"
 
 const DRAG_BAR_HEIGHT = 12
 
-// Margins leave room for tick labels on both spatial axes.
-const DEFAULT_MARGIN = { top: 10, right: 50, bottom: 45, left: 55 }
-
 export class Colorbar2d extends Plot {
-  constructor(container, targetPlot, xAxis, yAxis, { margin } = {}) {
-    super(container, { margin: margin ?? DEFAULT_MARGIN })
+  constructor(container, targetPlot, xAxis, yAxis) {
+    super(container)
 
     this._targetPlot = targetPlot
     this._xAxis = xAxis

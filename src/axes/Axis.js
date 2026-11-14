@@ -130,9 +130,13 @@ export class Axis {
 
   // Tick-label band: the rendered label height for a horizontal (x) axis, the widest
   // rendered label width for a vertical (y) axis — both measured from the atlas font.
+  // Zero when the axis is hidden or its tick labels are hidden, so every consumer
+  // (margin math, in-render placement, band hit-testing) stays consistent.
   tickLabelBandPx(atlas) {
     const scale = this._plot.axisRegistry?.getScale(this._name)
     if (!scale || !atlas) return 0
+    const cfg = this._plot.currentConfig?.axes?.[this._name] ?? {}
+    if (cfg.visible === false || cfg.tickLabelsVisible === false) return 0
     if (AXIS_GEOMETRY[this._name].dir !== 'y') return atlas.lineHeight + atlas.gap
     let maxW = 0
     for (const t of this._computeTicks(scale, 6)) {
@@ -143,11 +147,13 @@ export class Axis {
   }
 
   // Title band: the rendered title height × its line count, measured from the atlas.
+  // Zero when the axis is hidden or its title is hidden.
   titleBandPx(atlas) {
     if (!atlas) return 0
     const qk = this._plot.axisRegistry?.getQkForSlot(this._name)
     if (!qk) return 0
     const cfg = this._plot.currentConfig?.axes?.[this._name] ?? {}
+    if (cfg.visible === false || cfg.titleVisible === false) return 0
     const label = cfg.label ?? getAxisQuantityKind(qk).label
     if (!label) return 0
     const lines = String(label).split('\n').length

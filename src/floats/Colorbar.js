@@ -5,14 +5,9 @@ import "../layers/ColorbarLayer.js"
 
 const DRAG_BAR_HEIGHT = 12
 
-const DEFAULT_MARGINS = {
-  horizontal: { top: 5, right: 40, bottom: 45, left: 40 },
-  vertical:   { top: 40, right: 10, bottom: 40, left: 50 }
-}
-
 export class Colorbar extends Plot {
-  constructor(container, targetPlot, colorAxisName, { orientation = "horizontal", margin } = {}) {
-    super(container, { margin: margin ?? DEFAULT_MARGINS[orientation] })
+  constructor(container, targetPlot, colorAxisName, { orientation = "horizontal" } = {}) {
+    super(container)
 
     this._targetPlot = targetPlot
     this._colorAxisName = colorAxisName

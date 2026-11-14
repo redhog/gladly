@@ -5,14 +5,9 @@ import "../layers/FilterbarLayer.js"
 
 const DRAG_BAR_HEIGHT = 12
 
-const DEFAULT_MARGINS = {
-  horizontal: { top: 5, right: 40, bottom: 45, left: 40 },
-  vertical:   { top: 30, right: 10, bottom: 30, left: 50 }
-}
-
 export class Filterbar extends Plot {
-  constructor(container, targetPlot, filterAxisName, { orientation = "horizontal", margin } = {}) {
-    super(container, { margin: margin ?? DEFAULT_MARGINS[orientation] })
+  constructor(container, targetPlot, filterAxisName, { orientation = "horizontal" } = {}) {
+    super(container)
 
     this._targetPlot     = targetPlot
     this._filterAxisName = filterAxisName

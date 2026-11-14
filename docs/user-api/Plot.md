@@ -7,27 +7,33 @@ The main plotting container that manages WebGL rendering and SVG axes.
 ## Constructor
 
 ```javascript
-new Plot(container, { margin, marginWithoutAxis } = {})
+new Plot(container)
 ```
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `container` | HTMLElement | Parent `<div>`. Must have explicit CSS dimensions. Canvas and SVG are created inside it automatically. |
-| `margin` | object | Plot margin in px: `{ top, right, bottom, left }`. Defaults to `{ top: 60, right: 60, bottom: 60, left: 60 }`. |
-| `marginWithoutAxis` | object | Margin in px for a side that draws no axis: any of `{ top, right, bottom, left }`. A side left out uses `margin`. Defaults to `{}`, so every side uses `margin`. See [Margins](#margins). |
+
+The margin is not a constructor option — it is computed per side from what each side actually draws (see [Margins](#margins)), configurable through `config.margins`.
 
 ### Margins
 
-An axis draws its tick marks, tick labels and title in three bands at **fixed pixel distances** outward from the axis line (not fractions of the margin): a tick band, the tick-label band, then the title band at the outer edge. The band sizes are read from the label atlas, so they stay correct at any font size. A side drawing all three parts needs the full `margin`. A side with no axis only needs room for the end labels of the axes beside it, which reach past the corners of the plot area. `marginWithoutAxis` sets that smaller room, so a plot that draws only a bottom and a left axis does not keep a full axis margin of empty space above and to the right of its data:
+The margin is **additive**: each side reserves only the bands it actually draws. An axis draws its tick marks, tick labels and title in three bands at pixel distances outward from the axis line: a fixed tick band, then the tick-label band, then the title band at the outer edge. The label and title band sizes are read from the label atlas, so they stay correct at any font size.
+
+A side that draws an axis reserves the tick band + the tick-label band (when `tickLabelsVisible` is not `false`) + the title band (when `titleVisible` is not `false`) + a small outer pad `margins.visible`. A side with **no axis** — an empty slot, or an axis hidden with `visible: false` — collapses to `margins.hidden`. Both pads live in `config.margins` and default to `5` px:
 
 ```javascript
-const plot = new Plot(container, {
-  margin:            { top: 48, right: 80, bottom: 48, left: 80 },
-  marginWithoutAxis: { top: 12, right: 24, bottom: 12, left: 24 },
+plot.update({
+  config: {
+    margins: { visible: 5, hidden: 5 },
+    layers: [ /* … */ ],
+  },
 })
 ```
 
-A side counts as drawing an axis when a layer uses that axis and the axis is not hidden with `visible: false` in `config.axes`. **Hiding a single part gives its band back too**: with `titleVisible: false` the side loses its title band, with `tickLabelsVisible: false` it loses its label band — never dropping below `marginWithoutAxis` for that side (see [Axis-part visibility](../configuration/PlotConfiguration.md#axis-part-visibility)). This is decided again at every `update()`, so moving a layer to `yaxis_right`, or hiding an axis or one of its parts, changes the margins with it. A 3D plot uses `margin` on every side.
+A side counts as drawing an axis when a layer uses that axis and the axis is not hidden with `visible: false` in `config.axes`. **Hiding a single part frees its band**: with `titleVisible: false` the side loses exactly its title band, with `tickLabelsVisible: false` it loses its label band and the title (if shown) slides inward against the tick band (see [Axis-part visibility](../configuration/PlotConfiguration.md#axis-part-visibility)). This is decided again at every `update()`, so moving a layer to `yaxis_right`, or hiding an axis or one of its parts, changes the margins with it. A 3D plot keeps a fixed full margin on every side.
+
+Because a label-free side collapses to `margins.hidden`, the first or last tick label of a perpendicular axis may clip slightly at that edge; raise `margins.hidden` if that reads badly.
 
 ---
 
@@ -49,7 +55,7 @@ The same `Axis` instance is returned on every access, including across `plot.upd
 
 ### `plot.margin`
 
-The margin in use, in px: `{ top, right, bottom, left }`. It is `margin` from the constructor, with `marginWithoutAxis` applied to each side that drew no axis at the last `update()`. Read it to place your own elements around the plot area; writing it has no lasting effect, since the next `update()` sets it again.
+The margin in use, in px: `{ top, right, bottom, left }`. It is computed per side by the additive model (see [Margins](#margins)) at the last `update()`. Read it to place your own elements around the plot area; writing it has no lasting effect, since the next `update()` sets it again.
 
 ---
 
