@@ -221,7 +221,11 @@ void main() { fragColor = vec4(0.0, 0.47, 1.0, 1.0); }`,
     const clickMode = !DRAG_MODES.includes(this._mode)
 
     if (e.button === 2) {
-      if (this._mode === 'polygon' && this._points.length > 0) this._select(this._points)
+      if (this._mode === 'polygon' && this._points.length > 0) {
+        // Mark the press so ZoomController's mouseup does not read it as a 'contextmenu'.
+        this._plot._rightPressConsumed = true
+        this._select(this._points)
+      }
       return
     }
     if (e.button !== 0) return
@@ -277,6 +281,12 @@ void main() { fragColor = vec4(0.0, 0.47, 1.0, 1.0); }`,
   _onKey(e) {
     if (e.type === 'keydown' && e.key === 'Escape' && (this._start || this._points.length > 0)) {
       this._abandon()
+      return
+    }
+    // Enter closes a polygon in progress — a second way beside the right-click, whichever
+    // modifier is held, so the corners and the close need not all be done with Shift down.
+    if (e.type === 'keydown' && e.key === 'Enter' && this._mode === 'polygon' && this._points.length > 0) {
+      this._select(this._points)
       return
     }
     if (this._mode === 'band' && !this._start) this._previewBand(this._shouldActivate(e))

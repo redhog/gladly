@@ -70,7 +70,7 @@ Every shape is drawn with the trigger held, shows its outline while it is being 
 | `'lasso'` | Drag a free-hand outline | it has fewer than 3 vertices |
 | `'rectangle'` | Press at one corner, release at the opposite corner; the sides run along the axes | it is under 5 px wide or tall |
 | `'triangle'` | Press at the apex, release at a corner of the base; the other base corner mirrors it across the apex's vertical | it is under 5 px wide or tall |
-| `'polygon'` | Click each corner, then right-click (no trigger needed) to close; the right-click adds no corner | it has fewer than 3 corners |
+| `'polygon'` | Click each corner, then right-click or press Enter (no trigger needed) to close; neither adds a corner | it has fewer than 3 corners |
 | `'circle'` | Press at the center, release at the radius | its radius is under 5 px |
 | `'ellipse'` | Click the center, then the end of the first axis (its direction and length), then a point whose distance from the first axis sets the second axis | either semi-axis is under 5 px |
 | `'band'` | Drag to set a strip's two edges — a mostly-horizontal drag makes a full-height vertical strip, a mostly-vertical one a full-width horizontal strip — or click for a vertical strip `bandWidth` wide centered on the click; while the trigger is held, the outline shows the strip a click would select | a drag is under 5 px in both directions and no `bandWidth` is set |

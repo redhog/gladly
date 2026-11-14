@@ -147,7 +147,7 @@ handle.remove()
 
 #### Synthetic plot events
 
-Three special event types do not correspond to DOM events and have no `coords` argument. Two report rendering errors, and one reports an axis limit typed by the user.
+Several special event types do not correspond to a plain DOM event. Two report rendering errors (`"error"` / `"no-error"`); `"axislimit"` and `"axisoptions"` report axis state the user (or your own code) changed; and `"contextmenu"` is a cleaned-up right-click. The error events have no `coords`; the others do.
 
 ---
 
@@ -204,6 +204,59 @@ A value typed on a colorbar or filterbar float fires on the plot the float belon
 ```javascript
 plot.on('axislimit', () => saveLayout(plot.getConfig()))
 ```
+
+---
+
+**`"axisoptions"`** — fired when an axis-part key — `visible`, `tickLabelsVisible`, `titleVisible` or `locked` — is written on a slot, by the [built-in axis menu](#built-in-axis-menu), a direct `update({ config })`, or `setAxisLocked()`. Like `"axislimit"`, it is keyed by **what** changed, not by who changed it, so a consumer persists on it without knowing a menu was involved. None of these keys propagate across `linkAxes` (the lock in particular is local to one plot), so there is no cross-plot source.
+
+```javascript
+plot.on('axisoptions', (e) => {
+  console.log(e.type)   // "axisoptions"
+  console.log(e.axis)   // "xaxis_bottom"
+  console.log(e.key)    // "visible" | "tickLabelsVisible" | "titleVisible" | "locked"
+  console.log(e.value)  // the new boolean
+})
+```
+
+Together with `"axislimit"` (for domain changes), this is everything needed to persist a layout the moment the user changes it:
+
+```javascript
+plot.on('axisoptions', () => saveLayout(plot.getConfig()))
+plot.on('axislimit',   () => saveLayout(plot.getConfig()))
+```
+
+---
+
+**`"contextmenu"`** — fired on a right press+release less than 5 px apart **that gladly did not otherwise use** (a press that closed a [lasso polygon](../user-api/Selection.md) or ended a 3D rotation does not count). It fires on the **release**, so it behaves the same whether the browser raises its own menu at the press (macOS) or the release (Windows); gladly keeps suppressing the browser's own menu on the canvas. This replaces the raw DOM `contextmenu` pass-through.
+
+The callback receives a third argument, `region`, saying where the press was:
+
+```javascript
+plot.on('contextmenu', (e, coords, region) => {
+  // region === null                              → a corner or an empty margin
+  // region.type === 'plot_area'                  → inside the plot box
+  // region.type === 'axis', region.axes[0]       → that one axis strip
+})
+```
+
+The built-in menu (below) opens from this same event. The event fires whether or not the built-in menu is enabled, so with the menu gated off you can bind your own behaviour here.
+
+#### Built-in axis menu
+
+A right-click opens gladly's own menu: a **full menu** (a row per axis, each with **Axis** / **Labels** / **Title** / **Lock** checkboxes and **Reset view**) on a plot-area / corner / empty-margin click, or a **single-axis menu** (that axis's row only, with **Reset axis**) on an axis-strip click. The checkboxes write the matching `axes.<slot>` keys and call `setAxisLocked()` / `resetAxes()`, so every change round-trips through `getConfig()` and emits `"axisoptions"` — the menu holds no state of its own. It works the same on 3D plots (a row per x/y/z axis).
+
+Two top-level config booleans gate it, both **default `true`**:
+
+| key | gates |
+|---|---|
+| `plot_menu` | the full menu (plot-area / corner / empty-margin right-click) |
+| `axis_menu` | the single-axis menu (axis-strip right-click) |
+
+```javascript
+plot.update({ config: { ...config, plot_menu: false, axis_menu: false } })
+```
+
+When a gate is `false`, gladly opens no menu for that region but the `"contextmenu"` event still fires, so a consumer can bind their own menu (or any behaviour) via `plot.on('contextmenu', …)`.
 
 ---
 

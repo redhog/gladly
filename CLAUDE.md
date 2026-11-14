@@ -71,6 +71,7 @@ src/
     - TileLayer.js                  # Map tile LayerType (XYZ/WMS/WMTS)
   floats/
     - Float.js                      # Draggable, resizable floating widget container
+    - AxisMenu.js                   # Right-click axis menu: show/hide axis parts, lock, reset (gated by axis_menu/plot_menu)
     - Colorbar.js                   # 1D colorbar plot (extends Plot)
     - Colorbar2d.js                 # 2D colorbar plot (extends Plot)
     - Filterbar.js                  # Filterbar plot (extends Plot)

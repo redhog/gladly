@@ -233,6 +233,9 @@ export class ZoomController {
     let clickDownX     = 0
     let clickDownY     = 0
     let clickTitleAxis = null
+    // Right-press → 'contextmenu': the region the press was on, carried to the event on
+    // the matching mouseup if the press stayed still and gladly did not otherwise use it.
+    let rightPressRegion = null
     const onMouseMove = (e) => {
       const _t0 = performance.now()
       const mx = e.clientX - dragRect.left
@@ -297,6 +300,14 @@ export class ZoomController {
       if (clickButton === 0 && !clickMoved && clickTitleAxis && plot.setAxisLocked) {
         plot.setAxisLocked(clickTitleAxis, !plot.isAxisLocked(clickTitleAxis))
       }
+      // A right press+release that did not move and that gladly did not otherwise use
+      // (no polygon close, no 3D rotation) fires the synthetic 'contextmenu' event. Fires
+      // on the release, so it is the same whether the browser's own menu is at press or
+      // release. _rightPressConsumed is set by LassoInteraction when a polygon closed.
+      if (clickButton === 2 && !clickMoved && !plot._rightPressConsumed) {
+        plot._emitContextMenu(e, rightPressRegion)
+      }
+      plot._rightPressConsumed = false
       if (isDragging || isRotating) plot._zoomEndCallbacks.forEach(cb => cb())
       isDragging   = false
       isRotating   = false
@@ -308,6 +319,7 @@ export class ZoomController {
       clickButton    = -1
       clickMoved     = false
       clickTitleAxis = null
+      rightPressRegion = null
       window.removeEventListener('mousemove', onMouseMove)
       window.removeEventListener('mouseup',   onMouseUp)
     }
@@ -327,6 +339,8 @@ export class ZoomController {
       clickDownY     = my
       clickTitleAxis = (e.button === 0 && !e.shiftKey && !e.ctrlKey)
         ? this._resolveTitleToggleTarget(mx, my) : null
+      // Which region a right press was on, for the 'contextmenu' event on release.
+      rightPressRegion = (e.button === 2) ? this._getRegion(mx, my) : null
 
       // Right-click or Ctrl+left in 3D → rotate
       if (plot._is3D && (e.button === 2 || (e.button === 0 && e.ctrlKey))) {
@@ -337,7 +351,14 @@ export class ZoomController {
         return
       }
 
-      if (e.button !== 0) return
+      if (e.button !== 0) {
+        // A 2D right press pans nothing, but still needs the release to fire 'contextmenu'.
+        if (e.button === 2) {
+          window.addEventListener('mousemove', onMouseMove)
+          window.addEventListener('mouseup',   onMouseUp)
+        }
+        return
+      }
 
       // Left-click → pan
       const region = this._getRegion(mx, my)

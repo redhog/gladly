@@ -64,7 +64,8 @@ gladly/
 │   │   ├── Float.js                           # Draggable, resizable floating widget container
 │   │   ├── Colorbar.js                        # 1D colorbar plot (extends Plot)
 │   │   ├── Colorbar2d.js                      # 2D colorbar plot (extends Plot)
-│   │   └── Filterbar.js                       # Filterbar plot (extends Plot)
+│   │   ├── Filterbar.js                       # Filterbar plot (extends Plot)
+│   │   └── AxisMenu.js                        # Right-click axis menu (show/hide axis parts, lock, reset)
 │   ├── geo/
 │   │   └── EpsgUtils.js                       # EPSG/CRS projection utilities
 │   └── compute/

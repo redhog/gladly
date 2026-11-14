@@ -4,6 +4,7 @@ import { TickLabelAtlas } from "../axes/TickLabelAtlas.js"
 import { mat4Identity, mat4Multiply } from "../math/mat4.js"
 import { ZoomController } from "../axes/ZoomController.js"
 import { AxisLimitEditor } from "../axes/AxisLimitEditor.js"
+import { AxisMenu } from "../floats/AxisMenu.js"
 import { Axis2d } from "../axes/Axis2d.js"
 import { getLayerType, getRegisteredLayerTypes } from "./LayerTypeRegistry.js"
 import { getAxisQuantityKind, getScaleTypeFloat } from "../axes/AxisQuantityKindRegistry.js"
@@ -64,6 +65,16 @@ function buildPlotSchema(data, config) {
     $defs: { ...compDefs, ...transformDefs },
     type: "object",
     properties: {
+      axis_menu: {
+        type: "boolean",
+        default: true,
+        description: "When true (the default), a right-click on an axis strip opens gladly's built-in single-axis menu. When false, gladly opens no menu there and the 'contextmenu' event still fires, so a consumer can bind their own."
+      },
+      plot_menu: {
+        type: "boolean",
+        default: true,
+        description: "When true (the default), a right-click on the plot area / a corner / an empty margin opens gladly's built-in full menu. When false, gladly opens no menu there and the 'contextmenu' event still fires, so a consumer can bind their own."
+      },
       transforms: {
         type: "array",
         description: "Named data transforms applied before layers. Each item is a { name, transform: { ClassName: params } } object.",
@@ -234,6 +245,11 @@ export class Plot extends GlBase {
     this._errorListeners = new Set()
     this._noErrorListeners = new Set()
     this._axisLimitListeners = new Set()
+    this._axisOptionsListeners = new Set()
+    this._contextMenuListeners = new Set()
+    // Set by LassoInteraction when a right press closed a polygon; cleared by
+    // ZoomController on the matching mouseup, so that press emits no 'contextmenu'.
+    this._rightPressConsumed = false
     this._hasError = false
     this._currentRenderHasError = false
     this._hadError = false
@@ -369,6 +385,24 @@ export class Plot extends GlBase {
       this._rawData = previousRawData
       throw error
     }
+    // Emit 'axisoptions' for each axis-part key the new config changed — keyed by what
+    // changed, not by who changed it (the menu is just one caller of update()). The lock
+    // key is emitted here too for a config-path change; setAxisLocked() emits its own,
+    // and never calls update(), so the two paths never double-fire.
+    if (config !== undefined) this._emitAxisOptionsDiff(previousConfig?.axes ?? {}, config.axes ?? {})
+  }
+
+  // Compare the axis-part keys of two `axes` blocks (default-normalised) and emit one
+  // 'axisoptions' event per changed slot/key.
+  _emitAxisOptionsDiff(prevAxes, nextAxes) {
+    const DEFAULTS = { visible: true, tickLabelsVisible: true, titleVisible: true, locked: false }
+    for (const slot of new Set([...Object.keys(prevAxes), ...Object.keys(nextAxes)])) {
+      for (const [key, def] of Object.entries(DEFAULTS)) {
+        const ov = prevAxes[slot]?.[key] ?? def
+        const nv = nextAxes[slot]?.[key] ?? def
+        if (ov !== nv) this._emitAxisOptions({ type: 'axisoptions', axis: slot, key, value: nv })
+      }
+    }
   }
 
   async forceUpdate() {
@@ -502,6 +536,7 @@ export class Plot extends GlBase {
 
     if (!this._zoomController) this._zoomController = new ZoomController(this)
     if (!this._axisLimitEditor) this._axisLimitEditor = new AxisLimitEditor(this)
+    if (!this._axisMenu) this._axisMenu = new AxisMenu(this)
 
     for (const i of (this._interactions ?? [])) i.destroy()
     this._interactions = []
@@ -922,6 +957,7 @@ export class Plot extends GlBase {
     }
     this.currentConfig = { ...config, axes }
     this.scheduleRender()
+    this._emitAxisOptions({ type: 'axisoptions', axis: slot, key: 'locked', value: !!on })
   }
 
   // Reset the 2D spatial axes to their data range. Color/filter axes and locked axes
@@ -1028,6 +1064,11 @@ export class Plot extends GlBase {
     this._axisLimitEditor?.destroy()
     this._axisLimitEditor = null
     this._axisLimitListeners.clear()
+
+    this._axisMenu?.destroy()
+    this._axisMenu = null
+    this._axisOptionsListeners.clear()
+    this._contextMenuListeners.clear()
 
     this._renderCallbacks.clear()
     this._canvas.remove()
@@ -1288,6 +1329,32 @@ export class Plot extends GlBase {
     }
   }
 
+  // Tell 'axisoptions' listeners that an axis-part key (visible / tickLabelsVisible /
+  // titleVisible / locked) was written — by the menu, a direct update({config}), or
+  // setAxisLocked(). Keyed by what changed, not who changed it, like _emitAxisLimit.
+  _emitAxisOptions(event) {
+    for (const cb of this._axisOptionsListeners) {
+      try { cb(event) } catch (e) { console.error('[gladly] Error in axisoptions listener:', e) }
+    }
+  }
+
+  // Fire the synthetic 'contextmenu' event for a right press+release gladly did not use,
+  // then open the built-in menu for the region (full or single-axis) when its gate is on.
+  // `region` is ZoomController._getRegion()'s { type, axes } for an axis strip or the plot
+  // area, or null for a corner / empty margin.
+  _emitContextMenu(e, region) {
+    const rect = this.container.getBoundingClientRect()
+    const coords = this.lookup(e.clientX - rect.left, e.clientY - rect.top)
+    for (const cb of this._contextMenuListeners) {
+      try { cb(e, coords, region) } catch (err) { console.error('[gladly] Error in contextmenu listener:', err) }
+    }
+    const onAxis = region?.type === 'axis'
+    const gated = onAxis ? (this.currentConfig?.axis_menu !== false) : (this.currentConfig?.plot_menu !== false)
+    // The menu is viewport-positioned (attached to document.body) so it escapes any float's
+    // clip and stacking context — pass the event's own viewport coordinates.
+    if (gated && this._axisMenu) this._axisMenu.open(e.clientX, e.clientY, region)
+  }
+
   scheduleRender(sourcePlot = null) {
     if (!this.regl) return
     this._dirty = true
@@ -1342,6 +1409,16 @@ export class Plot extends GlBase {
     if (eventType === 'axislimit') {
       this._axisLimitListeners.add(callback)
       return { remove: () => this._axisLimitListeners.delete(callback) }
+    }
+    if (eventType === 'axisoptions') {
+      this._axisOptionsListeners.add(callback)
+      return { remove: () => this._axisOptionsListeners.delete(callback) }
+    }
+    // 'contextmenu' is synthetic: a right press+release gladly did not use (see
+    // ZoomController / _emitContextMenu), not the raw DOM event. cb(e, coords, region).
+    if (eventType === 'contextmenu') {
+      this._contextMenuListeners.add(callback)
+      return { remove: () => this._contextMenuListeners.delete(callback) }
     }
     const handler = (e) => {
       if (!this.container.contains(e.target)) return
