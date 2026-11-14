@@ -209,14 +209,21 @@ plot.on('axislimit', () => saveLayout(plot.getConfig()))
 
 ---
 
-**`"axisoptions"`** — fired when an axis-part key — `visible`, `tickLabelsVisible`, `titleVisible` or `locked` — is written on a slot, by the [built-in axis menu](#built-in-axis-menu), a direct `update({ config })`, or `setAxisLocked()`. Like `"axislimit"`, it is keyed by **what** changed, not by who changed it, so a consumer persists on it without knowing a menu was involved. None of these keys propagate across `linkAxes` (the lock in particular is local to one plot), so there is no cross-plot source.
+**`"axisoptions"`** — fired when an axis-part key is written, by the [built-in axis menu](#built-in-axis-menu), a direct `update({ config })`, or `setAxisLocked()`. Like `"axislimit"`, it is keyed by **what** changed, not by who changed it, so a consumer persists on it without knowing a menu was involved. None of these keys propagate across `linkAxes` (the lock in particular is local to one plot), so there is no cross-plot source.
+
+The reported keys fall into two groups by where they live in the config:
+
+- **Per-slot keys** (`axes.<slot>`): `visible`, `tickLabelsVisible`, `titleVisible`, `locked`, `scale` (`"log"` / `"linear"`), `colorscale`, `colorbar` and `filterbar`. For these, `e.axis` is the slot string and `e.axis2d` is absent.
+- **2D colour-pair keys** (`colorbars[]`, keyed by the ordered quantity-kind pair): `colorscale`, `colorbar` and `enabled`. A pair has no single slot, so for these `e.axis` is `null` and `e.axis2d` is the pair key `"<qkX>__<qkY>"` (the same key used by `plot.axis2d["<qkX>__<qkY>"]`).
 
 ```javascript
 plot.on('axisoptions', (e) => {
-  console.log(e.type)   // "axisoptions"
-  console.log(e.axis)   // "xaxis_bottom"
-  console.log(e.key)    // "visible" | "tickLabelsVisible" | "titleVisible" | "locked"
-  console.log(e.value)  // the new boolean
+  console.log(e.type)    // "axisoptions"
+  console.log(e.axis)    // "xaxis_bottom", or null for a 2D colour pair
+  console.log(e.axis2d)  // undefined, or "velocity_ms__density" for a 2D colour pair
+  console.log(e.key)     // "visible" | "tickLabelsVisible" | "titleVisible" | "locked"
+                         //   | "scale" | "colorscale" | "colorbar" | "filterbar" | "enabled"
+  console.log(e.value)   // the new value for that key
 })
 ```
 

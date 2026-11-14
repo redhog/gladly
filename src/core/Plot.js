@@ -390,18 +390,48 @@ export class Plot extends GlBase {
     // changed, not by who changed it (the menu is just one caller of update()). The lock
     // key is emitted here too for a config-path change; setAxisLocked() emits its own,
     // and never calls update(), so the two paths never double-fire.
-    if (config !== undefined) this._emitAxisOptionsDiff(previousConfig?.axes ?? {}, config.axes ?? {})
+    if (config !== undefined) {
+      this._emitAxisOptionsDiff(previousConfig?.axes ?? {}, config.axes ?? {})
+      this._emitColorbarsDiff(previousConfig?.colorbars ?? [], config.colorbars ?? [])
+    }
   }
 
   // Compare the axis-part keys of two `axes` blocks (default-normalised) and emit one
-  // 'axisoptions' event per changed slot/key.
+  // 'axisoptions' event per changed slot/key. `scale` (log/linear), `colorscale`,
+  // `colorbar` and `filterbar` live here too, so each emits on change like the rest.
   _emitAxisOptionsDiff(prevAxes, nextAxes) {
-    const DEFAULTS = { visible: true, tickLabelsVisible: true, titleVisible: true, locked: false }
+    const DEFAULTS = {
+      visible: true, tickLabelsVisible: true, titleVisible: true, locked: false,
+      scale: undefined, colorscale: undefined, colorbar: 'none', filterbar: 'none',
+    }
     for (const slot of new Set([...Object.keys(prevAxes), ...Object.keys(nextAxes)])) {
       for (const [key, def] of Object.entries(DEFAULTS)) {
         const ov = prevAxes[slot]?.[key] ?? def
         const nv = nextAxes[slot]?.[key] ?? def
         if (ov !== nv) this._emitAxisOptions({ type: 'axisoptions', axis: slot, key, value: nv })
+      }
+    }
+  }
+
+  // 2D colour pairs live in the `colorbars` array (keyed by the ordered quantity-kind
+  // pair), not in `axes`, so they get their own diff. Each changed colorscale/colorbar/
+  // enabled emits an 'axisoptions' with axis:null and an axis2d key ("<qkX>__<qkY>") so
+  // a pair can never be mistaken for a real slot.
+  _emitColorbarsDiff(prevCB, nextCB) {
+    const DEFAULTS = { colorscale: undefined, colorbar: true, enabled: true }
+    const index = (arr) => {
+      const m = new Map()
+      for (const e of arr) {
+        if (e?.xAxis != null && e?.yAxis != null) m.set(Axis2d.makeKey(e.xAxis, e.yAxis), e)
+      }
+      return m
+    }
+    const prev = index(prevCB), next = index(nextCB)
+    for (const axis2d of new Set([...prev.keys(), ...next.keys()])) {
+      for (const [key, def] of Object.entries(DEFAULTS)) {
+        const ov = prev.get(axis2d)?.[key] ?? def
+        const nv = next.get(axis2d)?.[key] ?? def
+        if (ov !== nv) this._emitAxisOptions({ type: 'axisoptions', axis: null, axis2d, key, value: nv })
       }
     }
   }
