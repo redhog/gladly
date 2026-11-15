@@ -19,6 +19,11 @@ import { LassoInteraction, LASSO_MODES } from "../selection/LassoInteraction.js"
 import { getMasterCanvas } from "./MasterCanvas.js"
 import { globalResourceRegistry } from "./ResourceRegistry.js"
 
+// NDC-z nudge per draw-order index for flat (non-3D) layers. Well above 24-bit depth
+// quantization (~6e-8) yet tiny enough that thousands of layers fit the depth range and
+// a flat layer can only win against real 3D geometry within 1e-4 NDC of its plane.
+const DEPTH_BIAS_STEP = 1e-4
+
 // Throttle linked-plot renders when the source plot's "blocked lag" is high.
 const LINK_THROTTLE_MS      = 150
 const BLOCKED_LAG_THRESHOLD = 30
@@ -697,7 +702,7 @@ export class Plot extends GlBase {
       yScaleType: yIsLog ? 1.0 : 0.0,
       zScaleType: zIsLog ? 1.0 : 0.0,
       u_is3D:    this._is3D ? 1.0 : 0.0,
-      depthEnable: this._is3D,
+      u_depthBias: layer.zAxis == null ? layerIdx * DEPTH_BIAS_STEP : 0,
       u_mvp:     resolvedMvp,
       viewport:  resolvedViewport,
       count: layer.vertexCount

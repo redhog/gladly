@@ -282,7 +282,7 @@ plot.update({
 })
 ```
 
-In a 2D plot, layers draw in the order they are listed, so where two layers overlap the later one is on top. 3D plots use the depth test instead.
+Layers draw in the order they are listed, so where two flat layers overlap the later one is on top. The depth test stays on for every plot; each flat layer (one with no `zAxis` — points, lines, bars, fills) gets a tiny per-draw-order nudge along the depth axis so later layers win the test and stack on top. This holds in both 2D and 3D, so even coplanar flat layers placed in a 3D plot keep their config-order stacking. Genuine 3D layers (those with a `zAxis`) get no nudge and keep true depth occlusion.
 
 All layers on one axis must have the same quantity kind. A layer whose quantity kind differs from the one an earlier layer put on that axis is skipped and reported through the plot's `error` event (see `plot.on('error', callback)`); the other layers still draw.
 

@@ -242,6 +242,7 @@ export class LayerType {
       zScaleType: regl.prop("zScaleType"),
       u_is3D:     regl.prop("u_is3D"),
       u_mvp:      regl.prop("u_mvp"),
+      u_depthBias: regl.prop("u_depthBias"),
       u_pickingMode:    regl.prop('u_pickingMode'),
       u_pickLayerIndex: regl.prop('u_pickLayerIndex'),
       ...layer.uniforms,
@@ -418,10 +419,10 @@ export class LayerType {
       attributes,
       uniforms,
       viewport: regl.prop("viewport"),
-      // Depth test only in 3D. Every 2D layer draws at the same depth, so with the test
-      // on, the first layer to cover a pixel would hide all later ones there; off, 2D
-      // layers draw in config order, later ones on top.
-      depth: { enable: regl.prop("depthEnable") },
+      // Depth test always on (regl default: enabled, func `less`, mask true). Flat layers
+      // get a per-draw-order NDC-z bias (u_depthBias, applied in plot_pos) so later ones
+      // win the depth test and stack on top, in both 2D and 3D. Genuine 3D layers get no
+      // bias and keep true depth occlusion.
       primitive: layer.primitive,
       lineWidth: layer.lineWidth,
       count: regl.prop("count"),

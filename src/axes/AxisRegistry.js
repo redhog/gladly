@@ -11,6 +11,7 @@ uniform float yScaleType;
 uniform float zScaleType;
 uniform float u_is3D;
 uniform mat4 u_mvp;
+uniform float u_depthBias;
 out vec3 v_clip_pos;
 float normalize_axis(float v, vec2 domain, float scaleType) {
   float vt = scaleType > 0.5 ? log(v) : v;
@@ -23,7 +24,9 @@ vec4 plot_pos_3d(vec3 pos) {
   float ny = normalize_axis(pos.y, yDomain, yScaleType);
   float nz = normalize_axis(pos.z, zDomain, zScaleType);
   v_clip_pos = vec3(nx, ny, nz);
-  return u_mvp * vec4(nx*2.0-1.0, ny*2.0-1.0, nz*2.0-1.0, 1.0);
+  vec4 p = u_mvp * vec4(nx*2.0-1.0, ny*2.0-1.0, nz*2.0-1.0, 1.0);
+  p.z -= u_depthBias * p.w;
+  return p;
 }
 vec4 plot_pos(vec2 pos) {
   float nx = normalize_axis(pos.x, xDomain, xScaleType);
@@ -32,7 +35,9 @@ vec4 plot_pos(vec2 pos) {
     return plot_pos_3d(vec3(pos, zDomain.x));
   }
   v_clip_pos = vec3(nx, ny, 0.5);
-  return u_mvp * vec4(nx*2.0-1.0, ny*2.0-1.0, 0.0, 1.0);
+  vec4 p = u_mvp * vec4(nx*2.0-1.0, ny*2.0-1.0, 0.0, 1.0);
+  p.z -= u_depthBias * p.w;
+  return p;
 }`
 }
 

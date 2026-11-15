@@ -28,6 +28,35 @@ void main() { fragColor = gladly_apply_color(vec4(1.0, 0.0, 0.0, 1.0)); }`,
   }],
 }))
 
+// Same fill but with a z axis, so adding it makes the plot 3D (a genuine 3D layer).
+registerLayerType('test_fill_3d', new LayerType({
+  name: 'test_fill_3d',
+  xAxis: 'xaxis_bottom',     xAxisQuantityKind: 'test_x',
+  yAxis: 'yaxis_left',       yAxisQuantityKind: 'test_y',
+  zAxis: 'zaxis_bottom_left', zAxisQuantityKind: 'test_z',
+  vert: `#version 300 es
+precision mediump float;
+in float x;
+in float y;
+in float z;
+void main() { gl_Position = plot_pos_3d(vec3(x, y, z)); }`,
+  frag: `#version 300 es
+precision mediump float;
+void main() { fragColor = gladly_apply_color(vec4(0.0, 0.0, 1.0, 1.0)); }`,
+  schema: () => ({ type: 'object', properties: {} }),
+  createLayer: () => [{
+    attributes: {
+      x: new Float32Array([0, 1, 0, 1]),
+      y: new Float32Array([0, 0, 1, 1]),
+      z: new Float32Array([0, 0, 0, 0]),
+    },
+    uniforms: {},
+    domains: { test_x: [0, 1], test_y: [0, 1], test_z: [0, 1] },
+    primitive: 'triangle strip',
+    vertexCount: 4,
+  }],
+}))
+
 // A horizontal line across the middle of the fill. zb has no quantity kind of its own.
 function makeData() {
   return {
@@ -109,6 +138,37 @@ describe('Plot layers', () => {
     const pixels = await drawPixels(plot)
     assert.isAbove(countAtMiddle(plot, pixels, isRed, 20), 0, 'the fill draws')
     assert.isAbove(countAtMiddle(plot, pixels, isLine), plot.plotWidth / 2, 'the line draws over the fill')
+  })
+
+  it('flat layers get a draw-order depth bias; depthEnable is gone', async () => {
+    await plot.update({
+      data: makeData(),
+      config: { layers: [
+        { test_fill: {} },
+        { lines: { xData: 'input.x', yData: 'input.y' } },
+      ] },
+    })
+    const props = plot.layers.map((layer, i) => plot._buildLayerProps(layer, i))
+    assert.lengthOf(props, 2)
+    for (let i = 0; i < props.length; i++) {
+      assert.strictEqual(props[i].u_depthBias, i * 1e-4, `layer ${i} depth bias`)
+      assert.notProperty(props[i], 'depthEnable')
+    }
+  })
+
+  it('a genuine 3D layer gets no depth bias', async () => {
+    await plot.update({
+      data: makeData(),
+      config: { layers: [
+        { test_fill_3d: {} },
+        { lines: { xData: 'input.x', yData: 'input.y' } },
+      ] },
+    })
+    assert.isTrue(plot._is3D, 'plot is 3D')
+    const props = plot.layers.map((layer, i) => plot._buildLayerProps(layer, i))
+    const idx3d = plot.layers.findIndex(layer => layer.zAxis != null)
+    assert.isAbove(idx3d, -1, 'the 3D layer is present')
+    assert.strictEqual(props[idx3d].u_depthBias, 0)
   })
 
   it('a layer whose quantity kind clashes with its axis is skipped, the others still draw', async () => {
