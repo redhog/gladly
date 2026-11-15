@@ -173,7 +173,7 @@ Each `LayerType` encapsulates shaders, axis quantity kinds, schema, and a factor
 
 **Intent:** Central scale registry with lazy initialisation and quantity kind validation.
 
-`AxisRegistry.ensureAxis(name, quantityKind)` creates a D3 scale on first use. Subsequent calls with a different quantity kind throw, preventing incompatible data from sharing an axis.
+`AxisRegistry.ensureSpatialSlot(slotId, qk, scaleOverride = null)` creates a D3 scale on first use. Subsequent calls with a different quantity kind throw, preventing incompatible data from sharing an axis. `Plot._processLayers()` checks a layer's quantity kinds against the registry first and skips a layer that clashes, reporting it through the plot's `error` event, so one bad layer does not fail the whole plot.
 
 **Benefits:** Single source of truth for scales; prevents quantity kind mismatch bugs at runtime.
 
